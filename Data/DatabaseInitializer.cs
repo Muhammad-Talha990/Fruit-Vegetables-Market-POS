@@ -14,7 +14,7 @@ namespace GroceryPOS.Data
     ///   4. Customers       – Registered customers with soft-delete
     ///   5. Bills           – Sale headers (IMMUTABLE once saved)
     ///   6. BillItems       – Sale line items (IMMUTABLE, surrogate PK)
-    ///   7. Payments        – Payment transaction log (Sale / Credit Payment / Refund)
+    ///   7. bill_payment    – Payment transaction log (Sale / Credit Payment / Refund)
     ///   8. BillReturns     – Return headers (linked to original Bill)
     ///   9. BillReturnItems – Return line items (linked to original BillItems)
     ///  10. InventoryLogs   – Stock movement audit trail
@@ -29,7 +29,7 @@ namespace GroceryPOS.Data
     public static class DatabaseInitializer
     {
         // Schema version — increment when adding migrations
-        private const int CurrentSchemaVersion = 11;
+        private const int CurrentSchemaVersion = 14;
 
         /// <summary>
         /// Ensures all tables, indexes, and seed data exist.
@@ -47,6 +47,16 @@ namespace GroceryPOS.Data
 
                     // ── Ensure Base Schema exists before migrations ──
                     EnsureBaseSchema(conn);
+                    // ── Hard guard: ensure Bills print columns always exist ──
+                    EnsureBillsPrintColumns(conn);
+                    // ── Hard guard: make bill_payment canonical even if user_version is stale ──
+                    EnsureCanonicalBillPaymentShape(conn);
+
+                    // Fresh databases now start directly at the latest schema.
+                    if (GetSchemaVersion(conn) == 0)
+                    {
+                        SetSchemaVersion(conn, CurrentSchemaVersion);
+                    }
 
                     // ── Run migrations for existing databases ──
                     MigrateIfNeeded(conn);
@@ -191,19 +201,15 @@ namespace GroceryPOS.Data
             ");
 
             // ────────────────────────────────────────
-            //  TABLE 7: Payments
+            //  TABLE 7: bill_payment
             // ────────────────────────────────────────
             Execute(conn, @"
-                CREATE TABLE IF NOT EXISTS Payments (
+                CREATE TABLE IF NOT EXISTS bill_payment (
                     PaymentId       INTEGER PRIMARY KEY AUTOINCREMENT,
                     BillId          INTEGER NOT NULL,
-                    Amount          REAL    NOT NULL,
-                    PaymentMethod   TEXT    NOT NULL DEFAULT 'Cash'
-                                    CHECK(PaymentMethod IN ('Cash', 'Card', 'Credit', 'Online')),
-                    TransactionType TEXT    NOT NULL DEFAULT 'Sale'
-                                    CHECK(TransactionType IN ('Sale', 'Credit Payment', 'Refund', 'Return Offset')),
-                    Note            TEXT,
-                    PaidAt          DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    Amount          REAL    NOT NULL CHECK(Amount >= 0),
+                    Type            TEXT    NOT NULL CHECK(Type IN ('payment', 'refund')),
+                    CreatedAt       DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (BillId) REFERENCES Bills(BillId)
                         ON DELETE CASCADE
                 );
@@ -291,8 +297,9 @@ namespace GroceryPOS.Data
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Bills_Status       ON Bills(Status);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_BillItems_BillId   ON BillItems(BillId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_BillItems_ItemId   ON BillItems(ItemId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Payments_BillId    ON Payments(BillId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Payments_PaidAt    ON Payments(PaidAt);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
+            CreateIndexIfColumnExists(conn, "IX_bill_payment_CreatedAt", "bill_payment", "CreatedAt", "CreatedAt");
+            CreateIndexIfColumnExists(conn, "IX_bill_payment_PaidAt", "bill_payment", "PaidAt", "PaidAt");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Returns_BillId     ON BillReturns(BillId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ReturnItems_RetId  ON BillReturnItems(ReturnId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ReturnItems_BiId   ON BillReturnItems(BillItemId);");
@@ -539,11 +546,12 @@ namespace GroceryPOS.Data
                 AppLogger.Info("Migration v4: Added ImagePath to InventoryLogs.");
             }
 
-            // Migration v4 → v5: Add 'Return Offset' to Payments.TransactionType CHECK constraint
+            // Migration v4 → v5: Add 'Return Offset' to payment transaction types.
             if (currentVersion < 5)
             {
-                Execute(conn, @"
-                    CREATE TABLE IF NOT EXISTS Payments_new (
+                string paymentSourceV5 = TableExists(conn, "bill_payment") ? "bill_payment" : "Payments";
+                Execute(conn, $@"
+                    CREATE TABLE IF NOT EXISTS bill_payment_new (
                         PaymentId       INTEGER PRIMARY KEY AUTOINCREMENT,
                         BillId          INTEGER NOT NULL,
                         Amount          REAL    NOT NULL,
@@ -556,36 +564,36 @@ namespace GroceryPOS.Data
                         FOREIGN KEY (BillId) REFERENCES Bills(BillId)
                             ON DELETE CASCADE
                     );
-                    INSERT INTO Payments_new SELECT * FROM Payments;
-                    DROP TABLE Payments;
-                    ALTER TABLE Payments_new RENAME TO Payments;
+                    INSERT INTO bill_payment_new SELECT * FROM {paymentSourceV5};
+                    DROP TABLE {paymentSourceV5};
+                    ALTER TABLE bill_payment_new RENAME TO bill_payment;
                 ");
-                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Payments_BillId ON Payments(BillId);");
-                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Payments_PaidAt ON Payments(PaidAt);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_PaidAt ON bill_payment(PaidAt);");
                 // Reclassify any existing return-offset payments that were saved as 'Credit Payment'
                 Execute(conn, @"
-                    UPDATE Payments SET TransactionType = 'Return Offset'
+                    UPDATE bill_payment SET TransactionType = 'Return Offset'
                     WHERE TransactionType = 'Credit Payment'
                       AND BillId IN (SELECT DISTINCT BillId FROM BillReturns);
                 ");
                 SetSchemaVersion(conn, 5);
-                AppLogger.Info("Migration v5: Added 'Return Offset' to Payments.TransactionType.");
+                AppLogger.Info("Migration v5: Added 'Return Offset' to bill_payment.TransactionType.");
             }
 
-            // Migration v5 → v6: Add BillPaymentMethod column to Bills + 'Online' to Payments.PaymentMethod
+            // Migration v5 → v6: Add BillPaymentMethod column to Bills + 'Online' to payment method constraint.
             if (currentVersion < 6)
             {
                 AddColumnIfNotExists(conn, "Bills", "BillPaymentMethod", "TEXT NOT NULL DEFAULT 'Cash'");
                 // Backfill BillPaymentMethod from the first Payment record for each bill
                 Execute(conn, @"
                     UPDATE Bills SET BillPaymentMethod = COALESCE(
-                        (SELECT p.PaymentMethod FROM Payments p 
+                        (SELECT p.PaymentMethod FROM bill_payment p 
                          WHERE p.BillId = Bills.BillId AND p.TransactionType = 'Sale'
                          ORDER BY p.PaidAt ASC LIMIT 1), 'Cash');
                 ");
-                // Recreate Payments table to add 'Online' to PaymentMethod CHECK
+                // Recreate payment table to add 'Online' to PaymentMethod CHECK
                 Execute(conn, @"
-                    CREATE TABLE IF NOT EXISTS Payments_v6 (
+                    CREATE TABLE IF NOT EXISTS bill_payment_v6 (
                         PaymentId       INTEGER PRIMARY KEY AUTOINCREMENT,
                         BillId          INTEGER NOT NULL,
                         Amount          REAL    NOT NULL,
@@ -598,14 +606,14 @@ namespace GroceryPOS.Data
                         FOREIGN KEY (BillId) REFERENCES Bills(BillId)
                             ON DELETE CASCADE
                     );
-                    INSERT INTO Payments_v6 SELECT * FROM Payments;
-                    DROP TABLE Payments;
-                    ALTER TABLE Payments_v6 RENAME TO Payments;
+                    INSERT INTO bill_payment_v6 SELECT * FROM bill_payment;
+                    DROP TABLE bill_payment;
+                    ALTER TABLE bill_payment_v6 RENAME TO bill_payment;
                 ");
-                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Payments_BillId ON Payments(BillId);");
-                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Payments_PaidAt ON Payments(PaidAt);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_PaidAt ON bill_payment(PaidAt);");
                 SetSchemaVersion(conn, 6);
-                AppLogger.Info("Migration v6: Added BillPaymentMethod to Bills, 'Online' to Payments.PaymentMethod.");
+                AppLogger.Info("Migration v6: Added BillPaymentMethod to Bills, 'Online' to bill_payment.PaymentMethod.");
             }
 
             // Migration v6 → v7: Add OnlinePaymentMethod column to Bills
@@ -702,12 +710,12 @@ namespace GroceryPOS.Data
                     FROM Bills 
                     WHERE CustomerId IS NOT NULL AND Status != 'Cancelled';");
 
-                // 2. Backfill PAYMENTS (from Payments)
+                // 2. Backfill PAYMENTS (from bill_payment)
                 Execute(conn, @"
                     INSERT INTO CustomerLedger (CustomerId, Type, ReferenceId, Description, Debit, Credit, RunningBalance, EntryDate)
                     SELECT b.CustomerId, 'PAYMENT', printf('%05d', b.BillId), p.TransactionType || ' (Ref: #' || printf('%05d', b.BillId) || ')', 
                            0, p.Amount, 0, p.PaidAt
-                    FROM Payments p
+                    FROM bill_payment p
                     JOIN Bills b ON p.BillId = b.BillId
                     WHERE b.CustomerId IS NOT NULL AND p.TransactionType != 'Refund';");
 
@@ -728,6 +736,121 @@ namespace GroceryPOS.Data
                 SetSchemaVersion(conn, 11);
                 AppLogger.Info("Migration v11: Created CustomerLedger and backfilled history.");
             }
+
+            // Migration v11 → v12: Add InitialPayment column to Bills
+            if (currentVersion < 12)
+            {
+                string paymentsSource = TableExists(conn, "bill_payment") ? "bill_payment" : "Payments";
+                AddColumnIfNotExists(conn, "Bills", "InitialPayment", "REAL DEFAULT 0");
+                // Ensure no NULLs
+                Execute(conn, "UPDATE Bills SET InitialPayment = 0 WHERE InitialPayment IS NULL;");
+                // Backfill InitialPayment from the first Sale-type Payment for each existing bill
+                Execute(conn, $@"
+                    UPDATE Bills SET InitialPayment = COALESCE(
+                        (SELECT p.Amount FROM {paymentsSource} p 
+                         WHERE p.BillId = Bills.BillId AND p.TransactionType = 'Sale'
+                         ORDER BY p.PaidAt ASC LIMIT 1), 0
+                    );
+                ");
+                SetSchemaVersion(conn, 12);
+                AppLogger.Info("Migration v12: Added InitialPayment column to Bills and backfilled from existing Sale payments.");
+            }
+
+            // Migration v12 → v13: Canonicalize payment table to bill_payment and remove legacy Payments.
+            if (currentVersion < 13)
+            {
+                if (TableExists(conn, "Payments") && !TableExists(conn, "bill_payment"))
+                {
+                    Execute(conn, "ALTER TABLE Payments RENAME TO bill_payment;");
+                }
+                else if (TableExists(conn, "Payments") && TableExists(conn, "bill_payment"))
+                {
+                    // Merge only rows not already present by PaymentId to avoid duplicate data.
+                    string legacyPaymentsTable = "Payments";
+                    Execute(conn, $@"
+                        INSERT INTO bill_payment (PaymentId, BillId, Amount, PaymentMethod, TransactionType, Note, PaidAt)
+                        SELECT p.PaymentId, p.BillId, p.Amount, p.PaymentMethod, p.TransactionType, p.Note, p.PaidAt
+                        FROM {legacyPaymentsTable} p
+                        LEFT JOIN bill_payment bp ON bp.PaymentId = p.PaymentId
+                        WHERE bp.PaymentId IS NULL;
+                    ");
+                    Execute(conn, "DROP TABLE Payments;");
+                }
+
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_PaidAt ON bill_payment(PaidAt);");
+
+                SetSchemaVersion(conn, 13);
+                AppLogger.Info("Migration v13: Canonicalized payment table to bill_payment and removed legacy Payments.");
+            }
+
+            // Migration v13 → v14: Enforce canonical bill_payment shape (PaymentId, BillId, Amount, Type, CreatedAt).
+            if (currentVersion < 14)
+            {
+                Execute(conn, @"
+                    CREATE TABLE IF NOT EXISTS bill_payment_v14 (
+                        PaymentId INTEGER PRIMARY KEY AUTOINCREMENT,
+                        BillId    INTEGER NOT NULL,
+                        Amount    REAL    NOT NULL CHECK(Amount >= 0),
+                        Type      TEXT    NOT NULL CHECK(Type IN ('payment', 'refund')),
+                        CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (BillId) REFERENCES Bills(BillId) ON DELETE CASCADE
+                    );
+                ");
+
+                if (TableExists(conn, "bill_payment"))
+                {
+                    bool hasType = ColumnExists(conn, "bill_payment", "Type");
+                    bool hasCreatedAt = ColumnExists(conn, "bill_payment", "CreatedAt");
+                    bool hasTransactionType = ColumnExists(conn, "bill_payment", "TransactionType");
+                    bool hasPaidAt = ColumnExists(conn, "bill_payment", "PaidAt");
+
+                    string typeExpr = hasType
+                        ? "LOWER(Type)"
+                        : hasTransactionType
+                            ? "CASE WHEN TransactionType = 'Refund' THEN 'refund' ELSE 'payment' END"
+                            : "'payment'";
+
+                    string createdAtExpr = hasCreatedAt
+                        ? "CreatedAt"
+                        : hasPaidAt
+                            ? "PaidAt"
+                            : "CURRENT_TIMESTAMP";
+
+                    Execute(conn, $@"
+                        INSERT INTO bill_payment_v14 (PaymentId, BillId, Amount, Type, CreatedAt)
+                        SELECT PaymentId, BillId, ABS(Amount),
+                               CASE WHEN {typeExpr} = 'refund' THEN 'refund' ELSE 'payment' END,
+                               {createdAtExpr}
+                        FROM bill_payment;
+                    ");
+                    Execute(conn, "DROP TABLE bill_payment;");
+                }
+
+                Execute(conn, "ALTER TABLE bill_payment_v14 RENAME TO bill_payment;");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_CreatedAt ON bill_payment(CreatedAt);");
+
+                SetSchemaVersion(conn, 14);
+                AppLogger.Info("Migration v14: Standardized bill_payment to canonical accounting schema.");
+            }
+
+            // --- Real-time Date Fix: Localize UTC timestamps stored previously ---
+            // This 'repairs' entries created after the user's local 7 PM but stored as UTC (previous day date).
+            // We shift everything created in the last 24 hours by +5 hours if it looks like UTC.
+            Execute(conn, @"
+                UPDATE Bills SET CreatedAt = datetime(CreatedAt, '+5 hours') 
+                WHERE CreatedAt > datetime('now', '-24 hours') AND CreatedAt LIKE '%Z' OR CreatedAt NOT LIKE '%:%:%';
+                
+                UPDATE bill_payment SET CreatedAt = datetime(CreatedAt, '+5 hours') 
+                WHERE CreatedAt > datetime('now', '-24 hours');
+                
+                UPDATE InventoryLogs SET LogDate = datetime(LogDate, '+5 hours') 
+                WHERE LogDate > datetime('now', '-24 hours');
+                
+                UPDATE BillReturns SET ReturnedAt = datetime(ReturnedAt, '+5 hours') 
+                WHERE ReturnedAt > datetime('now', '-24 hours');
+            ");
 
             AppLogger.Info($"Database migrated successfully to v{CurrentSchemaVersion}.");
         }
@@ -1020,18 +1143,18 @@ namespace GroceryPOS.Data
         }
 
         /// <summary>
-        /// Migrates Payments table: Method → PaymentMethod, adds TransactionType.
+        /// Migrates legacy Payments table to canonical bill_payment shape.
         /// </summary>
         private static void MigratePaymentsColumns(SqliteConnection conn)
         {
-            AppLogger.Info("Migrating Payments: Method → PaymentMethod + TransactionType...");
+            AppLogger.Info("Migrating legacy Payments: Method → PaymentMethod + TransactionType...");
             Execute(conn, "PRAGMA foreign_keys = OFF;");
             using var txn = conn.BeginTransaction();
             try
             {
-                Execute(conn, "ALTER TABLE Payments RENAME TO Payments_old;");
+                Execute(conn, "ALTER TABLE Payments RENAME TO LegacyPayOld;");
                 Execute(conn, @"
-                    CREATE TABLE Payments (
+                    CREATE TABLE bill_payment (
                         PaymentId       INTEGER PRIMARY KEY AUTOINCREMENT,
                         BillId          INTEGER NOT NULL,
                         Amount          REAL    NOT NULL,
@@ -1045,18 +1168,18 @@ namespace GroceryPOS.Data
                     );
                 ");
                 Execute(conn, @"
-                    INSERT INTO Payments (PaymentId, BillId, Amount, PaymentMethod, TransactionType, Note, PaidAt)
+                    INSERT INTO bill_payment (PaymentId, BillId, Amount, PaymentMethod, TransactionType, Note, PaidAt)
                     SELECT PaymentId, BillId, Amount, COALESCE(Method, 'Cash'), 'Sale', Note, PaidAt
-                    FROM Payments_old;
+                    FROM LegacyPayOld;
                 ");
-                Execute(conn, "DROP TABLE Payments_old;");
+                Execute(conn, "DROP TABLE LegacyPayOld;");
                 txn.Commit();
-                AppLogger.Info("Payments migration completed.");
+                AppLogger.Info("Legacy payments migration completed to bill_payment.");
             }
             catch (Exception ex)
             {
                 txn.Rollback();
-                AppLogger.Error("Payments migration failed", ex);
+                AppLogger.Error("Legacy payments migration failed", ex);
             }
             finally
             {
@@ -1178,6 +1301,99 @@ namespace GroceryPOS.Data
                 Execute(conn, $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};");
                 AppLogger.Info($"Added column '{columnName}' to table '{tableName}'.");
             }
+        }
+
+        private static void CreateIndexIfColumnExists(SqliteConnection conn, string indexName, string tableName, string columnName, string indexColumns)
+        {
+            if (!TableExists(conn, tableName)) return;
+            if (!ColumnExists(conn, tableName, columnName)) return;
+            Execute(conn, $"CREATE INDEX IF NOT EXISTS {indexName} ON {tableName}({indexColumns});");
+        }
+
+        /// <summary>
+        /// Ensures bill_payment always has the canonical accounting shape:
+        /// (PaymentId, BillId, Amount, Type, CreatedAt).
+        /// This is intentionally version-agnostic to self-heal stale user_version values.
+        /// </summary>
+        private static void EnsureCanonicalBillPaymentShape(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "bill_payment"))
+            {
+                Execute(conn, @"
+                    CREATE TABLE IF NOT EXISTS bill_payment (
+                        PaymentId INTEGER PRIMARY KEY AUTOINCREMENT,
+                        BillId    INTEGER NOT NULL,
+                        Amount    REAL    NOT NULL CHECK(Amount >= 0),
+                        Type      TEXT    NOT NULL CHECK(Type IN ('payment', 'refund')),
+                        CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (BillId) REFERENCES Bills(BillId) ON DELETE CASCADE
+                    );
+                ");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_CreatedAt ON bill_payment(CreatedAt);");
+                return;
+            }
+
+            bool hasType = ColumnExists(conn, "bill_payment", "Type");
+            bool hasCreatedAt = ColumnExists(conn, "bill_payment", "CreatedAt");
+            if (hasType && hasCreatedAt)
+            {
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_CreatedAt ON bill_payment(CreatedAt);");
+                return;
+            }
+
+            bool hasTransactionType = ColumnExists(conn, "bill_payment", "TransactionType");
+            bool hasPaidAt = ColumnExists(conn, "bill_payment", "PaidAt");
+
+            string typeExpr = hasType
+                ? "LOWER(Type)"
+                : hasTransactionType
+                    ? "CASE WHEN TransactionType = 'Refund' THEN 'refund' ELSE 'payment' END"
+                    : "'payment'";
+
+            string createdAtExpr = hasCreatedAt
+                ? "CreatedAt"
+                : hasPaidAt
+                    ? "PaidAt"
+                    : "CURRENT_TIMESTAMP";
+
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS bill_payment_fix (
+                    PaymentId INTEGER PRIMARY KEY AUTOINCREMENT,
+                    BillId    INTEGER NOT NULL,
+                    Amount    REAL    NOT NULL CHECK(Amount >= 0),
+                    Type      TEXT    NOT NULL CHECK(Type IN ('payment', 'refund')),
+                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (BillId) REFERENCES Bills(BillId) ON DELETE CASCADE
+                );
+            ");
+
+            Execute(conn, $@"
+                INSERT INTO bill_payment_fix (PaymentId, BillId, Amount, Type, CreatedAt)
+                SELECT PaymentId, BillId, ABS(Amount),
+                       CASE WHEN {typeExpr} = 'refund' THEN 'refund' ELSE 'payment' END,
+                       {createdAtExpr}
+                FROM bill_payment;
+            ");
+
+            Execute(conn, "DROP TABLE bill_payment;");
+            Execute(conn, "ALTER TABLE bill_payment_fix RENAME TO bill_payment;");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_CreatedAt ON bill_payment(CreatedAt);");
+            AppLogger.Info("Self-heal: canonicalized bill_payment table shape.");
+        }
+
+        /// <summary>
+        /// Ensures Bills always contains print tracking columns used by billing flow.
+        /// This is version-agnostic to self-heal stale/broken schemas.
+        /// </summary>
+        private static void EnsureBillsPrintColumns(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "Bills")) return;
+
+            AddColumnIfNotExists(conn, "Bills", "IsPrinted", "INTEGER DEFAULT 0");
+            AddColumnIfNotExists(conn, "Bills", "PrintedAt", "DATETIME");
         }
 
         // ────────────────────────────────────────────

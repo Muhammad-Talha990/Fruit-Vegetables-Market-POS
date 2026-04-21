@@ -102,10 +102,8 @@ namespace GroceryPOS.Services
             double changeGiven    = Math.Round(cashReceived - paidAmount, 2);
             double remainingAmount = Math.Round(grandTotal - paidAmount, 2);
 
-            // Derive payment status
-            string paymentStatus = remainingAmount <= 0 ? "Paid"
-                                   : paidAmount > 0      ? "Partial"
-                                                         : "Unpaid";
+            // Derive payment status (2-value: Paid or PartialPaid)
+            string paymentStatus = remainingAmount <= 0 ? "Paid" : "PartialPaid";
 
             // ── Build Bill object ──
             var bill = new Bill
@@ -119,6 +117,7 @@ namespace GroceryPOS.Services
                 UserId          = userId,
                 CustomerId      = customerId,
                 PaidAmount      = paidAmount,
+                InitialPayment  = paidAmount, // Store first payment at bill creation time
                 BillingAddress  = billingAddress,
                 PaymentMethod   = paymentMethod,
                 // Only store the sub-method for online payments; null it for cash to keep data clean

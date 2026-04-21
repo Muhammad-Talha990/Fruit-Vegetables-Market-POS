@@ -56,8 +56,8 @@ namespace GroceryPOS.Data.Repositories
             using var billCmd = conn.CreateCommand();
             billCmd.Transaction = txn;
             billCmd.CommandText = @"
-                INSERT INTO Bills (CustomerId, UserId, TaxAmount, DiscountAmount, Status, BillPaymentMethod, OnlinePaymentMethod, AccountId)
-                VALUES (@cid, @uid, @tax, @disc, @status, @billPayMethod, @onlinePayMethod, @accountId);
+                INSERT INTO Bills (CustomerId, UserId, TaxAmount, DiscountAmount, Status, BillPaymentMethod, OnlinePaymentMethod, AccountId, InitialPayment, CreatedAt)
+                VALUES (@cid, @uid, @tax, @disc, @status, @billPayMethod, @onlinePayMethod, @accountId, @initialPay, @createdAt);
                 SELECT last_insert_rowid();
             ";
             billCmd.Parameters.AddWithValue("@cid", bill.CustomerId.HasValue ? (object)bill.CustomerId.Value : DBNull.Value);
@@ -68,6 +68,8 @@ namespace GroceryPOS.Data.Repositories
             billCmd.Parameters.AddWithValue("@billPayMethod", bill.PaymentMethod ?? "Cash");
             billCmd.Parameters.AddWithValue("@onlinePayMethod", string.IsNullOrEmpty(bill.OnlinePaymentMethod) ? (object)DBNull.Value : bill.OnlinePaymentMethod);
             billCmd.Parameters.AddWithValue("@accountId", bill.AccountId.HasValue ? (object)bill.AccountId.Value : DBNull.Value);
+            billCmd.Parameters.AddWithValue("@initialPay", bill.InitialPayment);
+            billCmd.Parameters.AddWithValue("@createdAt", bill.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
 
             bill.BillId = Convert.ToInt32(billCmd.ExecuteScalar());
 
@@ -82,8 +84,8 @@ namespace GroceryPOS.Data.Repositories
                     INSERT INTO BillItems (BillId, ItemId, Quantity, UnitPrice, DiscountAmount)
                     VALUES (@billId, @itemId, @qty, @price, @itemDisc);
                     
-                    INSERT INTO InventoryLogs (ItemId, QuantityChange, ChangeType)
-                    VALUES (@itemId, @qtyLog, 'Sale');
+                    INSERT INTO InventoryLogs (ItemId, QuantityChange, ChangeType, ReferenceId, ReferenceType, LogDate)
+                    VALUES (@itemId, @qtyLog, 'Sale', @billId, 'Bill', @logDate);
                 ";
                 itemCmd.Parameters.AddWithValue("@billId", item.BillId);
                 itemCmd.Parameters.AddWithValue("@itemId", item.ItemInternalId);
@@ -91,27 +93,13 @@ namespace GroceryPOS.Data.Repositories
                 itemCmd.Parameters.AddWithValue("@qtyLog", -item.Quantity); // Deduction
                 itemCmd.Parameters.AddWithValue("@price", item.UnitPrice);
                 itemCmd.Parameters.AddWithValue("@itemDisc", item.DiscountAmount);
+                itemCmd.Parameters.AddWithValue("@logDate", bill.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
                 itemCmd.ExecuteNonQuery();
-            }
-
-            // ── Step 3: Record Payment ──
-            if (bill.PaidAmount > 0)
-            {
-                using var payCmd = conn.CreateCommand();
-                payCmd.Transaction = txn;
-                payCmd.CommandText = @"
-                    INSERT INTO Payments (BillId, Amount, PaymentMethod, TransactionType)
-                    VALUES (@billId, @amount, @payMethod, 'Sale');
-                ";
-                payCmd.Parameters.AddWithValue("@billId", bill.BillId);
-                payCmd.Parameters.AddWithValue("@amount", bill.PaidAmount);
-                payCmd.Parameters.AddWithValue("@payMethod", bill.PaymentMethod ?? "Cash");
-                payCmd.ExecuteNonQuery();
             }
 
             bill.Items = new ObservableCollection<BillDescription>(items);
 
-            // ── Step 4: Record Customer Ledger Entries ──
+            // ── Step 3: Record Customer Ledger Entries ──
             if (bill.CustomerId.HasValue)
             {
                 // A. Record the SALE (Liability Created)
@@ -127,22 +115,22 @@ namespace GroceryPOS.Data.Repositories
                 }, conn, txn);
 
                 // B. Record the PAYMENT (Liability Reduced) if anything was paid at checkout
-                if (bill.PaidAmount > 0)
+                if (bill.InitialPayment > 0)
                 {
                     _ledgerRepo.AddEntry(new CustomerLedgerEntry
                     {
                         CustomerId = bill.CustomerId.Value,
                         Type = "PAYMENT",
                         ReferenceId = bill.InvoiceNumber,
-                        Description = $"Initial Payment (Invoice #{bill.InvoiceNumber})",
+                        Description = $"Initial Payment (Ref: #{bill.InvoiceNumber})",
                         Debit = 0,
-                        Credit = bill.PaidAmount,
+                        Credit = bill.InitialPayment,
                         EntryDate = DateTime.Now
                     }, conn, txn);
                 }
             }
 
-            AppLogger.Info($"3NF Bill saved: ID={bill.BillId} | Status={bill.Status} | Paid={bill.PaidAmount:N2}");
+            AppLogger.Info($"3NF Bill saved: ID={bill.BillId} | Status={bill.Status} | InitialPay={bill.InitialPayment:N2}");
             return bill;
         }
 
@@ -163,9 +151,10 @@ namespace GroceryPOS.Data.Repositories
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
                        (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                       (SELECT COALESCE(SUM(Amount), 0) FROM Payments WHERE BillId = b.BillId AND TransactionType != 'Return Offset') as PaidAmount,
-                       (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as ReturnedAmount,
-                       (SELECT PaymentMethod FROM Payments WHERE BillId = b.BillId AND TransactionType != 'Return Offset' ORDER BY PaidAt ASC LIMIT 1) as PaymentMethod
+                       (SELECT COALESCE(SUM(CASE WHEN Type = 'payment' THEN Amount WHEN Type = 'refund' THEN -Amount ELSE 0 END), 0)
+                        FROM bill_payment
+                        WHERE BillId = b.BillId) as AdditionalPaid,
+                       (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned
                 FROM Bills b
                 LEFT JOIN Users u ON b.UserId = u.Id
                 LEFT JOIN Customers c ON b.CustomerId = c.CustomerId
@@ -210,8 +199,10 @@ namespace GroceryPOS.Data.Repositories
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
                        (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                       (SELECT COALESCE(SUM(Amount), 0) FROM Payments WHERE BillId = b.BillId) as PaidAmount,
-                       (SELECT PaymentMethod FROM Payments WHERE BillId = b.BillId ORDER BY PaidAt ASC LIMIT 1) as PaymentMethod
+                       (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount WHEN p.Type = 'refund' THEN -p.Amount ELSE 0 END), 0)
+                        FROM bill_payment p
+                        WHERE p.BillId = b.BillId) as AdditionalPaid,
+                       (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned
                 FROM Bills b
                 LEFT JOIN Users u ON b.UserId = u.Id
                 LEFT JOIN Customers c ON b.CustomerId = c.CustomerId
@@ -241,13 +232,15 @@ namespace GroceryPOS.Data.Repositories
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
                        (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                       (SELECT COALESCE(SUM(Amount), 0) FROM Payments WHERE BillId = b.BillId) as PaidAmount,
-                       (SELECT PaymentMethod FROM Payments WHERE BillId = b.BillId ORDER BY PaidAt ASC LIMIT 1) as PaymentMethod
+                       (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount WHEN p.Type = 'refund' THEN -p.Amount ELSE 0 END), 0)
+                        FROM bill_payment p
+                        WHERE p.BillId = b.BillId) as AdditionalPaid,
+                       (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned
                 FROM Bills b
                 LEFT JOIN Users u ON b.UserId = u.Id
                 LEFT JOIN Customers c ON b.CustomerId = c.CustomerId
                 LEFT JOIN Accounts a ON b.AccountId = a.Id
-                WHERE datetime(b.CreatedAt, 'localtime') >= @from AND datetime(b.CreatedAt, 'localtime') < @to 
+                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to 
                 ORDER BY b.CreatedAt DESC;";
             cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
             cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -276,51 +269,87 @@ namespace GroceryPOS.Data.Repositories
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
+            var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
             cmd.CommandText = @"
                 SELECT COALESCE(SUM(bill_total), 0)
                 FROM (
                     SELECT (SUM(bi.Quantity * bi.UnitPrice) + b.TaxAmount - b.DiscountAmount) as bill_total
                     FROM Bills b
                     JOIN BillItems bi ON b.BillId = bi.BillId
-                    WHERE date(b.CreatedAt, 'localtime') = date('now', 'localtime') AND b.Status != 'Cancelled'
+                    WHERE date(b.CreatedAt) = @today AND b.Status != 'Cancelled'
                     GROUP BY b.BillId
                 );";
+            cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
 
-        /// <summary>Gets today's total remaining due amount (credit/udhar).</summary>
+        /// <summary>Gets today's total remaining due amount (credit/udhar) for all bills created today.</summary>
         public double GetTodayTotalRemaining()
         {
-            return GetTodayTotal() - GetTodayTotalPaidInSales();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+            // Formula: max(0, NetTotal - InitialPayment - credit payments)
+            cmd.CommandText = @"
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN (
+                            (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId)
+                            + COALESCE(b.TaxAmount, 0)
+                            - COALESCE(b.DiscountAmount, 0)
+                            - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                                        FROM BillReturnItems bri
+                                        JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                        WHERE br.BillId = b.BillId), 0)
+                            - COALESCE(b.InitialPayment, 0)
+                            - COALESCE((SELECT SUM(p.Amount) FROM bill_payment p WHERE p.BillId = b.BillId AND p.Type = 'payment'), 0)
+                        ) > 0
+                        THEN (
+                            (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId)
+                            + COALESCE(b.TaxAmount, 0)
+                            - COALESCE(b.DiscountAmount, 0)
+                            - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                                        FROM BillReturnItems bri
+                                        JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                        WHERE br.BillId = b.BillId), 0)
+                            - COALESCE(b.InitialPayment, 0)
+                            - COALESCE((SELECT SUM(p.Amount) FROM bill_payment p WHERE p.BillId = b.BillId AND p.Type = 'payment'), 0)
+                        )
+                        ELSE 0
+                    END
+                ), 0)
+                FROM Bills b
+                WHERE date(b.CreatedAt) = @today AND b.Status != 'Cancelled';";
+            cmd.Parameters.AddWithValue("@today", todayStr);
+            return Math.Round(Convert.ToDouble(cmd.ExecuteScalar()), 2);
         }
 
         private double GetTodayTotalPaidInSales()
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
+            var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+                        // Unified Paid: InitialPayment (from Bills) + non-Sale Payments for today's bills.
             cmd.CommandText = @"
-                SELECT COALESCE(SUM(p.Amount), 0)
-                FROM Payments p
-                JOIN Bills b ON p.BillId = b.BillId
-                WHERE date(b.CreatedAt, 'localtime') = date('now', 'localtime') 
-                  AND b.Status != 'Cancelled';";
+                SELECT 
+                                        (SELECT COALESCE(SUM(InitialPayment), 0) FROM Bills WHERE date(CreatedAt) = @today AND Status != 'Cancelled')
+                                        +
+                                        (SELECT COALESCE(SUM(p.Amount), 0)
+                                         FROM bill_payment p
+                                         JOIN Bills b ON p.BillId = b.BillId
+                                         WHERE date(b.CreatedAt) = @today 
+                                             AND b.Status != 'Cancelled'
+                                            AND p.Type = 'payment');";
+            cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
 
         /// <summary>Gets today's cash collected from today's sale bills only (excludes credit recovery and return offsets).</summary>
         public double GetTodayTotalPaid()
         {
-            using var conn = DatabaseHelper.GetConnection();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
-                SELECT COALESCE(SUM(p.Amount), 0)
-                FROM Payments p
-                JOIN Bills b ON p.BillId = b.BillId
-                WHERE date(p.PaidAt, 'localtime') = date('now', 'localtime')
-                  AND date(b.CreatedAt, 'localtime') = date('now', 'localtime')
-                  AND b.Status != 'Cancelled'
-                  AND p.TransactionType != 'Return Offset';";
-            return Convert.ToDouble(cmd.ExecuteScalar());
+            // This should return what was paid on today's bills AT THE TIME of sale (initial) or today (subsequent)
+            // But usually this metric specifically tracks cash flow related to today's sales.
+            return GetTodayTotalPaidInSales();
         }
 
         /// <summary>Gets today's total cash refunded to customers from returns.</summary>
@@ -328,24 +357,30 @@ namespace GroceryPOS.Data.Repositories
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
+            var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
             cmd.CommandText = @"
-                SELECT COALESCE(SUM(RefundAmount), 0) FROM BillReturns 
-                WHERE date(ReturnedAt, 'localtime') = date('now', 'localtime');";
+                SELECT COALESCE(SUM(Amount), 0)
+                FROM bill_payment
+                WHERE date(CreatedAt) = @today
+                  AND Type = 'refund';";
+            cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
 
-        /// <summary>Gets today's recovered credit (genuine payments made today for previous bills, excluding return offsets).</summary>
+        /// <summary>Gets today's recovered credit: strictly only subsequent payments made after sale.</summary>
         public double GetTodayRecoveredCredit()
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
+            var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+            // Count only payment entries (refunds are separate cash outflow).
             cmd.CommandText = @"
-                SELECT COALESCE(SUM(p.Amount), 0)
-                FROM Payments p
-                JOIN Bills b ON p.BillId = b.BillId
-                WHERE date(p.PaidAt, 'localtime') = date('now', 'localtime')
-                  AND date(b.CreatedAt, 'localtime') < date('now', 'localtime')
-                  AND p.TransactionType != 'Return Offset';";
+                SELECT COALESCE(SUM(Amount), 0)
+                FROM bill_payment
+                WHERE date(CreatedAt) = @today
+                  AND Type = 'payment'
+                  AND Amount > 0;";
+            cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
 
@@ -354,47 +389,77 @@ namespace GroceryPOS.Data.Repositories
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
+            var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
             cmd.CommandText = @"
                 SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
                 FROM BillReturnItems bri
                 JOIN BillReturns br ON bri.ReturnId = br.ReturnId
-                WHERE date(br.ReturnedAt, 'localtime') = date('now', 'localtime');";
+                WHERE date(br.ReturnedAt) = @today;";
+            cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
 
-        /// <summary>Gets today's net cash in drawer: cash payments received minus cash refunds given for returns.</summary>
+        /// <summary>Gets today's net cash in drawer: Initial Cash Payments (Bills) + Subsequent Cash (Payments table).</summary>
         public double GetTodayCashInDrawer()
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
+            var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+                        // Unified Logic:
+                        // 1. Sum of Initial Payments (Cash) from today's Bills
+                        // 2. + subsequent cash payments today
+                        // 3. - cash refunds today
             cmd.CommandText = @"
                 SELECT 
-                    COALESCE((SELECT SUM(p.Amount)
-                        FROM Payments p
-                        JOIN Bills b ON p.BillId = b.BillId
-                        WHERE date(p.PaidAt, 'localtime') = date('now', 'localtime')
-                          AND b.Status != 'Cancelled'
-                          AND p.TransactionType != 'Return Offset'
-                          AND b.BillPaymentMethod = 'Cash'), 0)
+                                        (SELECT COALESCE(SUM(InitialPayment), 0) 
+                     FROM Bills 
+                     WHERE date(CreatedAt) = @today 
+                       AND BillPaymentMethod = 'Cash' 
+                       AND Status != 'Cancelled')
+                    +
+                    (SELECT COALESCE(SUM(p.Amount), 0)
+                                         FROM bill_payment p
+                     JOIN Bills b ON p.BillId = b.BillId
+                     WHERE date(p.CreatedAt) = @today
+                       AND b.BillPaymentMethod = 'Cash'
+                       AND b.Status != 'Cancelled'
+                       AND p.Type = 'payment')
                     -
-                    COALESCE((SELECT SUM(RefundAmount) FROM BillReturns 
-                        WHERE date(ReturnedAt, 'localtime') = date('now', 'localtime')), 0);";
+                    (SELECT COALESCE(SUM(p.Amount), 0)
+                                         FROM bill_payment p
+                                         JOIN Bills b ON p.BillId = b.BillId
+                                         WHERE date(p.CreatedAt) = @today
+                                            AND b.BillPaymentMethod = 'Cash'
+                                             AND b.Status != 'Cancelled'
+                                            AND p.Type = 'refund');";
+            cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
 
-        /// <summary>Gets today's payments received for Online bills only (sale payments + credit recovery, excludes return offsets).</summary>
+        /// <summary>Gets today's payments received for Online bills only.</summary>
         public double GetTodayOnlinePayments()
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
+            var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
             cmd.CommandText = @"
-                SELECT COALESCE(SUM(p.Amount), 0)
-                FROM Payments p
-                JOIN Bills b ON p.BillId = b.BillId
-                WHERE date(p.PaidAt, 'localtime') = date('now', 'localtime')
-                  AND b.Status != 'Cancelled'
-                  AND p.TransactionType != 'Return Offset'
-                  AND b.BillPaymentMethod = 'Online';";
+                SELECT 
+                                        (SELECT COALESCE(SUM(InitialPayment), 0) 
+                     FROM Bills 
+                     WHERE date(CreatedAt) = @today 
+                       AND BillPaymentMethod = 'Online' 
+                       AND Status != 'Cancelled')
+                    +
+                                        (SELECT COALESCE(SUM(
+                                            CASE WHEN p.Type = 'payment' THEN p.Amount
+                                                 WHEN p.Type = 'refund' THEN -p.Amount
+                                                 ELSE 0 END), 0)
+                                         FROM bill_payment p
+                     JOIN Bills b ON p.BillId = b.BillId
+                     WHERE date(p.CreatedAt) = @today
+                       AND b.Status != 'Cancelled'
+                      AND b.BillPaymentMethod = 'Online');";
+            cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
 
@@ -424,15 +489,19 @@ namespace GroceryPOS.Data.Repositories
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT 
-                    (SELECT COALESCE(SUM(bill_total), 0) FROM (
-                        SELECT (SUM(bi.Quantity * bi.UnitPrice) + b.TaxAmount - b.DiscountAmount) as bill_total
-                        FROM Bills b JOIN BillItems bi ON b.BillId = bi.BillId
-                        WHERE b.Status != 'Cancelled'
-                        GROUP BY b.BillId
-                    ))
-                    -
-                    (SELECT COALESCE(SUM(Amount), 0) FROM Payments);";
+                SELECT COALESCE(SUM(
+                    (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId)
+                    + COALESCE(b.TaxAmount, 0)
+                    - COALESCE(b.DiscountAmount, 0)
+                    - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                                FROM BillReturnItems bri
+                                JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                WHERE br.BillId = b.BillId), 0)
+                    - COALESCE(b.InitialPayment, 0)
+                    - COALESCE((SELECT SUM(p.Amount) FROM bill_payment p WHERE p.BillId = b.BillId AND p.Type = 'payment'), 0)
+                ), 0)
+                FROM Bills b
+                WHERE b.Status != 'Cancelled';";
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
 
@@ -518,10 +587,12 @@ namespace GroceryPOS.Data.Repositories
                        u.Username, u.FullName as UserFullName, u.Role as UserRole,
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
-                       (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                       (SELECT COALESCE(SUM(Amount), 0) FROM Payments WHERE BillId = b.BillId AND TransactionType != 'Return Offset') as PaidAmount,
-                       (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as ReturnedAmount,
-                       (SELECT PaymentMethod FROM Payments WHERE BillId = b.BillId AND TransactionType != 'Return Offset' ORDER BY PaidAt ASC LIMIT 1) as PaymentMethod
+                        (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
+                        (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount WHEN p.Type = 'refund' THEN -p.Amount ELSE 0 END), 0)
+                         FROM bill_payment p
+                         WHERE p.BillId = b.BillId) as AdditionalPaid,
+                        (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned,
+                        b.BillPaymentMethod as PaymentMethod
                 FROM Bills b
                 LEFT JOIN Users u ON b.UserId = u.Id
                 LEFT JOIN Customers c ON b.CustomerId = c.CustomerId
@@ -551,10 +622,12 @@ namespace GroceryPOS.Data.Repositories
                        u.Username, u.FullName as UserFullName, u.Role as UserRole,
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
-                       (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                       (SELECT COALESCE(SUM(Amount), 0) FROM Payments WHERE BillId = b.BillId AND TransactionType != 'Return Offset') as PaidAmount,
-                       (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as ReturnedAmount,
-                       (SELECT PaymentMethod FROM Payments WHERE BillId = b.BillId AND TransactionType != 'Return Offset' ORDER BY PaidAt ASC LIMIT 1) as PaymentMethod
+                        (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
+                        (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount WHEN p.Type = 'refund' THEN -p.Amount ELSE 0 END), 0)
+                         FROM bill_payment p
+                         WHERE p.BillId = b.BillId) as AdditionalPaid,
+                        (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned,
+                        b.BillPaymentMethod as PaymentMethod
                 FROM Bills b
                 LEFT JOIN Users u ON b.UserId = u.Id
                 LEFT JOIN Customers c ON b.CustomerId = c.CustomerId
@@ -582,7 +655,11 @@ namespace GroceryPOS.Data.Repositories
             cmd.CommandText = @"
                 SELECT COUNT(*), COALESCE(SUM(bill_total), 0)
                 FROM (
-                    SELECT (SUM(bi.Quantity * bi.UnitPrice) + b.TaxAmount - b.DiscountAmount) as bill_total
+                    SELECT (SUM(bi.Quantity * bi.UnitPrice) + COALESCE(b.TaxAmount, 0) - COALESCE(b.DiscountAmount, 0)
+                            - COALESCE((SELECT SUM(bri.Quantity * bri.UnitPrice)
+                                        FROM BillReturnItems bri
+                                        JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                        WHERE br.BillId = b.BillId), 0)) as bill_total
                     FROM Bills b
                     JOIN BillItems bi ON b.BillId = bi.BillId
                     WHERE b.CustomerId = @cid AND b.Status != 'Cancelled'
@@ -690,31 +767,41 @@ namespace GroceryPOS.Data.Repositories
             bill.PaymentLogs.Clear();
             bill.ReturnLogs.Clear();
 
+            if (bill.InitialPayment > 0)
+            {
+                bill.PaymentLogs.Add(new CreditPayment
+                {
+                    PaymentId = 0,
+                    BillId = bill.BillId,
+                    AmountPaid = bill.InitialPayment,
+                    PaymentMethod = bill.PaymentMethod,
+                    TransactionType = "Sale",
+                    Note = "initial payment",
+                    PaidAt = bill.CreatedAt
+                });
+            }
+
             // 1. Load Payment History
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = @"
-                    SELECT PaymentId, Amount, PaymentMethod, TransactionType, Note, PaidAt
-                    FROM Payments
+                    SELECT PaymentId, Amount, Type, CreatedAt
+                    FROM bill_payment
                     WHERE BillId = @bid
-                    ORDER BY PaidAt ASC;";
+                    ORDER BY CreatedAt ASC;";
                 cmd.Parameters.AddWithValue("@bid", bill.BillId);
 
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
-                    var type = reader.GetString(3);
-                    if (type == "Return Offset") continue; // Separated logically now
-
+                    var type = reader.GetString(2);
                     bill.PaymentLogs.Add(new CreditPayment
                     {
                         PaymentId       = reader.GetInt32(0),
                         BillId          = bill.BillId,
                         AmountPaid      = reader.GetDouble(1),
-                        PaymentMethod   = reader.GetString(2),
-                        TransactionType = type,
-                        Note            = reader.IsDBNull(4) ? null : reader.GetString(4),
-                        PaidAt          = reader.GetDateTime(5)
+                        TransactionType = type == "refund" ? "Refund" : "Payment",
+                        PaidAt          = reader.GetDateTime(3)
                     });
                 }
             }
@@ -782,15 +869,26 @@ namespace GroceryPOS.Data.Repositories
                 DiscountAmount = reader.GetDouble(reader.GetOrdinal("DiscountAmount")),
                 Status         = reader.GetString(reader.GetOrdinal("Status")),
                 CreatedAt      = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                PaymentMethod  = reader.HasColumn("PaymentMethod") && !reader.IsDBNull(reader.GetOrdinal("PaymentMethod")) ? reader.GetString(reader.GetOrdinal("PaymentMethod")) : "Cash",
+                PaymentMethod  = reader.HasColumn("BillPaymentMethod") && !reader.IsDBNull(reader.GetOrdinal("BillPaymentMethod"))
+                    ? reader.GetString(reader.GetOrdinal("BillPaymentMethod"))
+                    : reader.HasColumn("PaymentMethod") && !reader.IsDBNull(reader.GetOrdinal("PaymentMethod"))
+                        ? reader.GetString(reader.GetOrdinal("PaymentMethod"))
+                        : "Cash",
                 OnlinePaymentMethod = reader.HasColumn("OnlinePaymentMethod") && !reader.IsDBNull(reader.GetOrdinal("OnlinePaymentMethod")) ? reader.GetString(reader.GetOrdinal("OnlinePaymentMethod")) : null,
                 AccountId      = reader.HasColumn("AccountId") && !reader.IsDBNull(reader.GetOrdinal("AccountId")) ? (int?)reader.GetInt32(reader.GetOrdinal("AccountId")) : null
             };
 
             // Calculated aggregates (if present in query)
             if (reader.HasColumn("SubTotal")) bill.SubTotal = reader.GetDouble(reader.GetOrdinal("SubTotal"));
-            if (reader.HasColumn("PaidAmount")) bill.PaidAmount = reader.GetDouble(reader.GetOrdinal("PaidAmount"));
-            if (reader.HasColumn("ReturnedAmount")) bill.ReturnedAmount = reader.GetDouble(reader.GetOrdinal("ReturnedAmount"));
+            double additionalPaid = 0;
+            if (reader.HasColumn("AdditionalPaid")) additionalPaid = reader.GetDouble(reader.GetOrdinal("AdditionalPaid"));
+            if (reader.HasColumn("TotalReturned")) bill.ReturnedAmount = reader.GetDouble(reader.GetOrdinal("TotalReturned"));
+
+            // Read InitialPayment if column exists
+            if (reader.HasColumn("InitialPayment") && !reader.IsDBNull(reader.GetOrdinal("InitialPayment")))
+                bill.InitialPayment = reader.GetDouble(reader.GetOrdinal("InitialPayment"));
+
+            bill.PaidAmount = Math.Round(bill.InitialPayment + additionalPaid, 2);
 
             // Map Account navigation
             if (bill.AccountId.HasValue && reader.HasColumn("AccountTitle") && !reader.IsDBNull(reader.GetOrdinal("AccountTitle")))
@@ -864,12 +962,12 @@ namespace GroceryPOS.Data.Repositories
                 SELECT COALESCE(a.AccountTitle, b.OnlinePaymentMethod, '(Unspecified)') as Method,
                        COALESCE(SUM(p.Amount), 0) as Total
                 FROM Bills b
-                JOIN Payments p ON b.BillId = p.BillId
+                                JOIN bill_payment p ON b.BillId = p.BillId
                 LEFT JOIN Accounts a ON b.AccountId = a.Id
                 WHERE b.BillPaymentMethod = 'Online'
                   AND b.CreatedAt >= @from AND b.CreatedAt < @to
                   AND b.Status != 'Cancelled'
-                  AND p.TransactionType != 'Return Offset'
+                                    AND p.Type = 'payment'
                 GROUP BY COALESCE(a.AccountTitle, b.OnlinePaymentMethod);
             ";
             cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));

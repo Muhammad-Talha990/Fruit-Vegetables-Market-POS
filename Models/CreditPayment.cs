@@ -20,8 +20,8 @@ namespace GroceryPOS.Models
         /// <summary>Payment method used (Cash, Card, Online, etc.)</summary>
         public string PaymentMethod { get; set; } = "Cash";
 
-        /// <summary>Type of transaction (Sale, Credit Payment, etc.)</summary>
-        public string TransactionType { get; set; } = "Sale";
+        /// <summary>Type of transaction (Payment or Refund).</summary>
+        public string TransactionType { get; set; } = "Payment";
 
         /// <summary>Optional cashier note for this payment.</summary>
         public string? Note { get; set; }
@@ -31,8 +31,8 @@ namespace GroceryPOS.Models
             get
             {
                 if (!string.IsNullOrWhiteSpace(Note)) return Note;
-                if (TransactionType == "Sale") return "initial payment";
-                if (TransactionType == "Credit Payment") return "adjust credits";
+                if (TransactionType == "Payment") return "payment received";
+                if (TransactionType == "Refund") return "cash refunded";
                 return string.Empty;
             }
         }

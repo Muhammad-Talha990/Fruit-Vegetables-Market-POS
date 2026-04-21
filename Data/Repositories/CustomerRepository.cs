@@ -96,17 +96,36 @@ namespace GroceryPOS.Data.Repositories
                    (SELECT COUNT(*) FROM Bills WHERE CustomerId = c.CustomerId) as BillCount,
                    (SELECT MAX(CreatedAt) FROM Bills WHERE CustomerId = c.CustomerId) as LastVisit,
                    (
-                       SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice) + b.TaxAmount - b.DiscountAmount, 0)
-                       FROM Bills b
-                       JOIN BillItems bi ON b.BillId = bi.BillId
-                       WHERE b.CustomerId = c.CustomerId AND b.Status != 'Cancelled'
+                       SELECT COALESCE(SUM(bill_total), 0)
+                       FROM (
+                           SELECT (SUM(bi.Quantity * bi.UnitPrice) + b.TaxAmount - b.DiscountAmount
+                               - COALESCE((SELECT SUM(bri.Quantity * bri.UnitPrice)
+                                       FROM BillReturnItems bri
+                                       JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                       WHERE br.BillId = b.BillId), 0)) as bill_total
+                           FROM Bills b
+                           JOIN BillItems bi ON b.BillId = bi.BillId
+                           WHERE b.CustomerId = c.CustomerId AND b.Status != 'Cancelled'
+                           GROUP BY b.BillId
+                       )
                    ) as TotalAmount,
                    (
-                       SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice) + b.TaxAmount - b.DiscountAmount, 0) - 
-                              COALESCE((SELECT SUM(Amount) FROM Payments WHERE BillId IN (SELECT BillId FROM Bills WHERE CustomerId = c.CustomerId)), 0)
-                       FROM Bills b
-                       JOIN BillItems bi ON b.BillId = bi.BillId
-                       WHERE b.CustomerId = c.CustomerId AND b.Status != 'Cancelled'
+                       SELECT COALESCE(SUM(bill_balance), 0)
+                       FROM (
+                           SELECT b.BillId,
+                                  (
+                                    (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId) 
+                                    + b.TaxAmount - b.DiscountAmount
+                                  )
+                                  - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                                              FROM BillReturnItems bri
+                                              JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                              WHERE br.BillId = b.BillId), 0)
+                                  - COALESCE(b.InitialPayment, 0)
+                                  - COALESCE((SELECT SUM(Amount) FROM bill_payment WHERE BillId = b.BillId AND Type = 'payment'), 0) as bill_balance
+                           FROM Bills b
+                           WHERE b.CustomerId = c.CustomerId AND b.Status != 'Cancelled'
+                       )
                    ) as PendingCredit
             FROM Customers c";
 
@@ -191,14 +210,22 @@ namespace GroceryPOS.Data.Repositories
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT 
-                    (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice) + b.TaxAmount - b.DiscountAmount, 0)
-                     FROM Bills b JOIN BillItems bi ON b.BillId = bi.BillId
-                     WHERE b.CustomerId = @cid AND b.Status != 'Cancelled')
-                    -
-                    (SELECT COALESCE(SUM(p.Amount), 0)
-                     FROM Payments p JOIN Bills b ON p.BillId = b.BillId
-                     WHERE b.CustomerId = @cid AND b.Status != 'Cancelled')";
+                SELECT COALESCE(SUM(bill_balance), 0)
+                FROM (
+                    SELECT b.BillId,
+                           (
+                             (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId) 
+                             + b.TaxAmount - b.DiscountAmount
+                           )
+                           - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                                       FROM BillReturnItems bri
+                                       JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                       WHERE br.BillId = b.BillId), 0)
+                           - COALESCE(b.InitialPayment, 0)
+                           - COALESCE((SELECT SUM(Amount) FROM bill_payment WHERE BillId = b.BillId AND Type = 'payment'), 0) as bill_balance
+                    FROM Bills b
+                    WHERE b.CustomerId = @cid AND b.Status != 'Cancelled'
+                )";
             cmd.Parameters.AddWithValue("@cid", customerId);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }

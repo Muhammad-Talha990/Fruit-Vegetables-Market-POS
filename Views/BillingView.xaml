@@ -227,10 +227,7 @@
                                                             <Grid.Resources>
                                                                 <Style TargetType="TextBlock">
                                                                     <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding PaymentStatus}" Value="Unpaid">
-                                                                            <Setter Property="Foreground" Value="#EF4444"/>
-                                                                        </DataTrigger>
-                                                                        <DataTrigger Binding="{Binding PaymentStatus}" Value="Partial">
+                                                                        <DataTrigger Binding="{Binding PaymentStatus}" Value="PartialPaid">
                                                                             <Setter Property="Foreground" Value="#F59E0B"/>
                                                                         </DataTrigger>
                                                                     </Style.Triggers>

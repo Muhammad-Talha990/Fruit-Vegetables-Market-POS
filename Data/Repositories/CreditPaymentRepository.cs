@@ -47,8 +47,8 @@ namespace GroceryPOS.Data.Repositories
                 using var cmd = conn.CreateCommand();
                 cmd.Transaction = txn;
                 cmd.CommandText = @"
-                    INSERT INTO Payments (BillId, Amount, PaymentMethod, TransactionType, Note, PaidAt)
-                    VALUES (@bid, @amt, 'Cash', 'Credit Payment', @note, @at);
+                    INSERT INTO bill_payment (BillId, Amount, Type, CreatedAt)
+                    VALUES (@bid, @amt, 'payment', @at);
                     SELECT last_insert_rowid();";
                 
                 cmd.Parameters.AddWithValue("@bid", payment.BillId);
@@ -94,12 +94,11 @@ namespace GroceryPOS.Data.Repositories
             var list = new List<CreditPayment>();
             using var conn = DatabaseHelper.GetConnection();
             using var cmd  = conn.CreateCommand();
-            // Filter out 'Return Offset' transactions. We only want real cash/online payments here.
             cmd.CommandText = @"
-                SELECT PaymentId, BillId, Amount, PaidAt, TransactionType
-                FROM Payments
-                WHERE BillId = @bid AND TransactionType != 'Return Offset'
-                ORDER BY PaidAt DESC;";
+                SELECT PaymentId, BillId, Amount, CreatedAt, Type
+                FROM bill_payment
+                WHERE BillId = @bid
+                ORDER BY CreatedAt DESC;";
             cmd.Parameters.AddWithValue("@bid", billId);
 
             using var reader = cmd.ExecuteReader();
@@ -122,7 +121,7 @@ namespace GroceryPOS.Data.Repositories
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd  = conn.CreateCommand();
-            cmd.CommandText = "SELECT COALESCE(SUM(Amount), 0) FROM Payments WHERE BillId = @bid;";
+            cmd.CommandText = "SELECT COALESCE(SUM(Amount), 0) FROM bill_payment WHERE BillId = @bid AND Type = 'payment';";
             cmd.Parameters.AddWithValue("@bid", billId);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }

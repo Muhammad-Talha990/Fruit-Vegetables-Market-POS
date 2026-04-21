@@ -113,7 +113,12 @@ namespace GroceryPOS.Services
                     if (!processedItems.Any())
                         throw new BusinessException("No valid items to return.");
 
-                    double creditToReduce = Math.Min(originalBill.RemainingAmount, totalReturnValue);
+                    // ── Validation: ReturnAmount must NOT exceed TotalAmount ──
+                    if (totalReturnValue > originalBill.GrandTotal + 0.01)
+                        throw new BusinessException($"Return amount (Rs. {totalReturnValue:N2}) exceeds bill total (Rs. {originalBill.GrandTotal:N2}).");
+
+                    double remainingAmount = originalBill.RemainingAmount;
+                    double creditToReduce = Math.Min(remainingAmount, totalReturnValue);
                     double cashRefund = Math.Round(totalReturnValue - creditToReduce, 2);
                     creditToReduce = Math.Round(creditToReduce, 2);
 
@@ -126,9 +131,13 @@ namespace GroceryPOS.Services
                         _returnRepo.InsertReturnItem(returnId, item.BillItemId, item.Qty, item.Price, conn, txn);
                     }
 
-                    // 3. Record Credit Offset if applicable
-                    // [REMOVED]: Return offsets are now handled logically via ReturnedAmount in repository calculation
-                    // to keep Payment table purely for financial flow.
+                    // 3. If return is larger than pending receivable, refund only the surplus in cash.
+                    double cashToRefund = Math.Max(0, Math.Round(totalReturnValue - remainingAmount, 2));
+
+                    if (cashToRefund > 0)
+                    {
+                        InsertPaymentEntry(conn, txn, originalBillId, cashToRefund, "refund");
+                    }
 
                     // 4. Record Ledger Entry (Return clears liability)
                     if (originalBill.CustomerId.HasValue)
@@ -194,6 +203,23 @@ namespace GroceryPOS.Services
                     throw new BusinessException($"Return failed: {ex.Message}", ex);
                 }
             });
+        }
+
+        /// <summary>
+        /// Inserts a single payment entry within a transaction.
+        /// </summary>
+        private void InsertPaymentEntry(SqliteConnection conn, SqliteTransaction txn, int billId, double amount, string type)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.Transaction = txn;
+            cmd.CommandText = @"
+                INSERT INTO bill_payment (BillId, Amount, Type, CreatedAt)
+                VALUES (@bid, @amt, @type, @at);";
+            cmd.Parameters.AddWithValue("@bid", billId);
+            cmd.Parameters.AddWithValue("@amt", Math.Round(amount, 2));
+            cmd.Parameters.AddWithValue("@type", type);
+            cmd.Parameters.AddWithValue("@at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.ExecuteNonQuery();
         }
 
         public int GetRemainingReturnableQuantity(int billId, string productId, int originalQuantity)

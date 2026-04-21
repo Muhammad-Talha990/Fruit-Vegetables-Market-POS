@@ -73,11 +73,14 @@ namespace GroceryPOS.Models
         /// <summary>Total value of items returned (from BillReturns table).</summary>
         public double ReturnedAmount { get; set; }
 
-        /// <summary>Total amount successfully paid (from Payments table, excluding return offsets).</summary>
+        /// <summary>Total net paid against this bill (initial + installments - refunds).</summary>
         public double PaidAmount { get; set; }
 
-        /// <summary>Outstanding balance: GrandTotal - ReturnedAmount - PaidAmount.</summary>
-        public double RemainingAmount => Math.Max(0, Math.Round(GrandTotal - ReturnedAmount - PaidAmount, 2));
+        /// <summary>Outstanding balance after returns and actual payments.</summary>
+        public double RemainingAmount => Math.Max(0, Math.Round(NetTotal - PaidAmount, 2));
+
+        /// <summary>Overpaid amount after returns and payments (customer credit / refund due).</summary>
+        public double CreditDueAmount => Math.Max(0, Math.Round(PaidAmount - NetTotal, 2));
 
         /// <summary>Navigation property for line items.</summary>
         public ObservableCollection<BillDescription> Items { get; set; } = new();
@@ -91,14 +94,14 @@ namespace GroceryPOS.Models
         public DateTime? PrintedAt { get; set; }
         public bool IsPendingPrint => !IsPrinted && Status != "Cancelled";
 
-        public string PaymentStatus => RemainingAmount <= 0 ? "Paid" : (PaidAmount > 0 ? "Partial" : "Unpaid");
+        /// <summary>Strict 2-state status as per user requirements.</summary>
+        public string PaymentStatus => RemainingAmount <= 0.01 ? "Paid" : "PartialPaid";
 
         public string PaymentStatusColor => PaymentStatus switch
         {
-            "Paid"    => "#22C55E",
-            "Partial" => "#F59E0B",
-            "Unpaid"  => "#EF4444",
-            _         => "#94A3B8"
+            "Paid"        => "#22C55E",
+            "PartialPaid" => "#F59E0B",
+            _             => "#94A3B8"
         };
 
         public bool HasPendingCredit => RemainingAmount > 0 && Status != "Cancelled";
@@ -113,6 +116,9 @@ namespace GroceryPOS.Models
 
         /// <summary>Change returned to the customer.</summary>
         public double ChangeGiven { get; set; }
+
+        /// <summary>Amount paid at the time of bill creation (stored in Bills.InitialPayment).</summary>
+        public double InitialPayment { get; set; }
 
         /// <summary>Optional billing address for the customer.</summary>
         public string? BillingAddress { get; set; }

@@ -33,17 +33,19 @@ namespace GroceryPOS.Data.Repositories
         {
             using var cmd = conn.CreateCommand();
             cmd.Transaction = txn;
+            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             cmd.CommandText = @"
                 INSERT INTO BillReturnItems (ReturnId, BillItemId, Quantity, UnitPrice)
                 VALUES (@retId, @biId, @qty, @price);
                 
-                INSERT INTO InventoryLogs (ItemId, QuantityChange, ChangeType)
-                SELECT ItemId, @qty, 'Return' FROM BillItems WHERE BillItemId = @biId;";
+                INSERT INTO InventoryLogs (ItemId, QuantityChange, ChangeType, ReferenceId, ReferenceType, LogDate)
+                SELECT ItemId, @qty, 'Return', @retId, 'Return', @now FROM BillItems WHERE BillItemId = @biId;";
             
             cmd.Parameters.AddWithValue("@retId", returnId);
             cmd.Parameters.AddWithValue("@biId", billItemId);
             cmd.Parameters.AddWithValue("@qty", quantity);
             cmd.Parameters.AddWithValue("@price", unitPrice);
+            cmd.Parameters.AddWithValue("@now", now);
             cmd.ExecuteNonQuery();
         }
 

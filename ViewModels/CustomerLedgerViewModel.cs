@@ -129,8 +129,7 @@ namespace GroceryPOS.ViewModels
 
                 // B. Payments (Initial or Installments)
                 var history = _creditService.GetPaymentHistory(SelectedBill.BillId);
-                double subsequentPaymentsTotal = history.Sum(h => h.AmountPaid);
-                double initialPayment = Math.Round(SelectedBill.PaidAmount - subsequentPaymentsTotal, 2);
+                double initialPayment = Math.Round(SelectedBill.InitialPayment, 2);
 
                 if (initialPayment > 0)
                 {
@@ -144,10 +143,13 @@ namespace GroceryPOS.ViewModels
 
                 foreach (var p in history)
                 {
+                    bool isRefund = string.Equals(p.TransactionType, "Refund", StringComparison.OrdinalIgnoreCase);
                     events.Add(new BillHistoryEvent {
                         Date = p.PaidAt,
-                        Type = "PAYMENT",
-                        Description = string.IsNullOrEmpty(p.Note) ? "adjust credits" : p.Note,
+                        Type = isRefund ? "RETURN" : "PAYMENT",
+                        Description = string.IsNullOrEmpty(p.Note)
+                            ? (isRefund ? "cash refunded" : "adjust credits")
+                            : p.Note,
                         Amount = p.AmountPaid
                     });
                 }
@@ -288,10 +290,13 @@ namespace GroceryPOS.ViewModels
                 foreach (var bill in bills)
                     LedgerEntries.Add(bill);
 
-                // Summary calculations from Bills
-                TotalCredit  = LedgerEntries.Sum(e => e.GrandTotal);
-                TotalPaid    = LedgerEntries.Sum(e => e.PaidAmount);
-                TotalPending = LedgerEntries.Sum(e => e.RemainingAmount);
+                // Summary calculations for CREDIT ledger (not gross sales):
+                // - Credit Given: only the receivable portion after initial checkout payment.
+                // - Pending: current outstanding receivable.
+                // - Paid: settled part of that receivable.
+                TotalCredit = Math.Round(LedgerEntries.Sum(e => Math.Max(0, e.NetTotal - e.InitialPayment)), 2);
+                TotalPending = Math.Round(LedgerEntries.Sum(e => e.RemainingAmount), 2);
+                TotalPaid = Math.Round(Math.Max(0, TotalCredit - TotalPending), 2);
 
                 // Refresh the customer's pending credit too
                 Customer.PendingCredit = TotalPending;

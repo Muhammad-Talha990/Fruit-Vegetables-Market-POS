@@ -17,6 +17,7 @@ namespace GroceryPOS.ViewModels
     {
         private readonly CustomerService _customerService;
         private readonly IStockService _stockService;
+        private readonly Action _onStockChangedHandler;
 
         // ── Collections ──
         public ObservableCollection<Customer> AllCustomers { get; } = new();
@@ -145,9 +146,10 @@ namespace GroceryPOS.ViewModels
         {
             _customerService = customerService;
             _stockService = stockService;
+            _onStockChangedHandler = OnStockChanged;
 
             // Real-time refresh when returns or payments are recorded
-            _stockService.StockChanged += () => Dispatch(LoadCustomers);
+            _stockService.StockChanged += _onStockChangedHandler;
 
             RefreshCommand     = new RelayCommand(_ => LoadCustomers());
             AddCommand         = new RelayCommand(_ => OpenAddDialog());
@@ -357,10 +359,15 @@ namespace GroceryPOS.ViewModels
             OnPropertyChanged(nameof(StatusMessage));
         }
 
+        private void OnStockChanged()
+        {
+            Dispatch(LoadCustomers);
+        }
+
         public override void Dispose()
         {
             if (_stockService != null)
-                _stockService.StockChanged -= () => Dispatch(LoadCustomers);
+                _stockService.StockChanged -= _onStockChangedHandler;
             base.Dispose();
         }
     }
