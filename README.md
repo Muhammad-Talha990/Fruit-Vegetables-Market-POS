@@ -1,68 +1,90 @@
 # GroceryPOS
 
-A desktop Point of Sale (POS) system built for grocery stores, developed with **C# WPF (.NET 8)** and **SQLite**.
+A desktop Point of Sale (POS) application for grocery stores, built with C# WPF (.NET 8) and SQLite.
+
+## Project Description
+
+GroceryPOS is a Windows desktop billing and store-management system designed for daily retail workflows.  
+It supports billing, stock handling, customer credit, returns, reporting, and receipt printing in a single application.
 
 ## Features
 
-- **Billing & Invoicing** — Multi-tab billing, barcode scanning, cash & online payments
-- **Customer Management** — Registered customers with credit tracking, multiple addresses & phone numbers
-- **Credit System** — Partial payments, due amount tracking, customer ledger with full payment history
-- **Product Management** — Add/edit/delete items, cost & sale price tracking, low stock alerts
-- **Stock Management** — Supplier bill recording with image attachments, inventory logs
-- **Returns & Refunds** — Item-level returns with cash refund or credit adjustment
-- **Reports** — Daily sales reports, bill filtering (normal/credit), date range queries
-- **Thermal Printing** — 80mm receipt printing with auto-detect printer, PDF export
-- **Dashboard** — Real-time stats: sales, returns, credit, cash in drawer, online payments
+- Billing and invoicing with barcode support and multiple payment types
+- Customer management with credit tracking and ledger history
+- Product and inventory management with low-stock monitoring
+- Supplier bill entry with attachment support
+- Returns and refund handling (cash or credit adjustment)
+- Sales and operational reports with date-based filtering
+- Thermal receipt printing (80mm) and PDF export
+- Dashboard metrics for sales, returns, credit, and payment split
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| UI | WPF (XAML) |
-| Framework | .NET 8 |
-| Architecture | MVVM |
-| Database | SQLite 3 (Microsoft.Data.Sqlite) |
-| Printing | System.Drawing.Printing |
+- UI: WPF (XAML)
+- Runtime: .NET 8 (Windows)
+- Architecture: MVVM
+- Database: SQLite (`Microsoft.Data.Sqlite`)
+- DI: `Microsoft.Extensions.DependencyInjection`
+- Password Hashing: `BCrypt.Net-Next`
+- Printing: `System.Drawing`
 
-## Project Structure
+## Repository Structure
 
-```
-GroceryPOS/
-├── Models/          # Data models (Bill, Customer, Item, Stock, etc.)
-├── ViewModels/      # MVVM ViewModels
-├── Views/           # WPF XAML views
-│   └── Controls/    # Reusable UI controls
-├── Services/        # Business logic layer
+```text
+GroceryPOS-master/
+├── Converters/
 ├── Data/
-│   ├── Repositories/  # SQLite data access
+│   ├── Repositories/
 │   ├── DatabaseHelper.cs
 │   └── DatabaseInitializer.cs
-├── Converters/      # XAML value converters
-├── Helpers/         # Focus, password, logging helpers
-├── Themes/          # WPF styles and themes
-└── Exceptions/      # Custom exception types
+├── Docs/
+├── Exceptions/
+├── Helpers/
+├── Models/
+├── Services/
+├── Themes/
+├── ViewModels/
+├── Views/
+│   └── Controls/
+├── App.xaml
+├── App.xaml.cs
+├── GroceryPOS.csproj
+└── GroceryPOS-master.sln
 ```
 
-## Getting Started
+## Setup Instructions
 
 ### Prerequisites
 
+- Windows OS (WPF is Windows-only)
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Windows (WPF is Windows-only)
 
-### Build & Run
+### Run Locally
 
 ```bash
+dotnet restore
 dotnet build GroceryPOS-master.sln
 dotnet run --project GroceryPOS.csproj
 ```
 
-The SQLite database is created automatically on first run.
+The SQLite database file is generated automatically on first run.
 
-## Database
+## Database Notes
 
-Normalized 3NF schema with automatic migration via `PRAGMA user_version`. See [DATABASE_DESIGN.md](DATABASE_DESIGN.md) for full documentation.
+- SQLite schema is initialized and migrated in `DatabaseInitializer`
+- Database path is handled by `DatabaseHelper`
+- Full schema and accounting design notes: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
+
+## Delivery / Production Notes
+
+- Keep generated logs and local databases out of version control
+- Do not commit local environment secrets (`.env`, local appsettings overrides)
+- Build in Release mode for client delivery:
+
+```bash
+dotnet publish -c Release -r win-x64 --self-contained false
+```
 
 ## License
 
-This project is for educational and personal use.
+This project is for educational and personal use unless otherwise agreed with the client.

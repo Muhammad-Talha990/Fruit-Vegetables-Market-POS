@@ -574,7 +574,8 @@
 
         <!-- Right: Payment Panel -->
         <Border Grid.Row="1" Grid.Column="1" Style="{DynamicResource CardBorder}" Padding="0">
-                <DockPanel Margin="14" LastChildFill="True">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <DockPanel Margin="14" LastChildFill="False">
                     <TextBlock DockPanel.Dock="Top" Text="💵 Payment Details" FontSize="16" FontWeight="Bold"
                                Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8"/>
 
@@ -717,12 +718,32 @@
 
                     <!-- Status -->
                     <TextBlock DockPanel.Dock="Top" Text="{Binding StatusMessage}" FontSize="12" FontWeight="Medium"
-                               Foreground="{Binding StatusMessage, Converter={StaticResource StatusColorConverter}}" TextWrapping="Wrap" Margin="0,0,0,10"
-                               HorizontalAlignment="Center" TextAlignment="Center"/>
+                               Foreground="{Binding StatusMessage, Converter={StaticResource StatusColorConverter}}" TextWrapping="Wrap" Margin="0,0,0,4"
+                               HorizontalAlignment="Center" TextAlignment="Center"
+                               Visibility="{Binding StatusMessage, Converter={StaticResource StringToVis}}"/>
 
                     <!-- Buttons -->
-                    <Grid DockPanel.Dock="Bottom" Margin="0,4,0,0">
-                        <Button Content="🗑️ Clear Cart" Command="{Binding ClearCartCommand}" Padding="0,12" FontSize="13">
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,0">
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Style="{DynamicResource PrimaryButton}"
+                                    Command="{Binding CompleteSaleCommand}" Padding="0,16" MinHeight="50"
+                                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                                <TextBlock Text="Complete Sale"
+                                           FontSize="15"
+                                           FontWeight="Bold"
+                                           Foreground="White"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </Button>
+                            <Button Grid.Column="2" Content="Preview" Style="{DynamicResource AccentButton}"
+                                    ToolTip="Toggle Bill Preview (F10)"
+                                    Command="{Binding TogglePreviewCommand}" Padding="14,0" FontSize="14" FontWeight="SemiBold" MinHeight="48"/>
+                        </Grid>
+                        <Button Content="🗑️ Clear Cart" Command="{Binding ClearCartCommand}" Padding="0,12" FontSize="13" FontWeight="SemiBold" MinHeight="44">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource DangerButton}">
                                     <Setter Property="Background" Value="#F1F5F9"/>
@@ -735,20 +756,9 @@
                                 </Style>
                             </Button.Style>
                         </Button>
-                    </Grid>
-                    <Grid Margin="0,0,0,0" VerticalAlignment="Bottom">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="8"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Content="✅  Complete Sale" Style="{DynamicResource PrimaryButton}"
-                                Command="{Binding CompleteSaleCommand}" FontSize="15" Padding="0,14"/>
-                        <Button Grid.Column="2" Content="Preview" Style="{DynamicResource AccentButton}"
-                                ToolTip="Toggle Bill Preview (F10)"
-                                Command="{Binding TogglePreviewCommand}" Padding="12,0" FontSize="14"/>
-                    </Grid>
+                    </StackPanel>
                 </DockPanel>
+            </ScrollViewer>
         </Border>
 
         <!-- Right Column 2: Virtual Receipt Preview (Professional Drawer Look) -->

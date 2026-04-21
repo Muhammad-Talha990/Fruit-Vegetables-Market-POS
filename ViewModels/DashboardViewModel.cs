@@ -68,6 +68,7 @@ namespace GroceryPOS.ViewModels
         public ICommand RefreshCommand { get; }
 
         private readonly System.Windows.Threading.DispatcherTimer _clockTimer;
+        private DateTime _activeDashboardDate;
         public string CurrentTime => DateTime.Now.ToString("hh:mm:ss tt");
 
         public DashboardViewModel(AuthService authService, ItemService itemService, BillService billService, IStockService stockService)
@@ -79,17 +80,32 @@ namespace GroceryPOS.ViewModels
             var hour = DateTime.Now.Hour;
             var timeGreeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
             Greeting = $"{timeGreeting}, {authService.CurrentUser?.FullName ?? "User"}!";
+            _activeDashboardDate = DateTime.Now.Date;
 
             RefreshCommand = new RelayCommand(LoadData);
 
             // Live clock
             _clockTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _clockTimer.Tick += (s, e) => OnPropertyChanged(nameof(CurrentTime));
+            _clockTimer.Tick += (s, e) =>
+            {
+                OnPropertyChanged(nameof(CurrentTime));
+                RefreshForNewDayIfNeeded();
+            };
             _clockTimer.Start();
 
             // Real-time updates
             _stockService.StockChanged += LoadData;
 
+            LoadData();
+        }
+
+        private void RefreshForNewDayIfNeeded()
+        {
+            var currentDate = DateTime.Now.Date;
+            if (currentDate == _activeDashboardDate)
+                return;
+
+            _activeDashboardDate = currentDate;
             LoadData();
         }
 

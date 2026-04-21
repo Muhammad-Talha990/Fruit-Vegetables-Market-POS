@@ -1,4 +1,5 @@
-## [Dd]ebug/
+# Build output
+[Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
@@ -10,10 +11,10 @@ x86/
 bld/
 [Bb]in/
 [Oo]bj/
-[Ll]og/
-[Ll]ogs/
+dist/
+out/
 
-# Visual Studio files
+# IDE/editor state
 .vs/
 .vscode/
 *.suo
@@ -21,30 +22,32 @@ bld/
 *.userosscache
 *.sln.docstates
 
-# Database files
-*.db
-*.db-shm
-*.db-wal
+# Package folders
+node_modules/
 
 # Logs and temporary files
 *.log
-error.txt
-run_error.txt
-build_errors.txt
-build_output.txt
-build.log
-build2.log
-build_error_cleanup.txt
-build_final_verification.txt
-build_output_2.txt
-build_output_2_utf8.txt
-build_output_utf8.txt
-build_result.txt
-final_build_errors.txt
-full_build_output.txt
-readable_errors.txt
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
 
-# .NET Specific
+# Runtime and local database files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Local app data and secrets
+appsettings.Development.json
+appsettings.Local.json
+*.secret.json
+.env
+.env.*
+
+# .NET generated artifacts
 *.dll
 *.exe
 *.pdb

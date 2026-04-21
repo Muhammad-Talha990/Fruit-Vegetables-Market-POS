@@ -510,7 +510,14 @@ namespace GroceryPOS.Data.Repositories
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM Bills WHERE date(CreatedAt, 'localtime') = date('now', 'localtime');";
+            var startOfDay = DateTime.Now.Date;
+            var startOfNextDay = startOfDay.AddDays(1);
+            cmd.CommandText = @"
+                SELECT COUNT(*) FROM Bills
+                WHERE CreatedAt >= @from AND CreatedAt < @to
+                  AND Status != 'Cancelled';";
+            cmd.Parameters.AddWithValue("@from", startOfDay.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@to", startOfNextDay.ToString("yyyy-MM-dd HH:mm:ss"));
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
 

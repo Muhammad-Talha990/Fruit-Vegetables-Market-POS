@@ -113,16 +113,33 @@ namespace GroceryPOS.Data.Repositories
                        SELECT COALESCE(SUM(bill_balance), 0)
                        FROM (
                            SELECT b.BillId,
-                                  (
-                                    (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId) 
-                                    + b.TaxAmount - b.DiscountAmount
-                                  )
-                                  - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
-                                              FROM BillReturnItems bri
-                                              JOIN BillReturns br ON bri.ReturnId = br.ReturnId
-                                              WHERE br.BillId = b.BillId), 0)
-                                  - COALESCE(b.InitialPayment, 0)
-                                  - COALESCE((SELECT SUM(Amount) FROM bill_payment WHERE BillId = b.BillId AND Type = 'payment'), 0) as bill_balance
+                                  CASE
+                                      WHEN (
+                                        (
+                                          (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId)
+                                          + COALESCE(b.TaxAmount, 0) - COALESCE(b.DiscountAmount, 0)
+                                        )
+                                        - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                                                    FROM BillReturnItems bri
+                                                    JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                                    WHERE br.BillId = b.BillId), 0)
+                                        - COALESCE(b.InitialPayment, 0)
+                                        - COALESCE((SELECT SUM(Amount) FROM bill_payment WHERE BillId = b.BillId AND Type = 'payment'), 0)
+                                      ) > 0
+                                      THEN (
+                                        (
+                                          (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId)
+                                          + COALESCE(b.TaxAmount, 0) - COALESCE(b.DiscountAmount, 0)
+                                        )
+                                        - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                                                    FROM BillReturnItems bri
+                                                    JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                                    WHERE br.BillId = b.BillId), 0)
+                                        - COALESCE(b.InitialPayment, 0)
+                                        - COALESCE((SELECT SUM(Amount) FROM bill_payment WHERE BillId = b.BillId AND Type = 'payment'), 0)
+                                      )
+                                      ELSE 0
+                                  END as bill_balance
                            FROM Bills b
                            WHERE b.CustomerId = c.CustomerId AND b.Status != 'Cancelled'
                        )
@@ -213,16 +230,33 @@ namespace GroceryPOS.Data.Repositories
                 SELECT COALESCE(SUM(bill_balance), 0)
                 FROM (
                     SELECT b.BillId,
-                           (
-                             (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId) 
-                             + b.TaxAmount - b.DiscountAmount
-                           )
-                           - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
-                                       FROM BillReturnItems bri
-                                       JOIN BillReturns br ON bri.ReturnId = br.ReturnId
-                                       WHERE br.BillId = b.BillId), 0)
-                           - COALESCE(b.InitialPayment, 0)
-                           - COALESCE((SELECT SUM(Amount) FROM bill_payment WHERE BillId = b.BillId AND Type = 'payment'), 0) as bill_balance
+                           CASE
+                               WHEN (
+                                 (
+                                   (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId)
+                                   + COALESCE(b.TaxAmount, 0) - COALESCE(b.DiscountAmount, 0)
+                                 )
+                                 - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                                             FROM BillReturnItems bri
+                                             JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                             WHERE br.BillId = b.BillId), 0)
+                                 - COALESCE(b.InitialPayment, 0)
+                                 - COALESCE((SELECT SUM(Amount) FROM bill_payment WHERE BillId = b.BillId AND Type = 'payment'), 0)
+                               ) > 0
+                               THEN (
+                                 (
+                                   (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId)
+                                   + COALESCE(b.TaxAmount, 0) - COALESCE(b.DiscountAmount, 0)
+                                 )
+                                 - COALESCE((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                                             FROM BillReturnItems bri
+                                             JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                                             WHERE br.BillId = b.BillId), 0)
+                                 - COALESCE(b.InitialPayment, 0)
+                                 - COALESCE((SELECT SUM(Amount) FROM bill_payment WHERE BillId = b.BillId AND Type = 'payment'), 0)
+                               )
+                               ELSE 0
+                           END as bill_balance
                     FROM Bills b
                     WHERE b.CustomerId = @cid AND b.Status != 'Cancelled'
                 )";
