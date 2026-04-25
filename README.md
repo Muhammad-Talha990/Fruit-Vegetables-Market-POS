@@ -1,5 +1,103 @@
 # GroceryPOS
 
+Point-of-sale (POS) desktop application for grocery stores — WPF (.NET) sample.
+
+## Description
+
+GroceryPOS is a Windows desktop application (WPF) that manages billing, inventory, customer credit ledgers, returns, and reports for a small retail grocery store.
+
+## Features
+
+- Billing and invoice printing
+- Customer ledger and credit management
+- Stock and inventory management
+- Returns and return-audit groups
+- Reports and printing
+
+## Tech Stack
+
+- .NET (WPF) — C#
+- SQLite (embedded) via DatabaseHelper
+- MVVM architecture
+
+## Getting Started
+
+Prerequisites:
+
+- .NET SDK (recommended 6.0 / 7.0 or the version used in the project)
+- Visual Studio 2022+ (or VS Code with C# extension)
+
+Install & run:
+
+```powershell
+dotnet restore
+dotnet build
+dotnet run --project GroceryPOS.csproj
+```
+
+If using Visual Studio, open `GroceryPOS-master.sln` and run the project.
+
+## Configuration & Secrets
+
+- Do not commit secrets (API keys, DB credentials) to the repository. Use environment variables or a `.env` file that is ignored by git.
+- Example environment usage (pseudo):
+
+```powershell
+# set an env var for local run
+$env:MY_APP_CONN = "Data Source=local.db"
+```
+
+## Database
+
+- The repo includes SQL reset scripts: `reset_database_clean.sql`, `reset_transactional_data.sql`.
+- Back up your DB before running reset scripts.
+
+## Screenshots
+
+Placeholder for screenshots — add images to `/Docs/screenshots` and reference them here.
+
+## License
+
+Add your license here (e.g., MIT). Create a `LICENSE` file at repository root.
+
+## Contributing
+
+- Follow the code style used across the repo.
+- Open issues for bugs and feature requests.
+
+## Cleaning up tracked build files (recommended commands)
+
+To stop tracking `bin/` and `obj/` (safe, local files remain):
+
+```bash
+git rm -r --cached bin obj Debug Release
+git add .gitignore
+git commit -m "chore: ignore build artifacts"
+```
+
+If you accidentally committed secrets, consider using `git filter-repo` or the `BFG Repo-Cleaner` to purge sensitive history. See the notes below.
+
+## Notes on removing secrets from history
+
+- BFG example (faster, simpler):
+
+```bash
+# remove a file from history
+bfg --delete-files .env
+# or replace a secret value
+bfg --replace-text replacements.txt
+git reflog expire --expire=now --all && git gc --prune=now --aggressive
+```
+
+- `git filter-repo` (recommended modern tool):
+
+```bash
+git filter-repo --invert-paths --paths .env
+```
+
+Be careful: rewriting history requires force-pushing and coordination with collaborators.
+# GroceryPOS
+
 A desktop Point of Sale (POS) application for grocery stores, built with C# WPF (.NET 8) and SQLite.
 
 ## Project Description

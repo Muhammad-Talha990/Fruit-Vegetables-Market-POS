@@ -140,6 +140,28 @@ namespace GroceryPOS.Models
             set => SetProperty(ref _isBillDetailOpen, value);
         }
 
+        // ── Payment Method for History Payment ──
+        private string _selectedHistoryPaymentMethod = "Cash";
+        public string SelectedHistoryPaymentMethod
+        {
+            get => _selectedHistoryPaymentMethod;
+            set => SetProperty(ref _selectedHistoryPaymentMethod, value);
+        }
+
+        private Account? _selectedHistoryAccount;
+        public Account? SelectedHistoryAccount
+        {
+            get => _selectedHistoryAccount;
+            set => SetProperty(ref _selectedHistoryAccount, value);
+        }
+
+        private string? _selectedHistoryOnlineMethod;
+        public string? SelectedHistoryOnlineMethod
+        {
+            get => _selectedHistoryOnlineMethod;
+            set => SetProperty(ref _selectedHistoryOnlineMethod, value);
+        }
+
         public int? LoadedHistoryBillId { get; set; }
     }
 }

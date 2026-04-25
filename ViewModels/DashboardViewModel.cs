@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows.Input;
 using GroceryPOS.Models;
 using GroceryPOS.Services;
+using GroceryPOS.Helpers;
 
 namespace GroceryPOS.ViewModels
 {
@@ -16,6 +17,7 @@ namespace GroceryPOS.ViewModels
         private readonly ItemService _itemService;
         private readonly BillService _billService;
         private readonly IStockService _stockService;
+        private readonly AuthService _authService;
 
         private double _todaySales;
         public double TodaySales { get => _todaySales; set => SetProperty(ref _todaySales, value); }
@@ -73,6 +75,7 @@ namespace GroceryPOS.ViewModels
 
         public DashboardViewModel(AuthService authService, ItemService itemService, BillService billService, IStockService stockService)
         {
+            _authService = authService;
             _itemService = itemService;
             _billService = billService;
             _stockService = stockService;
@@ -111,21 +114,26 @@ namespace GroceryPOS.ViewModels
 
         private void LoadData()
         {
+            try
+            {
+                // Refresh greeting to ensure it matches current user after login
+                RefreshGreeting();
+
             TodaySales = _billService.GetTodayTotal();
             TodaySaleCount = _billService.GetTodayBillCount();
             TodayCredit = _billService.GetTodayTotalCredit();
             TodaySalesCash = _billService.GetTodayTotalCash();
             TodayRecoveredCredit = _billService.GetTodayRecoveredCredit();
             TodayCashRefunds = _billService.GetTodayCashRefunded();
-            // TodaySalesCash now includes refunds (negative payments), so we don't subtract them again here.
-            TodayCashInHand = TodaySalesCash + TodayRecoveredCredit;
+            // Cash in drawer already includes direct sales cash + recovered credit cash - cash refunds.
+            TodayCashInHand = _billService.GetTodayCashInDrawer();
 
             TodayCashInDrawer = _billService.GetTodayCashInDrawer();
             TodayOnlinePayments = _billService.GetTodayOnlinePayments();
 
             TodayReturns = _billService.GetTodayReturnsTotal();
             TodayNetSales = _billService.GetTodayNetSales();
-            TodayCash = TodaySalesCash + TodayRecoveredCredit;
+            TodayCash = TodayCashInHand;
             TotalProducts = _itemService.GetTotalItemCount();
             LowStockCount = _stockService.GetLowStockCount();
 
@@ -139,6 +147,19 @@ namespace GroceryPOS.ViewModels
                 foreach (var item in _stockService.GetLowStockItems().Take(10))
                     LowStockItems.Add(item);
             });
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Dashboard failed to load data", ex);
+                // Fail gracefully: UI will show empty lists and zeroed counters
+            }
+        }
+
+        private void RefreshGreeting()
+        {
+            var hour = DateTime.Now.Hour;
+            var timeGreeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+            Greeting = $"{timeGreeting}, {_authService.CurrentUser?.FullName ?? "User"}!";
         }
         public override void Dispose()
         {

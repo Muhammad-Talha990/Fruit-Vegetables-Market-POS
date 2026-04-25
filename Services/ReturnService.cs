@@ -142,17 +142,15 @@ namespace GroceryPOS.Services
                     // 4. Record Ledger Entry (Return clears liability)
                     if (originalBill.CustomerId.HasValue)
                     {
-                        string returnInvoiceNum = returnId.ToString("D5");
-                        _ledgerRepo.AddEntry(new CustomerLedgerEntry
-                        {
-                            CustomerId = originalBill.CustomerId.Value,
-                            Type = "RETURN",
-                            ReferenceId = returnInvoiceNum,
-                            Description = $"Items Returned (Ref: Inv #{originalBill.InvoiceNumber})",
-                            Debit = 0,
-                            Credit = totalReturnValue,
-                            EntryDate = DateTime.Now
-                        }, conn, txn);
+                        _ledgerRepo.AppendReturnEntry(
+                            originalBill.CustomerId.Value,
+                            originalBillId,
+                            returnId,
+                            totalReturnValue,
+                            $"Items Returned (Ref: Inv #{originalBill.InvoiceNumber})",
+                            DateTime.Now,
+                            conn,
+                            txn);
                     }
 
                     txn.Commit();

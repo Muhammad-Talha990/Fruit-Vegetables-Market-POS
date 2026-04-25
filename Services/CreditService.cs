@@ -67,8 +67,9 @@ namespace GroceryPOS.Services
         /// <param name="billId">The bill being paid.</param>
         /// <param name="amount">Payment amount (must be > 0 and ≤ remaining).</param>
         /// <param name="note">Optional cashier note.</param>
+        /// <param name="paymentMethod">Payment method: 'Cash' (default) or 'Online'.</param>
         /// <returns>Updated bill state after payment.</returns>
-        public Bill RecordPayment(int billId, double amount, string? note = null)
+        public Bill RecordPayment(int billId, double amount, string? note = null, string paymentMethod = "Cash")
         {
             if (amount <= 0)
                 throw new ArgumentException("Payment amount must be greater than zero.");
@@ -88,7 +89,8 @@ namespace GroceryPOS.Services
             {
                 BillId     = billId,
                 AmountPaid = Math.Round(amount, 2),
-                Note       = note
+                Note       = note,
+                PaymentMethod = paymentMethod
             };
 
             _creditRepo.RecordPayment(payment);

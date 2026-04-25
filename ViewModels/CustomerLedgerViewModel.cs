@@ -16,26 +16,34 @@ namespace GroceryPOS.ViewModels
     /// </summary>
     public class CustomerLedgerViewModel : BaseViewModel
     {
-        // ── Helper model for the combined timeline ──
-        public class BillHistoryEvent
+        public class BillAuditTimelineEntry
         {
+            public int StepNo { get; set; }
             public DateTime Date { get; set; }
-            public string Type { get; set; } = "PAYMENT"; // SALE, PAYMENT, RETURN
-            public string Description { get; set; } = string.Empty;
+            public string Type { get; set; } = string.Empty;
+            public string Method { get; set; } = string.Empty;
             public double Amount { get; set; }
-            public string TypeColor => Type switch {
-                "SALE" => "#3B82F6",
-                "PAYMENT" => "#22C55E",
-                "RETURN" => "#F59E0B",
-                _ => "#94A3B8"
-            };
+            public string Note { get; set; } = string.Empty;
+            public bool IsReturn { get; set; }
+            public bool IsRefund { get; set; }
+            public bool ShowRegularAmount => !IsReturn && !IsRefund;
+            public int SortOrder { get; set; }
+            public int SourceOrderId { get; set; }
+            public ReturnAuditGroup? ReturnGroup { get; set; }
+            public double BalanceImpact { get; set; }
+            public double RemainingBalanceAfter { get; set; }
+            public string ReturnHoverDetail { get; set; } = string.Empty;
+            public string RemainingBalanceLabel => $"Rs. {RemainingBalanceAfter:N0}";
+            public string DisplayAmount => IsReturn ? $"-Rs. {Amount:N0}" : $"Rs. {Amount:N0}";
         }
+
         private readonly CreditService _creditService;
         private readonly CustomerService _customerService;
         private readonly PrintService _printService;
         private readonly AuthService _authService;
         private readonly IStockService _stockService;
         private readonly IReturnService _returnService;
+        private readonly AccountService _accountService;
         private readonly CustomerLedgerRepository _ledgerRepo = new();
         private readonly BillRepository _billRepo = new();
 
@@ -90,95 +98,31 @@ namespace GroceryPOS.ViewModels
                 {
                     OnPropertyChanged(nameof(HasSelectedBill));
                     OnPropertyChanged(nameof(SelectedBillRemaining));
-                    LoadBillTimeline();
                 }
             }
         }
         public bool HasSelectedBill => SelectedBill != null;
         public double SelectedBillRemaining => SelectedBill?.RemainingAmount ?? 0;
 
+        public ObservableCollection<BillAuditTimelineEntry> BillAuditTimeline { get; } = new();
+
+        private ReturnAuditGroup? _selectedReturnDetail;
+        public ReturnAuditGroup? SelectedReturnDetail
+        {
+            get => _selectedReturnDetail;
+            set
+            {
+                if (SetProperty(ref _selectedReturnDetail, value))
+                    OnPropertyChanged(nameof(IsReturnDetailOpen));
+            }
+        }
+        public bool IsReturnDetailOpen => SelectedReturnDetail != null;
 
         private bool _isBillDetailOpen;
         public bool IsBillDetailOpen
         {
             get => _isBillDetailOpen;
             set => SetProperty(ref _isBillDetailOpen, value);
-        }
-
-        public ObservableCollection<BillHistoryEvent> Timeline { get; } = new();
-
-        private void LoadBillTimeline()
-        {
-            Timeline.Clear();
-            if (SelectedBill == null) return;
-
-            try
-            {
-                // 1. Deep load details (Items, Payments, Returns)
-                _billRepo.LoadAuditLogs(SelectedBill);
-
-                var events = new List<BillHistoryEvent>();
-
-                // A. The original SALE
-                events.Add(new BillHistoryEvent {
-                    Date = SelectedBill.BillDateTime,
-                    Type = "SALE",
-                    Description = $"Invoice #{SelectedBill.InvoiceNumber} created",
-                    Amount = SelectedBill.GrandTotal
-                });
-
-                // B. Payments (Initial or Installments)
-                var history = _creditService.GetPaymentHistory(SelectedBill.BillId);
-                double initialPayment = Math.Round(SelectedBill.InitialPayment, 2);
-
-                if (initialPayment > 0)
-                {
-                    events.Add(new BillHistoryEvent {
-                        Date = SelectedBill.BillDateTime,
-                        Type = "PAYMENT",
-                        Description = "initial payment",
-                        Amount = initialPayment
-                    });
-                }
-
-                foreach (var p in history)
-                {
-                    bool isRefund = string.Equals(p.TransactionType, "Refund", StringComparison.OrdinalIgnoreCase);
-                    events.Add(new BillHistoryEvent {
-                        Date = p.PaidAt,
-                        Type = isRefund ? "RETURN" : "PAYMENT",
-                        Description = string.IsNullOrEmpty(p.Note)
-                            ? (isRefund ? "cash refunded" : "adjust credits")
-                            : p.Note,
-                        Amount = p.AmountPaid
-                    });
-                }
-
-                // C. Returns
-                foreach (var ret in SelectedBill.ReturnLogs)
-                {
-                    // For returns, we want to show the TOTAL VALUE of returned items, 
-                    // not just the cash refund (which is often 0 for credit bills).
-                    double returnTotalValue = ret.Items.Sum(i => i.TotalPrice);
-
-                    events.Add(new BillHistoryEvent {
-                        Date = ret.ReturnedAt,
-                        Type = "RETURN",
-                        Description = "item returned",
-                        Amount = returnTotalValue
-                    });
-                }
-
-                // Sort everything chronologically and add to UI
-                foreach (var ev in events.OrderBy(x => x.Date))
-                {
-                    Timeline.Add(ev);
-                }
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Error("CustomerLedgerViewModel.LoadBillTimeline failed", ex);
-            }
         }
 
         private string _paymentAmountText = string.Empty;
@@ -202,6 +146,50 @@ namespace GroceryPOS.ViewModels
             set => SetProperty(ref _paymentError, value);
         }
 
+        // ── Payment Method Selection ──
+        public List<string> PaymentMethods { get; } = new() { "Cash", "Online" };
+
+        private string _selectedPaymentMethod = "Cash";
+        public string SelectedPaymentMethod
+        {
+            get => _selectedPaymentMethod;
+            set
+            {
+                if (SetProperty(ref _selectedPaymentMethod, value))
+                {
+                    OnPropertyChanged(nameof(IsCashPayment));
+                    OnPropertyChanged(nameof(IsOnlinePayment));
+                }
+            }
+        }
+
+        public bool IsCashPayment => SelectedPaymentMethod == "Cash";
+        public bool IsOnlinePayment => SelectedPaymentMethod == "Online";
+
+        // ── Online Payment Accounts ──
+        private ObservableCollection<Account> _activeAccounts = new();
+        public ObservableCollection<Account> ActiveAccounts
+        {
+            get => _activeAccounts;
+            set => SetProperty(ref _activeAccounts, value);
+        }
+
+        private Account? _selectedAccount;
+        public Account? SelectedAccount
+        {
+            get => _selectedAccount;
+            set => SetProperty(ref _selectedAccount, value);
+        }
+
+        public List<string> OnlinePaymentMethods { get; } = new() { "Easypaisa", "JazzCash", "Bank Transfer" };
+
+        private string? _selectedOnlineMethod;
+        public string? SelectedOnlineMethod
+        {
+            get => _selectedOnlineMethod;
+            set => SetProperty(ref _selectedOnlineMethod, value);
+        }
+
         private string _statusMessage = string.Empty;
         public string StatusMessage
         {
@@ -217,6 +205,9 @@ namespace GroceryPOS.ViewModels
         public ICommand PayFullRemainingCommand { get; }
         public ICommand ViewBillCommand { get; }
         public ICommand PrintBillCommand { get; }
+        public ICommand PrintLedgerCommand { get; }
+        public ICommand OpenReturnDetailCommand { get; }
+        public ICommand CloseReturnDetailCommand { get; }
         public ICommand CloseBillDetailCommand { get; }
         public ICommand CloseSidebarCommand { get; }
 
@@ -224,7 +215,7 @@ namespace GroceryPOS.ViewModels
         public event Action? GoBackRequested;
         public ICommand GoBackCommand { get; }
 
-        public CustomerLedgerViewModel(CreditService creditService, CustomerService customerService, PrintService printService, AuthService authService, IStockService stockService, IReturnService returnService)
+        public CustomerLedgerViewModel(CreditService creditService, CustomerService customerService, PrintService printService, AuthService authService, IStockService stockService, IReturnService returnService, AccountService accountService)
         {
             _creditService  = creditService;
             _customerService = customerService;
@@ -232,6 +223,7 @@ namespace GroceryPOS.ViewModels
             _authService = authService;
             _stockService = stockService;
             _returnService = returnService;
+            _accountService = accountService;
 
             // Real-time refresh whenever stock/billing events occur
             _stockService.StockChanged += OnDataChanged;
@@ -243,9 +235,29 @@ namespace GroceryPOS.ViewModels
             PayFullRemainingCommand = new RelayCommand(_ => PayFullRemaining());
             ViewBillCommand         = new RelayCommand(obj => ViewBill(obj as Bill));
             PrintBillCommand        = new RelayCommand(obj => PrintBill(obj as Bill));
+            PrintLedgerCommand      = new RelayCommand(_ => PrintLedger());
+            OpenReturnDetailCommand = new RelayCommand(obj => OpenReturnDetail(obj as BillAuditTimelineEntry));
+            CloseReturnDetailCommand= new RelayCommand(_ => SelectedReturnDetail = null);
             CloseBillDetailCommand  = new RelayCommand(_ => CloseBillDetail());
             CloseSidebarCommand     = new RelayCommand(_ => CloseSidebar());
             GoBackCommand           = new RelayCommand(_ => GoBackRequested?.Invoke());
+
+            LoadActiveAccounts();
+        }
+
+        private void LoadActiveAccounts()
+        {
+            try
+            {
+                var accounts = _accountService.GetActiveAccounts();
+                ActiveAccounts = new ObservableCollection<Account>(accounts);
+                if (ActiveAccounts.Any())
+                    SelectedAccount = ActiveAccounts.First();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Failed to load active accounts", ex);
+            }
         }
 
         // ────────────────────────────────────────────
@@ -261,7 +273,6 @@ namespace GroceryPOS.ViewModels
                 IsPaymentPanelOpen = false;
                 IsBillDetailOpen = false;
                 StatusMessage = string.Empty;
-
                 Customer = _customerService.GetCustomerById(customerId);
                 if (Customer == null)
                 {
@@ -291,9 +302,6 @@ namespace GroceryPOS.ViewModels
                     LedgerEntries.Add(bill);
 
                 // Summary calculations for CREDIT ledger (not gross sales):
-                // - Credit Given: only the receivable portion after initial checkout payment.
-                // - Pending: current outstanding receivable.
-                // - Paid: settled part of that receivable.
                 TotalCredit = Math.Round(LedgerEntries.Sum(e => Math.Max(0, e.NetTotal - e.InitialPayment)), 2);
                 TotalPending = Math.Round(LedgerEntries.Sum(e => e.RemainingAmount), 2);
                 TotalPaid = Math.Round(Math.Max(0, TotalCredit - TotalPending), 2);
@@ -304,6 +312,28 @@ namespace GroceryPOS.ViewModels
                 OnPropertyChanged(nameof(TotalPaid));
                 OnPropertyChanged(nameof(TotalCredit));
                 OnPropertyChanged(nameof(Customer));
+
+                var snapshot = _ledgerRepo.GetIntegritySnapshot(Customer.CustomerId);
+                if (Math.Abs(snapshot.Drift) > 0.01)
+                {
+                    StatusMessage = $"⚠ Ledger drift detected: Rs. {snapshot.Drift:N2}. Rebuilding running balances...";
+                    _ledgerRepo.RebuildRunningBalances(Customer.CustomerId);
+                    var refreshedBills = _billRepo.GetBillsByCustomerId(Customer.CustomerId);
+                    LedgerEntries.Clear();
+                    foreach (var bill in refreshedBills)
+                        LedgerEntries.Add(bill);
+
+                    TotalCredit = Math.Round(LedgerEntries.Sum(e => Math.Max(0, e.NetTotal - e.InitialPayment)), 2);
+                    TotalPending = Math.Round(LedgerEntries.Sum(e => e.RemainingAmount), 2);
+                    TotalPaid = Math.Round(Math.Max(0, TotalCredit - TotalPending), 2);
+                    Customer.PendingCredit = TotalPending;
+
+                    OnPropertyChanged(nameof(TotalPending));
+                    OnPropertyChanged(nameof(TotalPaid));
+                    OnPropertyChanged(nameof(TotalCredit));
+                    OnPropertyChanged(nameof(Customer));
+                    StatusMessage = "Ledger audit recalculated successfully.";
+                }
             }
             catch (Exception ex)
             {
@@ -346,6 +376,10 @@ namespace GroceryPOS.ViewModels
             IsPaymentPanelOpen = false;
             PaymentAmountText  = string.Empty;
             PaymentError       = string.Empty;
+            PaymentNote        = string.Empty;
+            SelectedPaymentMethod = "Cash";
+            SelectedOnlineMethod = null;
+            SelectedAccount = ActiveAccounts.FirstOrDefault();
         }
 
         private void PayFullRemaining()
@@ -372,11 +406,17 @@ namespace GroceryPOS.ViewModels
                     return;
                 }
 
+                if (IsOnlinePayment && SelectedAccount == null)
+                {
+                    PaymentError = "Please select a payment account for online payment.";
+                    return;
+                }
+
                 // Capture details before the service call, as it triggers a refresh that nulls SelectedBill
                 string invoiceNumber = SelectedBill.InvoiceNumber;
                 int billId = SelectedBill.BillId;
 
-                var updatedBill = _creditService.RecordPayment(SelectedBill.BillId, amount, PaymentNote);
+                var updatedBill = _creditService.RecordPayment(SelectedBill.BillId, amount, PaymentNote, SelectedPaymentMethod);
 
                 // Print payment receipt
                 try
@@ -389,7 +429,8 @@ namespace GroceryPOS.ViewModels
                     AppLogger.Error("Payment receipt print failed (Ledger)", pex);
                 }
 
-                StatusMessage = $"✓ Payment of Rs. {amount:N2} recorded successfully for Bill #{invoiceNumber}.";
+                string methodDisplay = IsOnlinePayment ? $"{SelectedPaymentMethod} ({SelectedAccount?.DisplayName})" : SelectedPaymentMethod;
+                StatusMessage = $"✓ Payment of Rs. {amount:N2} ({methodDisplay}) recorded successfully for Bill #{invoiceNumber}.";
                 
                 // Real-time UI Sync:
                 // 1. Refresh the grid and total summaries
@@ -401,8 +442,11 @@ namespace GroceryPOS.ViewModels
                 {
                     refreshedBill.Customer = Customer;
                     SelectedBill = refreshedBill;
-                    LoadBillTimeline(); // Refresh chronological timeline in sidebar
                 }
+
+                // Keep user informed with a popup confirmation
+                MessageBox.Show(StatusMessage, "Payment Recorded", MessageBoxButton.OK, MessageBoxImage.Information);
+                OnPropertyChanged(nameof(StatusMessage));
 
                 ClosePaymentPanel();
             }
@@ -421,6 +465,8 @@ namespace GroceryPOS.ViewModels
                 // Deep load Audit Logs (Items, Payments, Returns)
                 _billRepo.LoadAuditLogs(bill);
                 SelectedBill = bill;
+                BuildBillAuditTimeline(bill);
+                SelectedReturnDetail = null;
                 IsBillDetailOpen = true;
             }
             catch (Exception ex)
@@ -449,14 +495,173 @@ namespace GroceryPOS.ViewModels
             }
         }
 
+        private void PrintLedger()
+        {
+            if (Customer == null)
+            {
+                ShowPopupError("No ledger entries found to print.");
+                return;
+            }
+
+            var timeline = _ledgerRepo.GetLedgerTimeline(Customer.CustomerId);
+            if (timeline.Count == 0)
+            {
+                ShowPopupError("No ledger entries found to print.");
+                return;
+            }
+
+            var ok = _printService.PrintCustomerLedgerStatement(Customer, timeline, null, null);
+            if (!ok)
+            {
+                ShowPopupError("Failed to print customer ledger statement.");
+            }
+        }
+
         private void CloseBillDetail()
         {
             IsBillDetailOpen = false;
+            SelectedReturnDetail = null;
+            BillAuditTimeline.Clear();
         }
 
         private void CloseSidebar()
         {
             SelectedBill = null;
+        }
+
+        private void BuildBillAuditTimeline(Bill bill)
+        {
+            BillAuditTimeline.Clear();
+            // Start from original bill total, then apply each timeline event in sequence.
+            // This keeps row-1 (sale creation) balance accurate before returns.
+            double runningPending = Math.Max(0, bill.GrandTotal);
+
+            foreach (var payment in bill.PaymentLogs)
+            {
+                bool isRefund = string.Equals(payment.TransactionType, "Refund", StringComparison.OrdinalIgnoreCase);
+                if (isRefund)
+                {
+                    // Refund is now represented inside the RETURN row note to avoid duplicate rows.
+                    continue;
+                }
+                BillAuditTimeline.Add(new BillAuditTimelineEntry
+                {
+                    Date = payment.PaidAt,
+                    Type = string.Equals(payment.TransactionType, "Sale", StringComparison.OrdinalIgnoreCase) ? "Sale Created" : "Payment",
+                    Method = string.IsNullOrWhiteSpace(payment.PaymentMethod) ? "Cash" : payment.PaymentMethod,
+                    Amount = Math.Abs(payment.AmountPaid),
+                    Note = BuildPaymentNote(payment, bill),
+                    IsReturn = false, // keep refund as cash detail row
+                    IsRefund = isRefund,
+                    SortOrder = isRefund ? 2 : 3,
+                    SourceOrderId = payment.PaymentId,
+                    ReturnGroup = null,
+                    BalanceImpact = Math.Abs(payment.AmountPaid)
+                });
+            }
+
+            foreach (var ret in bill.ReturnLogs)
+            {
+                var returnAmount = ret.Items.Sum(i => i.TotalPrice);
+                BillAuditTimeline.Add(new BillAuditTimelineEntry
+                {
+                    Date = ret.ReturnedAt,
+                    Type = "Return",
+                    Method = "Cash",
+                    Amount = Math.Abs(returnAmount),
+                    Note = string.Empty,
+                    IsReturn = true,
+                    IsRefund = false,
+                    SortOrder = 1, // for same timestamp: show return before refund cash detail
+                    SourceOrderId = ret.ReturnId,
+                    ReturnGroup = ret,
+                    BalanceImpact = 0
+                });
+            }
+
+            var ordered = BillAuditTimeline
+                .OrderBy(x => x.Date)
+                .ThenBy(x => x.SortOrder)
+                .ThenBy(x => x.SourceOrderId)
+                .ToList();
+
+            // Build "remaining after this row" in strict chronological order.
+            int stepNo = 1;
+            foreach (var row in ordered)
+            {
+                if (row.IsReturn)
+                {
+                    // Business rule: return always clears pending credit first, then cash back.
+                    var creditAdjusted = Math.Min(runningPending, row.Amount);
+                    var cashReturned = Math.Max(0, row.Amount - creditAdjusted);
+                    row.BalanceImpact = creditAdjusted;
+                    runningPending = Math.Max(0, runningPending - creditAdjusted);
+
+                    row.Note = creditAdjusted > 0
+                        ? $"returned Rs. -{row.Amount:N0}{Environment.NewLine}credit adjusted Rs. -{creditAdjusted:N0}" +
+                          (cashReturned > 0 ? $"{Environment.NewLine}cash returned Rs. -{cashReturned:N0}" : "")
+                        : $"return amount Rs. -{row.Amount:N0}";
+
+                    row.ReturnHoverDetail = BuildReturnHoverDetail(row, creditAdjusted, cashReturned);
+                }
+                else
+                {
+                    var paymentApplied = Math.Min(runningPending, Math.Max(0, row.BalanceImpact));
+                    runningPending = Math.Max(0, runningPending - paymentApplied);
+                }
+
+                row.StepNo = stepNo++;
+                row.RemainingBalanceAfter = runningPending;
+            }
+
+            BillAuditTimeline.Clear();
+            foreach (var row in ordered)
+                BillAuditTimeline.Add(row);
+        }
+
+        private static string BuildPaymentNote(CreditPayment payment, Bill bill)
+        {
+            bool isSale = string.Equals(payment.TransactionType, "Sale", StringComparison.OrdinalIgnoreCase);
+            if (isSale)
+            {
+                var totalBill = Math.Max(0, bill.GrandTotal);
+                var paidAtSale = Math.Min(totalBill, Math.Max(0, Math.Abs(payment.AmountPaid)));
+                var openingCredit = Math.Max(0, totalBill - paidAtSale);
+                var saleNote = $"total bill Rs. {totalBill:N0}{Environment.NewLine}paid at sale Rs. {paidAtSale:N0}{Environment.NewLine}opening credit Rs. {openingCredit:N0}";
+                if (!string.IsNullOrWhiteSpace(payment.DisplayNote))
+                    saleNote = $"{saleNote}{Environment.NewLine}note: {payment.DisplayNote}";
+                return saleNote;
+            }
+
+            var note = $"payment received Rs. {Math.Abs(payment.AmountPaid):N0}{Environment.NewLine}method {(string.IsNullOrWhiteSpace(payment.PaymentMethod) ? "Cash" : payment.PaymentMethod)}";
+            if (!string.IsNullOrWhiteSpace(payment.DisplayNote))
+                note = $"{note}{Environment.NewLine}note: {payment.DisplayNote}";
+            return note;
+        }
+
+        private static string BuildReturnHoverDetail(BillAuditTimelineEntry row, double creditAdjusted, double cashReturned)
+        {
+            var lines = new List<string>
+            {
+                $"Return Time: {row.Date:dd/MM/yyyy HH:mm}",
+                $"Returned Amount: Rs. -{row.Amount:N0}",
+                $"Credit Adjusted: Rs. -{creditAdjusted:N0}"
+            };
+
+            if (cashReturned > 0)
+                lines.Add($"Cash Returned: Rs. -{cashReturned:N0}");
+
+            var items = row.ReturnGroup?.Items?.Select(i => $"{i.ItemDescription} x{Math.Abs(i.Quantity):N0}").ToList();
+            if (items != null && items.Count > 0)
+                lines.Add($"Items: {string.Join(", ", items)}");
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private void OpenReturnDetail(BillAuditTimelineEntry? row)
+        {
+            if (row?.IsReturn != true || row.ReturnGroup == null) return;
+            SelectedReturnDetail = row.ReturnGroup;
         }
 
         private void OnDataChanged()

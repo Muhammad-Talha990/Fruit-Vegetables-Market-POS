@@ -321,14 +321,21 @@ namespace GroceryPOS.ViewModels
 
             try
             {
-                _customerService.DeactivateCustomer(customer.CustomerId);
-                LoadCustomers();
-                SetStatus($"✓ Customer '{customer.FullName}' deactivated.");
+                if (_customerService.DeactivateCustomer(customer.CustomerId))
+                {
+                    LoadCustomers();
+                    ShowPopupSuccess($"Customer '{customer.FullName}' deactivated.");
+                    SetStatus($"✓ Customer '{customer.FullName}' deactivated.");
+                }
+                else
+                {
+                    ShowPopupError("Could not deactivate customer. It might already be inactive.");
+                }
             }
             catch (Exception ex)
             {
                 AppLogger.Error("CustomerManagementViewModel.DeactivateCustomer failed", ex);
-                ShowPopupError($"Could not deactivate customer: {ex.Message}");
+                ShowPopupError($"Error: {ex.Message}");
             }
         }
 
@@ -336,16 +343,31 @@ namespace GroceryPOS.ViewModels
         {
             if (customer == null) return;
 
+            var result = MessageBox.Show(
+                $"Reactivate customer '{customer.FullName}'?\n\nThey will start appearing in the billing search again.",
+                "Confirm Reactivation",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes) return;
+
             try
             {
-                _customerService.ReactivateCustomer(customer.CustomerId);
-                LoadCustomers();
-                SetStatus($"✓ Customer '{customer.FullName}' reactivated.");
+                if (_customerService.ReactivateCustomer(customer.CustomerId))
+                {
+                    LoadCustomers();
+                    ShowPopupSuccess($"Customer '{customer.FullName}' reactivated.");
+                    SetStatus($"✓ Customer '{customer.FullName}' reactivated.");
+                }
+                else
+                {
+                    ShowPopupError("Could not reactivate customer. It might already be active.");
+                }
             }
             catch (Exception ex)
             {
                 AppLogger.Error("CustomerManagementViewModel.ReactivateCustomer failed", ex);
-                ShowPopupError($"Could not reactivate customer: {ex.Message}");
+                ShowPopupError($"Error: {ex.Message}");
             }
         }
 

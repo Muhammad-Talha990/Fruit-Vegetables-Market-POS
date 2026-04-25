@@ -47,16 +47,20 @@ namespace GroceryPOS.Services
         //  SOFT DELETE / REACTIVATE
         // ────────────────────────────────────────────
 
-        public void DeactivateCustomer(int customerId)
+        public bool DeactivateCustomer(int customerId)
         {
-            _customerRepo.SoftDelete(customerId);
-            AppLogger.Info($"CustomerService: Deactivated customer ID {customerId}.");
+            bool success = _customerRepo.SoftDelete(customerId);
+            if (success)
+                AppLogger.Info($"CustomerService: Deactivated customer ID {customerId}.");
+            return success;
         }
 
-        public void ReactivateCustomer(int customerId)
+        public bool ReactivateCustomer(int customerId)
         {
-            _customerRepo.Reactivate(customerId);
-            AppLogger.Info($"CustomerService: Reactivated customer ID {customerId}.");
+            bool success = _customerRepo.Reactivate(customerId);
+            if (success)
+                AppLogger.Info($"CustomerService: Reactivated customer ID {customerId}.");
+            return success;
         }
 
         // ────────────────────────────────────────────

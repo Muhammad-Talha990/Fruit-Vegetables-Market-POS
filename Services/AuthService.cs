@@ -38,6 +38,19 @@ namespace GroceryPOS.Services
                     return false;
                 }
 
+                // Defensive: ensure stored hash and provided password are valid before verifying
+                if (string.IsNullOrWhiteSpace(user.PasswordHash))
+                {
+                    AppLogger.Warning($"Login attempt failed: user '{username}' has no password hash.");
+                    return false;
+                }
+
+                if (password == null)
+                {
+                    AppLogger.Warning($"Login attempt failed: null password provided for '{username}'.");
+                    return false;
+                }
+
                 if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
                 {
                     AppLogger.Warning($"Login attempt failed: incorrect password for '{username}'.");
@@ -76,7 +89,7 @@ namespace GroceryPOS.Services
 
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "UPDATE User SET PasswordHash = @hash WHERE Id = @id;";
+            cmd.CommandText = "UPDATE Users SET PasswordHash = @hash WHERE Id = @id;";
             cmd.Parameters.AddWithValue("@hash", newHash);
             cmd.Parameters.AddWithValue("@id", CurrentUser.Id);
             cmd.ExecuteNonQuery();
@@ -91,7 +104,7 @@ namespace GroceryPOS.Services
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO User (Username, PasswordHash, FullName, Role, IsActive, CreatedAt)
+                INSERT INTO Users (Username, PasswordHash, FullName, Role, IsActive, CreatedAt)
                 VALUES (@user, @hash, @name, @role, 1, @created);
             ";
             cmd.Parameters.AddWithValue("@user", username);

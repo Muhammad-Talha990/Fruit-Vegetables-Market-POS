@@ -40,5 +40,11 @@ namespace GroceryPOS.Models
 
         /// <summary>Computed total amount (UnitPrice × ReturnQuantity).</summary>
         public double TotalAmount => UnitPrice * ReturnQuantity;
+
+        /// <summary>Amount issued as store credit (not yet refunded in cash/online).</summary>
+        public double StoreCreditIssued { get; set; } = 0;
+
+        /// <summary>When the store credit was refunded (if applicable).</summary>
+        public DateTime? StoreCreditRefundedAt { get; set; }
     }
 }

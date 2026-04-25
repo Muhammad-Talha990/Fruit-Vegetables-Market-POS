@@ -12,6 +12,34 @@
         <converters:CountToVisibilityConverter x:Key="CountToVisibilityConverter"/>
         <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
         <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        
+        <Style x:Key="CustomerBillComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Height" Value="54"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#CBD5E1"/>
+            <Setter Property="BorderThickness" Value="1.2"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Padding" Value="8,6"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Foreground" Value="#1E293B"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#EEF2FF"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#DBEAFE"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
     
     <Grid Margin="30,24">
@@ -40,23 +68,88 @@
         <!-- Search Bar (Row 1) -->
         <Border Grid.Row="1" Style="{DynamicResource CardBorder}" Padding="16" Margin="0,0,0,20">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="150"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="160"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="380"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Enter Bill ID:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
-                <TextBox Grid.Column="1" Style="{DynamicResource ModernTextBox}" Text="{Binding BillIdInput, UpdateSourceTrigger=PropertyChanged}" FontSize="16">
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Enter Bill ID:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="0" Grid.Column="1" Style="{DynamicResource ModernTextBox}" Text="{Binding BillIdInput, UpdateSourceTrigger=PropertyChanged}" FontSize="16">
                     <TextBox.InputBindings>
                         <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
                     </TextBox.InputBindings>
                 </TextBox>
-                <Button Grid.Column="2" Content="🔍 Search Bill" Style="{DynamicResource PrimaryButton}" Command="{Binding SearchCommand}" Margin="12,0,0,0" Padding="20,0"/>
-                
-                <Grid Grid.Column="3" Margin="15,0,0,0">
-                    <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" 
-                               Foreground="{Binding StatusMessage, Converter={StaticResource StatusColorConverter}}" 
+                <Button Grid.Row="0" Grid.Column="2" Content="🔍 Search Bill" Style="{DynamicResource PrimaryButton}" Command="{Binding SearchCommand}" Margin="12,0,0,0" Padding="20,0"/>
+
+                <TextBlock Grid.Row="0" Grid.Column="4" Text="Customer Phone:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="0" Grid.Column="5" Style="{DynamicResource ModernTextBox}" Text="{Binding CustomerPhoneInput, UpdateSourceTrigger=PropertyChanged}" FontSize="16" MaxLength="11">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Enter" Command="{Binding SearchByPhoneCommand}"/>
+                    </TextBox.InputBindings>
+                </TextBox>
+                <Button Grid.Row="0" Grid.Column="6" Content="📱 Search Bills" Style="{DynamicResource SecondaryButton}" Command="{Binding SearchByPhoneCommand}" Margin="12,0,0,0" Padding="14,9" MinWidth="132"/>
+
+                <ComboBox Grid.Row="0" Grid.Column="7"
+                          Margin="12,0,0,0"
+                          Style="{StaticResource CustomerBillComboBoxStyle}"
+                          ItemsSource="{Binding CustomerBills}"
+                          SelectedItem="{Binding SelectedCustomerBill}"
+                          IsEnabled="{Binding HasCustomerBills}"
+                          HorizontalContentAlignment="Stretch"
+                          MinWidth="380"
+                          ToolTip="Select bill found by customer phone">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Vertical">
+                                    <TextBlock Text="{Binding InvoiceNumber, StringFormat='Bill #{0}'}"
+                                               FontWeight="SemiBold"
+                                               Foreground="#0F172A"/>
+                                    <TextBlock Text="{Binding CreatedAt, StringFormat='{}{0:dd MMM yyyy, hh:mm tt}'}"
+                                               FontSize="11"
+                                               Foreground="#64748B"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                    <TextBlock Text="{Binding GrandTotal, StringFormat='Total: Rs. {0:N0}'}"
+                                               FontSize="11"
+                                               Foreground="#1E293B"
+                                               HorizontalAlignment="Right"/>
+                                    <TextBlock Text="{Binding RemainingAmount, StringFormat='Pending: Rs. {0:N0}'}"
+                                               FontSize="11"
+                                               Foreground="#DC2626"
+                                               HorizontalAlignment="Right"/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Row="0" Grid.Column="8"
+                        Content="Load"
+                        Style="{DynamicResource AccentButton}"
+                        Command="{Binding LoadSelectedBillCommand}"
+                        Margin="12,0,0,0"
+                        Padding="16,0"
+                        IsEnabled="{Binding HasCustomerBills}"/>
+
+                <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="10" Margin="0,10,0,0">
+                    <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center"
+                               Foreground="{Binding StatusMessage, Converter={StaticResource StatusColorConverter}}"
                                FontWeight="Medium" TextWrapping="Wrap"/>
                 </Grid>
             </Grid>

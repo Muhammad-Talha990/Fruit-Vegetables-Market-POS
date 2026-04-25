@@ -47,13 +47,13 @@ namespace GroceryPOS.Data.Repositories
                 using var cmd = conn.CreateCommand();
                 cmd.Transaction = txn;
                 cmd.CommandText = @"
-                    INSERT INTO bill_payment (BillId, Amount, Type, CreatedAt)
-                    VALUES (@bid, @amt, 'payment', @at);
+                    INSERT INTO bill_payment (BillId, Amount, Type, PaymentMethod, CreatedAt)
+                    VALUES (@bid, @amt, 'payment', @method, @at);
                     SELECT last_insert_rowid();";
                 
                 cmd.Parameters.AddWithValue("@bid", payment.BillId);
                 cmd.Parameters.AddWithValue("@amt", Math.Round(payment.AmountPaid, 2));
-                cmd.Parameters.AddWithValue("@note", (object?)payment.Note ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@method", payment.PaymentMethod ?? "Cash");
                 cmd.Parameters.AddWithValue("@at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                 
                 payment.PaymentId = Convert.ToInt32(cmd.ExecuteScalar());
@@ -61,20 +61,20 @@ namespace GroceryPOS.Data.Repositories
                 // 3. Record Ledger Entry
                 if (customerId > 0)
                 {
-                    _ledgerRepo.AddEntry(new CustomerLedgerEntry
-                    {
-                        CustomerId = customerId,
-                        Type = "PAYMENT",
-                        ReferenceId = invoiceNum,
-                        Description = $"Payment received (Invoice #{invoiceNum})",
-                        Debit = 0,
-                        Credit = payment.AmountPaid,
-                        EntryDate = DateTime.Now
-                    }, conn, txn);
+                    _ledgerRepo.AppendPaymentEntry(
+                        customerId,
+                        payment.BillId,
+                        payment.PaymentId,
+                        payment.AmountPaid,
+                        $"Payment received (Invoice #{invoiceNum})",
+                        DateTime.Now,
+                        "Recovery",
+                        conn,
+                        txn);
                 }
 
                 txn.Commit();
-                AppLogger.Info($"CreditPayment recorded: BillId={payment.BillId}, Amount={payment.AmountPaid:N2}");
+                AppLogger.Info($"CreditPayment recorded: BillId={payment.BillId}, Amount={payment.AmountPaid:N2}, Method={payment.PaymentMethod}");
             }
             catch (Exception ex)
             {

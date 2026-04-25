@@ -189,6 +189,8 @@ namespace GroceryPOS.ViewModels
         public double StatCredit { get => _statCredit; set => SetProperty(ref _statCredit, value); }
         private double _statRecoveredCredit;
         public double StatRecoveredCredit { get => _statRecoveredCredit; set => SetProperty(ref _statRecoveredCredit, value); }
+        private double _statStoreCredit;
+        public double StatStoreCredit { get => _statStoreCredit; set => SetProperty(ref _statStoreCredit, value); }
         private double _statCashInDrawer;
         public double StatCashInDrawer { get => _statCashInDrawer; set => SetProperty(ref _statCashInDrawer, value); }
         private double _statOnlinePayments;
@@ -357,6 +359,15 @@ namespace GroceryPOS.ViewModels
         private bool _focusCashReceived;
         public bool FocusCashReceived { get => _focusCashReceived; set => SetProperty(ref _focusCashReceived, value); }
 
+        // ── HISTORY PAYMENT (Billing) METHOD SELECTION ──
+        public List<string> HistoryOnlinePaymentMethods { get; } = new() { "Easypaisa", "JazzCash", "Bank Transfer" };
+        public ObservableCollection<Account> HistoryActiveAccounts { get; set; } = new();
+
+        public string SelectedHistoryPaymentMethod { get => SelectedTab?.SelectedHistoryPaymentMethod ?? "Cash"; set { if (SelectedTab != null) { SelectedTab.SelectedHistoryPaymentMethod = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsHistoryOnlinePayment)); } } }
+        public bool IsHistoryOnlinePayment => SelectedHistoryPaymentMethod == "Online";
+        public Account? SelectedHistoryAccount { get => SelectedTab?.SelectedHistoryAccount; set { if (SelectedTab != null) { SelectedTab.SelectedHistoryAccount = value; OnPropertyChanged(); } } }
+        public string? SelectedHistoryOnlineMethod { get => SelectedTab?.SelectedHistoryOnlineMethod; set { if (SelectedTab != null) { SelectedTab.SelectedHistoryOnlineMethod = value; OnPropertyChanged(); } } }
+
         public ICommand CompleteSaleCommand { get; }
         public ICommand ClearCartCommand { get; }
         public ICommand AddTabCommand { get; }
@@ -391,6 +402,8 @@ namespace GroceryPOS.ViewModels
             _timer.Tick += (s, e) => { OnPropertyChanged(nameof(CurrentTime)); OnPropertyChanged(nameof(CurrentDateTime)); };
             _timer.Start();
 
+            LoadHistoryActiveAccounts();
+
             ScanBarcodeCommand = new RelayCommand(_ => ScanBarcode());
             RemoveFromCartCommand = new RelayCommand(_ => RemoveFromCart());
             IncreaseQuantityCommand = new RelayCommand(_ => IncreaseQuantity());
@@ -403,7 +416,7 @@ namespace GroceryPOS.ViewModels
             SelectCustomerCommand = new RelayCommand(obj => SelectCustomer(obj as Customer));
             ClearCustomerCommand = new RelayCommand(_ => ClearCustomer());
             LoadPreviewToCartCommand= new RelayCommand(_ => { if (PreviewHistoryBill != null) LoadBillIntoCart(PreviewHistoryBill); });
-            OpenHistoryPaymentCommand = new RelayCommand(_ => { if (PreviewHistoryBill != null) { var fresh = _billRepo.GetById(PreviewHistoryBill.BillId); if (fresh != null && SelectedTab != null) { fresh.Customer = PreviewHistoryBill.Customer; SelectedTab.PreviewHistoryBill = fresh; } HistoryPaymentAmount = ""; HistoryPaymentNote = ""; HistoryPaymentError = ""; IsHistoryPaymentOpen = true; OnPropertyChanged(nameof(PreviewHistoryBill)); } });
+            OpenHistoryPaymentCommand = new RelayCommand(_ => { if (PreviewHistoryBill != null) { var fresh = _billRepo.GetById(PreviewHistoryBill.BillId); if (fresh != null && SelectedTab != null) { fresh.Customer = PreviewHistoryBill.Customer; SelectedTab.PreviewHistoryBill = fresh; } HistoryPaymentAmount = ""; HistoryPaymentNote = ""; HistoryPaymentError = ""; SelectedHistoryPaymentMethod = "Cash"; SelectedHistoryAccount = HistoryActiveAccounts.FirstOrDefault(); SelectedHistoryOnlineMethod = null; IsHistoryPaymentOpen = true; OnPropertyChanged(nameof(PreviewHistoryBill)); } });
             CloseHistoryPaymentCommand = new RelayCommand(_ => IsHistoryPaymentOpen = false);
             RecordHistoryPaymentCommand = new RelayCommand(_ => RecordHistoryPayment());
             PayFullHistoryCommand = new RelayCommand(_ => { if (PreviewHistoryBill != null) HistoryPaymentAmount = PreviewHistoryBill.RemainingAmount.ToString("F2"); });
@@ -449,6 +462,7 @@ namespace GroceryPOS.ViewModels
             StatReturns = _billService.GetTodayReturnsTotal();
             StatCredit = _billService.GetTodayTotalCredit();
             StatRecoveredCredit = _billService.GetTodayRecoveredCredit();
+            StatStoreCredit = _billService.GetTodayStoreCredit();
             StatCashInDrawer = _billService.GetTodayCashInDrawer();
             StatOnlinePayments = _billService.GetTodayOnlinePayments();
         }
@@ -1110,7 +1124,14 @@ namespace GroceryPOS.ViewModels
                     return;
                 }
 
-                var updatedBill = _creditService.RecordPayment(SelectedTab.PreviewHistoryBill.BillId, amount, HistoryPaymentNote);
+                // Validate: Online payment must have account selected
+                if (IsHistoryOnlinePayment && SelectedHistoryAccount == null)
+                {
+                    HistoryPaymentError = "⚠ For online payment, please select an account to receive the payment.";
+                    return;
+                }
+
+                var updatedBill = _creditService.RecordPayment(SelectedTab.PreviewHistoryBill.BillId, amount, HistoryPaymentNote, SelectedHistoryPaymentMethod);
                 
                 // Attach customer info for receipt printing
                 updatedBill.Customer = SelectedCustomer;
@@ -1149,6 +1170,22 @@ namespace GroceryPOS.ViewModels
         }
 
         private void NotifyTabPropertiesChanged() { OnPropertyChanged(nameof(CartItems)); OnPropertyChanged(nameof(DiscountText)); OnPropertyChanged(nameof(TaxText)); OnPropertyChanged(nameof(CashReceivedText)); OnPropertyChanged(nameof(InvoiceNumber)); OnPropertyChanged(nameof(SelectedCustomer)); OnPropertyChanged(nameof(HasSelectedCustomer)); OnPropertyChanged(nameof(IsWalkIn)); OnPropertyChanged(nameof(CustomerSearchQuery)); OnPropertyChanged(nameof(CustomerSearchResults)); OnPropertyChanged(nameof(SelectedSearchResult)); OnPropertyChanged(nameof(CustomerBills)); OnPropertyChanged(nameof(PreviewHistoryBill)); OnPropertyChanged(nameof(IsHistoryPaymentOpen)); OnPropertyChanged(nameof(HistoryPaymentAmount)); OnPropertyChanged(nameof(HistoryPaymentNote)); OnPropertyChanged(nameof(HistoryPaymentError)); OnPropertyChanged(nameof(PendingCreditAmount)); OnPropertyChanged(nameof(HasPendingCredit)); OnPropertyChanged(nameof(PendingCreditDisplay)); OnPropertyChanged(nameof(SelectedBillingAddress)); OnPropertyChanged(nameof(StatusMessage)); OnPropertyChanged(nameof(IsBillDetailOpen)); }
+
+        private void LoadHistoryActiveAccounts()
+        {
+            try
+            {
+                var accounts = _accountService.GetActiveAccounts();
+                HistoryActiveAccounts.Clear();
+                foreach (var account in accounts)
+                    HistoryActiveAccounts.Add(account);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Failed to load active accounts for history payment", ex);
+            }
+        }
+
         public override void Dispose() { _timer.Stop(); _stockService.StockChanged -= LoadDashboardStats; base.Dispose(); }
     }
 }

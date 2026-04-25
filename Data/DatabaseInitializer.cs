@@ -29,7 +29,7 @@ namespace GroceryPOS.Data
     public static class DatabaseInitializer
     {
         // Schema version — increment when adding migrations
-        private const int CurrentSchemaVersion = 14;
+        private const int CurrentSchemaVersion = 17;
 
         /// <summary>
         /// Ensures all tables, indexes, and seed data exist.
@@ -49,6 +49,12 @@ namespace GroceryPOS.Data
                     EnsureBaseSchema(conn);
                     // ── Hard guard: ensure Bills print columns always exist ──
                     EnsureBillsPrintColumns(conn);
+                    // ── Hard guard: ensure Bills financial columns always exist ──
+                    EnsureBillsFinancialColumns(conn);
+                    // ── Hard guard: ensure BillReturns store-credit columns always exist ──
+                    EnsureBillReturnsCreditColumns(conn);
+                    // ── Hard guard: ensure CustomerLedger has canonical audit columns ──
+                    EnsureCustomerLedgerAuditColumns(conn);
                     // ── Hard guard: make bill_payment canonical even if user_version is stale ──
                     EnsureCanonicalBillPaymentShape(conn);
 
@@ -62,6 +68,8 @@ namespace GroceryPOS.Data
                     MigrateIfNeeded(conn);
 
                     SeedUsers(conn);
+                    SeedCategories(conn);
+                    SeedAccounts(conn);
                     SeedItems(conn);
                 }
 
@@ -161,18 +169,20 @@ namespace GroceryPOS.Data
             // ────────────────────────────────────────
             Execute(conn, @"
                 CREATE TABLE IF NOT EXISTS Bills (
-                    BillId         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    CustomerId     INTEGER,
-                    UserId         INTEGER,
-                    TaxAmount      REAL    DEFAULT 0,
-                    DiscountAmount REAL    DEFAULT 0,
-                    Status         TEXT    DEFAULT 'Completed'
-                                   CHECK(Status IN ('Completed', 'Cancelled')),
-                    BillPaymentMethod TEXT NOT NULL DEFAULT 'Cash',
-                    IsPrinted      INTEGER DEFAULT 0,
-                    PrintedAt      DATETIME,
-                    CreatedAt      DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    AccountId      INTEGER,
+                    BillId              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    CustomerId          INTEGER,
+                    UserId              INTEGER,
+                    TaxAmount           REAL    DEFAULT 0,
+                    DiscountAmount      REAL    DEFAULT 0,
+                    Status              TEXT    DEFAULT 'Completed'
+                                        CHECK(Status IN ('Completed', 'Cancelled')),
+                    BillPaymentMethod   TEXT    NOT NULL DEFAULT 'Cash',
+                    OnlinePaymentMethod TEXT,
+                    InitialPayment      REAL    DEFAULT 0,
+                    IsPrinted           INTEGER DEFAULT 0,
+                    PrintedAt           DATETIME,
+                    CreatedAt           DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    AccountId           INTEGER,
                     FOREIGN KEY (CustomerId) REFERENCES Customers(CustomerId)
                         ON DELETE RESTRICT,
                     FOREIGN KEY (UserId) REFERENCES Users(Id)
@@ -277,7 +287,16 @@ namespace GroceryPOS.Data
                     CustomerId     INTEGER NOT NULL,
                     EntryDate      DATETIME DEFAULT CURRENT_TIMESTAMP,
                     Type           TEXT    NOT NULL CHECK(Type IN ('SALE', 'PAYMENT', 'RETURN', 'ADJUSTMENT')),
+                    TransactionType TEXT   NOT NULL DEFAULT 'SALE',
                     ReferenceId    TEXT,
+                    SourceTable    TEXT,
+                    SourceId       INTEGER,
+                    BillId         INTEGER,
+                    ReturnId       INTEGER,
+                    PaymentId      INTEGER,
+                    CreatedAtUtc   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    CreatedByUserId INTEGER,
+                    SequenceNo     INTEGER NOT NULL DEFAULT 0,
                     Description    TEXT,
                     Debit          REAL    DEFAULT 0,
                     Credit         REAL    DEFAULT 0,
@@ -308,6 +327,15 @@ namespace GroceryPOS.Data
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Customers_Phone    ON Customers(Phone);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_Customer    ON CustomerLedger(CustomerId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_Date        ON CustomerLedger(EntryDate);");
+            if (ColumnExists(conn, "CustomerLedger", "SequenceNo"))
+            {
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_CustomerDateSeq ON CustomerLedger(CustomerId, EntryDate, SequenceNo, LedgerId);");
+            }
+            else
+            {
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_CustomerDate ON CustomerLedger(CustomerId, EntryDate, LedgerId);");
+            }
+            CreateIndexIfColumnExists(conn, "IX_Ledger_BillId", "CustomerLedger", "BillId", "BillId");
         }
 
         // ────────────────────────────────────────────
@@ -323,7 +351,7 @@ namespace GroceryPOS.Data
 
             var users = new[]
             {
-                ("admin",   "admin123",   "System Administrator", "Admin"),
+                ("admin",   "1234",       "System Administrator", "Admin"),
                 ("cashier", "cashier123", "Default Cashier",      "Cashier")
             };
 
@@ -345,29 +373,70 @@ namespace GroceryPOS.Data
         }
 
         // ────────────────────────────────────────────
+        //  Seed categories
+        // ────────────────────────────────────────────
+        private static void SeedCategories(SqliteConnection conn)
+        {
+            using var countCmd = conn.CreateCommand();
+            countCmd.CommandText = "SELECT COUNT(*) FROM Categories;";
+            if (Convert.ToInt64(countCmd.ExecuteScalar()) == 0)
+            {
+                var categories = new[] { "Dairy", "Beverages", "Snacks", "Grocery", "Bakery", "Cleaning", "Personal Care", "Frozen Food", "Pantry & Spices", "Household", "Baby Care", "Stationery", "Other" };
+                foreach (var cat in categories)
+                {
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = "INSERT INTO Categories (Name) VALUES (@name);";
+                    cmd.Parameters.AddWithValue("@name", cat);
+                    cmd.ExecuteNonQuery();
+                }
+                AppLogger.Info("Categories seeded.");
+            }
+        }
+
+        // ────────────────────────────────────────────
+        //  Seed payment accounts
+        // ────────────────────────────────────────────
+        private static void SeedAccounts(SqliteConnection conn)
+        {
+            using var countCmd = conn.CreateCommand();
+            countCmd.CommandText = "SELECT COUNT(*) FROM Accounts;";
+            if (Convert.ToInt64(countCmd.ExecuteScalar()) > 0) return;
+
+            var defaultAccounts = new[]
+            {
+                ("Meezan - Main",   "Bank",      "Meezan Bank Ltd", "DHA Phase 4, Lahore", "0123-456789-01"),
+                ("Bank Alfalah",    "Bank",      "Bank Alfalah",    "Gulberg III Branch",  "5566-778899-02"),
+                ("Shop Easypaisa",  "Easypaisa", "Telenor Bank",    "Mobile Wallet",       "03001234567"),
+                ("Shop JazzCash",   "JazzCash",  "Mobilink Bank",   "Mobile Wallet",       "03217654321"),
+                ("HBL Business",    "Bank",      "Habib Bank Ltd",  "Main Market",         "1122-334455-03"),
+                ("SadaPay",         "Online",    "SadaPay",         "Digital",             "03119998881")
+            };
+
+            foreach (var (title, type, bank, branch, number) in defaultAccounts)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO Accounts (AccountTitle, AccountType, BankName, BranchName, AccountNumber)
+                    VALUES (@title, @type, @bank, @branch, @num);
+                ";
+                cmd.Parameters.AddWithValue("@title", title);
+                cmd.Parameters.AddWithValue("@type", type);
+                cmd.Parameters.AddWithValue("@bank", bank);
+                cmd.Parameters.AddWithValue("@branch", branch);
+                cmd.Parameters.AddWithValue("@num", number);
+                cmd.ExecuteNonQuery();
+            }
+            AppLogger.Info("Default accounts seeded.");
+        }
+
+        // ────────────────────────────────────────────
         //  Seed sample items
         // ────────────────────────────────────────────
         private static void SeedItems(SqliteConnection conn)
         {
-            // 1. Seed Categories first
-            using (var countCmd = conn.CreateCommand())
-            {
-                countCmd.CommandText = "SELECT COUNT(*) FROM Categories;";
-                if (Convert.ToInt64(countCmd.ExecuteScalar()) == 0)
-                {
-                    var categories = new[] { "Dairy", "Beverages", "Snacks", "Grocery", "Bakery", "Cleaning", "Personal Care", "Frozen Food", "Pantry & Spices", "Household", "Baby Care", "Stationery", "Other" };
-                    foreach (var cat in categories)
-                    {
-                        using var cmd = conn.CreateCommand();
-                        cmd.CommandText = "INSERT INTO Categories (Name) VALUES (@name);";
-                        cmd.Parameters.AddWithValue("@name", cat);
-                        cmd.ExecuteNonQuery();
-                    }
-                    AppLogger.Info("Categories seeded.");
-                }
-            }
-
-            // 2. Only seed if no items exist.
+            // SeedCategories(conn) is now called directly in Initialize()
+            
+            // Only seed if no items exist.
             using (var countCmd = conn.CreateCommand())
             {
                 countCmd.CommandText = "SELECT COUNT(*) FROM Items;";
@@ -687,7 +756,16 @@ namespace GroceryPOS.Data
                         CustomerId     INTEGER NOT NULL,
                         EntryDate      DATETIME DEFAULT CURRENT_TIMESTAMP,
                         Type           TEXT    NOT NULL CHECK(Type IN ('SALE', 'PAYMENT', 'RETURN', 'ADJUSTMENT')),
+                        TransactionType TEXT   NOT NULL DEFAULT 'SALE',
                         ReferenceId    TEXT,
+                        SourceTable    TEXT,
+                        SourceId       INTEGER,
+                        BillId         INTEGER,
+                        ReturnId       INTEGER,
+                        PaymentId      INTEGER,
+                        CreatedAtUtc   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        CreatedByUserId INTEGER,
+                        SequenceNo     INTEGER NOT NULL DEFAULT 0,
                         Description    TEXT,
                         Debit          REAL    DEFAULT 0,
                         Credit         REAL    DEFAULT 0,
@@ -833,6 +911,61 @@ namespace GroceryPOS.Data
 
                 SetSchemaVersion(conn, 14);
                 AppLogger.Info("Migration v14: Standardized bill_payment to canonical accounting schema.");
+            }
+
+            // Migration v14 → v15: Add PaymentMethod column to bill_payment for tracking cash vs online payments from ledger
+            if (currentVersion < 15)
+            {
+                AddColumnIfNotExists(conn, "bill_payment", "PaymentMethod", "TEXT DEFAULT 'Cash'");
+                
+                // Backfill existing payments based on the associated bill's payment method
+                // For cash bills, mark payments as cash; for online bills, mark as online
+                Execute(conn, @"
+                    UPDATE bill_payment 
+                    SET PaymentMethod = COALESCE(
+                        (SELECT CASE WHEN BillPaymentMethod = 'Online' THEN 'Online' ELSE 'Cash' END 
+                         FROM Bills WHERE Bills.BillId = bill_payment.BillId), 
+                        'Cash')
+                    WHERE PaymentMethod = 'Cash';
+                ");
+                
+                SetSchemaVersion(conn, 15);
+                AppLogger.Info("Migration v15: Added PaymentMethod column to bill_payment for accurate cash/online ledger tracking.");
+            }
+
+            // Migration v15 → v16: Add store credit tracking to BillReturns
+            // Tracks whether a return was given as store credit or cash refund
+            if (currentVersion < 16)
+            {
+                AddColumnIfNotExists(conn, "BillReturns", "StoreCreditIssued", "REAL DEFAULT 0");
+                AddColumnIfNotExists(conn, "BillReturns", "StoreCreditRefundedAt", "DATETIME");
+                
+                // Backfill: For returns where there's no matching cash refund in bill_payment,
+                // mark the entire return amount as store credit
+                Execute(conn, @"
+                    UPDATE BillReturns
+                    SET StoreCreditIssued = (
+                        SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
+                        FROM BillReturnItems bri
+                        WHERE bri.ReturnId = BillReturns.ReturnId
+                    )
+                    WHERE ReturnId NOT IN (
+                        SELECT DISTINCT ReturnId FROM bill_payment
+                        WHERE Type = 'refund' AND BillId = BillReturns.BillId
+                    )
+                ");
+                
+                SetSchemaVersion(conn, 16);
+                AppLogger.Info("Migration v16: Added StoreCreditIssued column to BillReturns for accurate store credit tracking.");
+            }
+
+            // Migration v16 → v17: Canonical customer ledger audit metadata and deterministic sequencing.
+            if (currentVersion < 17)
+            {
+                EnsureCustomerLedgerAuditColumns(conn);
+                RebuildCustomerLedgerRunningBalances(conn);
+                SetSchemaVersion(conn, 17);
+                AppLogger.Info("Migration v17: Standardized CustomerLedger metadata and rebuilt running balances.");
             }
 
             // --- Real-time Date Fix: Localize UTC timestamps stored previously ---
@@ -1321,11 +1454,13 @@ namespace GroceryPOS.Data
             {
                 Execute(conn, @"
                     CREATE TABLE IF NOT EXISTS bill_payment (
-                        PaymentId INTEGER PRIMARY KEY AUTOINCREMENT,
-                        BillId    INTEGER NOT NULL,
-                        Amount    REAL    NOT NULL CHECK(Amount >= 0),
-                        Type      TEXT    NOT NULL CHECK(Type IN ('payment', 'refund')),
-                        CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        PaymentId       INTEGER PRIMARY KEY AUTOINCREMENT,
+                        BillId          INTEGER NOT NULL,
+                        Amount          REAL    NOT NULL CHECK(Amount >= 0),
+                        Type            TEXT    NOT NULL CHECK(Type IN ('payment', 'refund')),
+                        PaymentMethod   TEXT    NOT NULL DEFAULT 'Cash'
+                                        CHECK(PaymentMethod IN ('Cash', 'Online')),
+                        CreatedAt       DATETIME DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (BillId) REFERENCES Bills(BillId) ON DELETE CASCADE
                     );
                 ");
@@ -1336,7 +1471,9 @@ namespace GroceryPOS.Data
 
             bool hasType = ColumnExists(conn, "bill_payment", "Type");
             bool hasCreatedAt = ColumnExists(conn, "bill_payment", "CreatedAt");
-            if (hasType && hasCreatedAt)
+            bool hasPaymentMethod = ColumnExists(conn, "bill_payment", "PaymentMethod");
+
+            if (hasType && hasCreatedAt && hasPaymentMethod)
             {
                 Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
                 Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_CreatedAt ON bill_payment(CreatedAt);");
@@ -1357,22 +1494,27 @@ namespace GroceryPOS.Data
                 : hasPaidAt
                     ? "PaidAt"
                     : "CURRENT_TIMESTAMP";
+            
+            string paymentMethodExpr = hasPaymentMethod ? "PaymentMethod" : "'Cash'";
 
             Execute(conn, @"
                 CREATE TABLE IF NOT EXISTS bill_payment_fix (
-                    PaymentId INTEGER PRIMARY KEY AUTOINCREMENT,
-                    BillId    INTEGER NOT NULL,
-                    Amount    REAL    NOT NULL CHECK(Amount >= 0),
-                    Type      TEXT    NOT NULL CHECK(Type IN ('payment', 'refund')),
-                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PaymentId       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    BillId          INTEGER NOT NULL,
+                    Amount          REAL    NOT NULL CHECK(Amount >= 0),
+                    Type            TEXT    NOT NULL CHECK(Type IN ('payment', 'refund')),
+                    PaymentMethod   TEXT    NOT NULL DEFAULT 'Cash'
+                                    CHECK(PaymentMethod IN ('Cash', 'Online')),
+                    CreatedAt       DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (BillId) REFERENCES Bills(BillId) ON DELETE CASCADE
                 );
             ");
 
             Execute(conn, $@"
-                INSERT INTO bill_payment_fix (PaymentId, BillId, Amount, Type, CreatedAt)
+                INSERT INTO bill_payment_fix (PaymentId, BillId, Amount, Type, PaymentMethod, CreatedAt)
                 SELECT PaymentId, BillId, ABS(Amount),
                        CASE WHEN {typeExpr} = 'refund' THEN 'refund' ELSE 'payment' END,
+                       {paymentMethodExpr},
                        {createdAtExpr}
                 FROM bill_payment;
             ");
@@ -1381,7 +1523,7 @@ namespace GroceryPOS.Data
             Execute(conn, "ALTER TABLE bill_payment_fix RENAME TO bill_payment;");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_CreatedAt ON bill_payment(CreatedAt);");
-            AppLogger.Info("Self-heal: canonicalized bill_payment table shape.");
+            AppLogger.Info("Self-heal: canonicalized bill_payment table shape (v16).");
         }
 
         /// <summary>
@@ -1394,6 +1536,119 @@ namespace GroceryPOS.Data
 
             AddColumnIfNotExists(conn, "Bills", "IsPrinted", "INTEGER DEFAULT 0");
             AddColumnIfNotExists(conn, "Bills", "PrintedAt", "DATETIME");
+        }
+
+        /// <summary>
+        /// Ensures Bills always contains financial columns consumed by billing/ledger flows.
+        /// This is version-agnostic to self-heal stale/broken schemas.
+        /// </summary>
+        private static void EnsureBillsFinancialColumns(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "Bills")) return;
+
+            AddColumnIfNotExists(conn, "Bills", "BillPaymentMethod", "TEXT NOT NULL DEFAULT 'Cash'");
+            AddColumnIfNotExists(conn, "Bills", "OnlinePaymentMethod", "TEXT");
+            AddColumnIfNotExists(conn, "Bills", "InitialPayment", "REAL DEFAULT 0");
+            AddColumnIfNotExists(conn, "Bills", "AccountId", "INTEGER");
+        }
+
+        /// <summary>
+        /// Ensures BillReturns always contains store-credit tracking columns used by dashboard metrics.
+        /// This is version-agnostic to self-heal stale/broken schemas.
+        /// </summary>
+        private static void EnsureBillReturnsCreditColumns(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "BillReturns")) return;
+
+            AddColumnIfNotExists(conn, "BillReturns", "StoreCreditIssued", "REAL DEFAULT 0");
+            AddColumnIfNotExists(conn, "BillReturns", "StoreCreditRefundedAt", "DATETIME");
+        }
+
+        /// <summary>
+        /// Ensures CustomerLedger has canonical audit metadata columns and deterministic indexes.
+        /// </summary>
+        private static void EnsureCustomerLedgerAuditColumns(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "CustomerLedger")) return;
+
+            AddColumnIfNotExists(conn, "CustomerLedger", "TransactionType", "TEXT NOT NULL DEFAULT 'SALE'");
+            AddColumnIfNotExists(conn, "CustomerLedger", "SourceTable", "TEXT");
+            AddColumnIfNotExists(conn, "CustomerLedger", "SourceId", "INTEGER");
+            AddColumnIfNotExists(conn, "CustomerLedger", "BillId", "INTEGER");
+            AddColumnIfNotExists(conn, "CustomerLedger", "ReturnId", "INTEGER");
+            AddColumnIfNotExists(conn, "CustomerLedger", "PaymentId", "INTEGER");
+            // SQLite cannot ADD COLUMN with non-constant defaults like CURRENT_TIMESTAMP.
+            AddColumnIfNotExists(conn, "CustomerLedger", "CreatedAtUtc", "DATETIME");
+            AddColumnIfNotExists(conn, "CustomerLedger", "CreatedByUserId", "INTEGER");
+            AddColumnIfNotExists(conn, "CustomerLedger", "SequenceNo", "INTEGER NOT NULL DEFAULT 0");
+
+            Execute(conn, "UPDATE CustomerLedger SET TransactionType = Type WHERE TransactionType IS NULL OR TRIM(TransactionType) = '';");
+            Execute(conn, "UPDATE CustomerLedger SET CreatedAtUtc = COALESCE(CreatedAtUtc, EntryDate, CURRENT_TIMESTAMP);");
+            if (ColumnExists(conn, "CustomerLedger", "SequenceNo"))
+            {
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_CustomerDateSeq ON CustomerLedger(CustomerId, EntryDate, SequenceNo, LedgerId);");
+            }
+            else
+            {
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_CustomerDate ON CustomerLedger(CustomerId, EntryDate, LedgerId);");
+            }
+            CreateIndexIfColumnExists(conn, "IX_Ledger_BillId", "CustomerLedger", "BillId", "BillId");
+        }
+
+        /// <summary>
+        /// Rebuilds SequenceNo and RunningBalance deterministically for each customer.
+        /// </summary>
+        private static void RebuildCustomerLedgerRunningBalances(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "CustomerLedger")) return;
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT LedgerId, CustomerId, Debit, Credit
+                FROM CustomerLedger
+                ORDER BY CustomerId ASC, datetime(EntryDate) ASC, LedgerId ASC;";
+
+            var rows = new List<(int LedgerId, int CustomerId, double Debit, double Credit)>();
+            using (var reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    rows.Add((
+                        reader.GetInt32(0),
+                        reader.GetInt32(1),
+                        reader.IsDBNull(2) ? 0 : reader.GetDouble(2),
+                        reader.IsDBNull(3) ? 0 : reader.GetDouble(3)
+                    ));
+                }
+            }
+
+            int currentCustomerId = -1;
+            int sequence = 0;
+            double runningBalance = 0;
+
+            foreach (var row in rows)
+            {
+                if (row.CustomerId != currentCustomerId)
+                {
+                    currentCustomerId = row.CustomerId;
+                    sequence = 0;
+                    runningBalance = 0;
+                }
+
+                sequence++;
+                runningBalance = Math.Round(runningBalance + row.Debit - row.Credit, 2);
+
+                using var upd = conn.CreateCommand();
+                upd.CommandText = @"
+                    UPDATE CustomerLedger
+                    SET SequenceNo = @seq,
+                        RunningBalance = @bal
+                    WHERE LedgerId = @id;";
+                upd.Parameters.AddWithValue("@seq", sequence);
+                upd.Parameters.AddWithValue("@bal", runningBalance);
+                upd.Parameters.AddWithValue("@id", row.LedgerId);
+                upd.ExecuteNonQuery();
+            }
         }
 
         // ────────────────────────────────────────────

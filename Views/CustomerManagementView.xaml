@@ -6,6 +6,7 @@
 
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
         <BooleanToVisibilityConverter x:Key="WpfBoolToVis"/>
         <converters:GreaterThanZeroConverter x:Key="GreaterThanZero"/>
     </UserControl.Resources>
@@ -163,19 +164,10 @@
                                             Foreground="{DynamicResource DangerBrush}" Background="Transparent" BorderThickness="0" FontSize="13" FontWeight="SemiBold"
                                             Visibility="{Binding IsActive, Converter={StaticResource WpfBoolToVis}}"/>
                                     <Button Content="✅ Reactivate" Cursor="Hand"
-                                            Command="{Binding ReactivateCommand}"
+                                            Command="{Binding DataContext.ReactivateCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                             CommandParameter="{Binding}"
-                                            Foreground="{DynamicResource SuccessBrush}" Background="Transparent" BorderThickness="0" FontSize="13" FontWeight="SemiBold">
-                                        <Button.Style>
-                                            <Style TargetType="Button">
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsActive}" Value="True">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
+                                            Foreground="{DynamicResource SuccessBrush}" Background="Transparent" BorderThickness="0" FontSize="13" FontWeight="SemiBold"
+                                            Visibility="{Binding IsActive, Converter={StaticResource InverseBoolToVis}}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>

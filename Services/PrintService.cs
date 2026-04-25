@@ -21,6 +21,10 @@ namespace GroceryPOS.Services
         private Bill? _billToPrint;
         private IEnumerable<Bill>? _returnHistoryToPrint;
         private Bill? _currentReturnBill;
+        private Customer? _customerLedgerToPrint;
+        private List<CustomerLedgerEntry>? _ledgerEntriesToPrint;
+        private DateTime? _ledgerFromDate;
+        private DateTime? _ledgerToDate;
         private double _paymentAmount;
         private string _storeName = "GROCERY MART";
         private string _storeAddress = "Rawat, Rawalpindi, Pakistan";
@@ -880,6 +884,137 @@ namespace GroceryPOS.Services
             }
 
             g.DrawString("--- End of Report ---", smallFont, Brushes.Black, new RectangleF(0, y, 302, 15), sf);
+
+            e.HasMorePages = false;
+            headerFont.Dispose();
+            normalFont.Dispose();
+            boldFont.Dispose();
+            smallFont.Dispose();
+        }
+
+        public bool PrintCustomerLedgerStatement(Customer customer, List<CustomerLedgerEntry> entries, DateTime? from, DateTime? to)
+        {
+            try
+            {
+                _customerLedgerToPrint = customer;
+                _ledgerEntriesToPrint = entries.OrderBy(e => e.EntryDate).ThenBy(e => e.SequenceNo).ToList();
+                _ledgerFromDate = from;
+                _ledgerToDate = to;
+
+                var printDoc = new PrintDocument();
+                string? targetPrinter = _preferredPrinter;
+
+                if (string.IsNullOrEmpty(targetPrinter))
+                {
+                    using var dialog = new System.Windows.Forms.PrintDialog();
+                    dialog.Document = printDoc;
+                    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        targetPrinter = printDoc.PrinterSettings.PrinterName;
+                        SaveConfig(targetPrinter);
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+
+                printDoc.PrinterSettings.PrinterName = targetPrinter;
+                printDoc.DefaultPageSettings.PaperSize = new PaperSize("Ledger", 302, 2200);
+                printDoc.PrintPage += PrintCustomerLedgerPage_Handler;
+                printDoc.Print();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Customer ledger statement printing failed", ex);
+                return false;
+            }
+        }
+
+        private void PrintCustomerLedgerPage_Handler(object sender, PrintPageEventArgs e)
+        {
+            if (e.Graphics == null || _customerLedgerToPrint == null || _ledgerEntriesToPrint == null) return;
+
+            var g = e.Graphics;
+            var headerFont = new Font("Consolas", 10, FontStyle.Bold);
+            var normalFont = new Font("Consolas", 8);
+            var boldFont = new Font("Consolas", 8, FontStyle.Bold);
+            var smallFont = new Font("Consolas", 7);
+
+            float y = 5;
+            float margin = 5;
+            float pageWidth = 265;
+            var sf = new StringFormat { Alignment = StringAlignment.Center };
+            var sfRight = new StringFormat { Alignment = StringAlignment.Far };
+
+            g.DrawString(_storeName, headerFont, Brushes.Black, new RectangleF(0, y, 302, 18), sf);
+            y += 18;
+            g.DrawString("--- CUSTOMER LEDGER STATEMENT ---", boldFont, Brushes.Black, new RectangleF(0, y, 302, 14), sf);
+            y += 14;
+            g.DrawString(_storeAddress, smallFont, Brushes.Black, new RectangleF(0, y, 302, 14), sf);
+            y += 14;
+            g.DrawString($"Ph: {_storePhone}", smallFont, Brushes.Black, new RectangleF(0, y, 302, 14), sf);
+            y += 16;
+
+            g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
+            g.DrawString($"Customer: {_customerLedgerToPrint.FullName}", boldFont, Brushes.Black, margin, y); y += 12;
+            g.DrawString($"Phone: {_customerLedgerToPrint.PrimaryPhone}", normalFont, Brushes.Black, margin, y); y += 12;
+
+            string periodLabel = _ledgerFromDate.HasValue || _ledgerToDate.HasValue
+                ? $"{_ledgerFromDate?.ToString("dd/MM/yy") ?? "..."} to {_ledgerToDate?.ToString("dd/MM/yy") ?? "..."}"
+                : "All Time";
+            g.DrawString($"Period: {periodLabel}", normalFont, Brushes.Black, margin, y); y += 12;
+            g.DrawString($"Printed: {DateTime.Now:dd/MM/yy HH:mm}", normalFont, Brushes.Black, margin, y); y += 14;
+
+            g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
+            g.DrawString("Date/Time", boldFont, Brushes.Black, margin, y);
+            g.DrawString("Dr", boldFont, Brushes.Black, 132, y);
+            g.DrawString("Cr", boldFont, Brushes.Black, 182, y);
+            g.DrawString("Bal", boldFont, Brushes.Black, pageWidth, y, sfRight);
+            y += 12;
+            g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
+
+            double totalDebit = 0;
+            double totalCredit = 0;
+            double openingBalance = 0;
+            double closingBalance = 0;
+            if (_ledgerEntriesToPrint.Any())
+            {
+                openingBalance = _ledgerEntriesToPrint.First().RunningBalance - (_ledgerEntriesToPrint.First().Debit - _ledgerEntriesToPrint.First().Credit);
+                closingBalance = _ledgerEntriesToPrint.Last().RunningBalance;
+            }
+
+            foreach (var row in _ledgerEntriesToPrint)
+            {
+                totalDebit += row.Debit;
+                totalCredit += row.Credit;
+
+                g.DrawString(row.EntryDate.ToString("dd/MM HH:mm"), normalFont, Brushes.Black, margin, y);
+                g.DrawString(row.Debit > 0 ? row.Debit.ToString("N0") : "-", normalFont, Brushes.Black, 132, y);
+                g.DrawString(row.Credit > 0 ? row.Credit.ToString("N0") : "-", normalFont, Brushes.Black, 182, y);
+                g.DrawString(row.RunningBalance.ToString("N0"), boldFont, Brushes.Black, pageWidth, y, sfRight);
+                y += 11;
+
+                string label = $"{row.TransactionType}: {row.Description}";
+                RectangleF rect = new RectangleF(margin + 2, y, pageWidth - 2, 40);
+                g.DrawString(label, smallFont, Brushes.Black, rect);
+                SizeF sz = g.MeasureString(label, smallFont, (int)(pageWidth - 2));
+                y += Math.Max(10, sz.Height + 1);
+            }
+
+            g.DrawString(new string('=', 44), normalFont, Brushes.Black, margin, y); y += 13;
+            g.DrawString("Opening Balance:", boldFont, Brushes.Black, margin, y);
+            g.DrawString($"Rs.{openingBalance:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight); y += 12;
+            g.DrawString("Total Debit:", boldFont, Brushes.Black, margin, y);
+            g.DrawString($"Rs.{totalDebit:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight); y += 12;
+            g.DrawString("Total Credit:", boldFont, Brushes.Black, margin, y);
+            g.DrawString($"Rs.{totalCredit:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight); y += 12;
+            g.DrawString("Closing Balance:", headerFont, Brushes.Black, margin, y);
+            g.DrawString($"Rs.{closingBalance:N2}", headerFont, Brushes.Black, pageWidth, y, sfRight); y += 18;
+
+            g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
+            g.DrawString("End of customer ledger statement", smallFont, Brushes.Black, new RectangleF(0, y, 302, 15), sf);
 
             e.HasMorePages = false;
             headerFont.Dispose();

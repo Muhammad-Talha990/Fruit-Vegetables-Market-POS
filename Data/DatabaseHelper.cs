@@ -94,7 +94,7 @@ namespace GroceryPOS.Data
             {
                 using var conn = GetConnection();
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "SELECT COUNT(*) FROM Bill;";
+                cmd.CommandText = "SELECT COUNT(*) FROM Bills;";
                 var count = cmd.ExecuteScalar();
                 return $"[DB DIAGNOSTIC] Path: {DbPath} | Total Bills: {count}";
             }

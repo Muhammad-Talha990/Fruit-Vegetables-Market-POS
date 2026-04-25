@@ -998,6 +998,33 @@
                         </Button>
                     </Grid>
 
+                    <!-- Payment Method Selection -->
+                    <TextBlock Text="Payment Method" Foreground="#1E293B" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <ComboBox ItemsSource="{Binding PaymentMethods}" SelectedItem="{Binding SelectedHistoryPaymentMethod}"
+                              FontSize="13" Padding="10,8" Margin="0,0,0,12" Foreground="#1E293B" Background="#F1F5F9" BorderBrush="#CBD5E1"/>
+
+                    <!-- Online Account Selection (visible only when Online is selected) -->
+                    <StackPanel Visibility="{Binding IsHistoryOnlinePayment, Converter={StaticResource BoolToVis}}" Margin="0,0,0,10">
+                        <TextBlock Text="🏢 Select Payment Account" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="#1E293B" Margin="0,0,0,4"/>
+                        <ComboBox ItemsSource="{Binding HistoryActiveAccounts}"
+                                  SelectedItem="{Binding SelectedHistoryAccount}"
+                                  FontSize="13" Padding="10,8" Margin="0,0,0,8"
+                                  Foreground="#1E293B" Background="#F1F5F9" BorderBrush="#CBD5E1">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B"/>
+                                        <TextBlock Text="{Binding AccountType}" FontSize="10" Foreground="#64748B" Opacity="0.9"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="⚠ Required: Select an account to receive payment"
+                                   FontSize="10" Foreground="#DC2626" FontWeight="SemiBold" Margin="0,3,0,8"
+                                   Visibility="{Binding SelectedHistoryAccount, Converter={StaticResource NullToVis}}"/>
+                    </StackPanel>
+
                     <TextBlock Text="Note (Optional)" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4"/>
                     <TextBox Text="{Binding HistoryPaymentNote, UpdateSourceTrigger=PropertyChanged}"
                              Background="#0F172A" Foreground="White" FontSize="14"

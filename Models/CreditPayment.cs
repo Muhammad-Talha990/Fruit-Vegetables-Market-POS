@@ -17,7 +17,7 @@ namespace GroceryPOS.Models
         /// <summary>When this payment was recorded.</summary>
         public DateTime PaidAt { get; set; } = DateTime.Now;
 
-        /// <summary>Payment method used (Cash, Card, Online, etc.)</summary>
+        /// <summary>Payment method used (Cash or Online).</summary>
         public string PaymentMethod { get; set; } = "Cash";
 
         /// <summary>Type of transaction (Payment or Refund).</summary>

@@ -285,7 +285,7 @@ namespace GroceryPOS.ViewModels
                         TotalRevenue    = salesData.Sum(s => s.GrandTotal);
                         TotalSalesCount = salesData.Count;
                         TotalReturns    = returnsTotal;
-                        NetSales        = Math.Max(0, TotalRevenue - returnsTotal);
+                        NetSales        = TotalRevenue - returnsTotal;
                         OutstandingCredit = creditTotal;
 
                         ApplyFilters();

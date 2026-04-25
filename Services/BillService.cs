@@ -170,6 +170,7 @@ namespace GroceryPOS.Services
         // ── Return Stats ──────────────────────────────
         public double GetTodayReturnsTotal()  => _billRepo.GetTodayReturnsTotal();
         public double GetTodayCashRefunded()  => _billRepo.GetTodayCashRefunded();
+        public double GetTodayStoreCredit()   => _billRepo.GetTodayStoreCredit();
         public double GetTodayNetSales()      => GetTodayTotal() - GetTodayReturnsTotal();
         public List<Bill> GetSalesOnlyByDateRange(DateTime from, DateTime to) => _billRepo.GetSalesOnlyByDateRange(from, to);
 

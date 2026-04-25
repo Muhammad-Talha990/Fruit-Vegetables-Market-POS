@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Text.RegularExpressions;
 using GroceryPOS.Helpers;
 using GroceryPOS.Models;
 using GroceryPOS.Services;
@@ -14,6 +15,8 @@ namespace GroceryPOS.ViewModels
     public class ReturnViewModel : BaseViewModel
     {
         private readonly IReturnService _returnService;
+        private readonly CustomerService _customerService;
+        private readonly BillService _billService;
         private readonly AuthService _authService;
         private readonly PrintService _printService;
 
@@ -23,6 +26,40 @@ namespace GroceryPOS.ViewModels
             get => _billIdInput;
             set => SetProperty(ref _billIdInput, value);
         }
+
+        private string _customerPhoneInput = string.Empty;
+        public string CustomerPhoneInput
+        {
+            get => _customerPhoneInput;
+            set
+            {
+                var digitsOnly = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+                if (digitsOnly.Length > 11)
+                    digitsOnly = digitsOnly[..11];
+
+                SetProperty(ref _customerPhoneInput, digitsOnly);
+            }
+        }
+
+        public ObservableCollection<Bill> CustomerBills { get; } = new();
+        private bool _isPopulatingCustomerBills;
+
+        private Bill? _selectedCustomerBill;
+        public Bill? SelectedCustomerBill
+        {
+            get => _selectedCustomerBill;
+            set
+            {
+                if (!SetProperty(ref _selectedCustomerBill, value))
+                    return;
+
+                // Auto-load selected bill from dropdown (user no longer needs to press "Load").
+                if (!_isPopulatingCustomerBills && value != null)
+                    _ = LoadBillById(value.BillId);
+            }
+        }
+
+        public bool HasCustomerBills => CustomerBills.Count > 0;
 
         private Bill? _originalBill;
         public Bill? OriginalBill
@@ -86,6 +123,8 @@ namespace GroceryPOS.ViewModels
         public string StorePhone => "0300-1234567";
 
         public ICommand SearchCommand { get; }
+        public ICommand SearchByPhoneCommand { get; }
+        public ICommand LoadSelectedBillCommand { get; }
         public ICommand ProcessReturnCommand { get; }
         public ICommand ClearFormCommand { get; }
         public ICommand TogglePreviewCommand { get; }
@@ -116,13 +155,17 @@ namespace GroceryPOS.ViewModels
             OnPropertyChanged(nameof(PreviewRemainingDue));
         }
 
-        public ReturnViewModel(IReturnService returnService, AuthService authService, PrintService printService)
+        public ReturnViewModel(IReturnService returnService, CustomerService customerService, BillService billService, AuthService authService, PrintService printService)
         {
             _returnService = returnService;
+            _customerService = customerService;
+            _billService = billService;
             _authService = authService;
             _printService = printService;
 
             SearchCommand = new RelayCommand(async _ => await SearchBill());
+            SearchByPhoneCommand = new RelayCommand(async _ => await SearchBillsByPhone());
+            LoadSelectedBillCommand = new RelayCommand(async _ => await LoadSelectedBill());
             ProcessReturnCommand = new RelayCommand(async _ => await ProcessReturn());
             ClearFormCommand = new RelayCommand(_ => ClearForm());
             TogglePreviewCommand = new RelayCommand(_ => IsPreviewVisible = !IsPreviewVisible);
@@ -131,6 +174,18 @@ namespace GroceryPOS.ViewModels
         private async Task SearchBill()
         {
             if (!int.TryParse(BillIdInput, out int billId))
+            {
+                StatusMessage = "Please enter a valid Bill ID.";
+                ShowPopupError("Please enter a valid Bill ID.");
+                return;
+            }
+
+            await LoadBillById(billId);
+        }
+
+        private async Task LoadBillById(int billId)
+        {
+            if (billId <= 0)
             {
                 StatusMessage = "Please enter a valid Bill ID.";
                 ShowPopupError("Please enter a valid Bill ID.");
@@ -192,6 +247,86 @@ namespace GroceryPOS.ViewModels
             }
         }
 
+        private async Task SearchBillsByPhone()
+        {
+            if (string.IsNullOrWhiteSpace(CustomerPhoneInput))
+            {
+                StatusMessage = "Enter customer phone number to search bills.";
+                ShowPopupError("Enter customer phone number to search bills.");
+                return;
+            }
+
+            if (!Regex.IsMatch(CustomerPhoneInput, @"^0\d{10}$"))
+            {
+                StatusMessage = "Phone number must be exactly 11 digits and start with 0.";
+                ShowPopupError("Phone number must be exactly 11 digits and start with 0.");
+                return;
+            }
+
+            var normalizedPhone = _customerService.NormalizePhone(CustomerPhoneInput);
+
+            try
+            {
+                StatusMessage = "Searching customer by phone...";
+                var customer = _customerService.GetCustomerByPhone(normalizedPhone);
+                if (customer == null)
+                {
+                    Dispatch(() =>
+                    {
+                        CustomerBills.Clear();
+                        SelectedCustomerBill = null;
+                        OnPropertyChanged(nameof(HasCustomerBills));
+                    });
+                    StatusMessage = "No registered customer found with this phone number.";
+                    ShowPopupError("No registered customer found with this phone number.");
+                    return;
+                }
+
+                var bills = _billService
+                    .GetBillsByCustomerId(customer.CustomerId)
+                    .Where(b => b.BillId > 0)
+                    .OrderByDescending(b => b.CreatedAt)
+                    .ToList();
+
+                Dispatch(() =>
+                {
+                    _isPopulatingCustomerBills = true;
+                    CustomerBills.Clear();
+                    foreach (var bill in bills)
+                        CustomerBills.Add(bill);
+
+                    SelectedCustomerBill = CustomerBills.FirstOrDefault();
+                    _isPopulatingCustomerBills = false;
+                    OnPropertyChanged(nameof(HasCustomerBills));
+                });
+
+                StatusMessage = bills.Count == 0
+                    ? $"Customer found ({customer.FullName}), but no bills available."
+                    : $"Found {bills.Count} bill(s) for {customer.FullName}. Select one to load.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error: {ex.Message}";
+                ShowPopupError(ex.Message);
+                AppLogger.Error("SearchBillsByPhone failed", ex);
+            }
+
+            await Task.CompletedTask;
+        }
+
+        private async Task LoadSelectedBill()
+        {
+            if (SelectedCustomerBill == null)
+            {
+                StatusMessage = "Please select a bill from the customer bills list.";
+                ShowPopupError("Please select a bill from the customer bills list.");
+                return;
+            }
+
+            BillIdInput = SelectedCustomerBill.BillId.ToString();
+            await LoadBillById(SelectedCustomerBill.BillId);
+        }
+
         private async Task ProcessReturn()
         {
             if (OriginalBill == null) return;
@@ -248,7 +383,7 @@ namespace GroceryPOS.ViewModels
 
                 // ── Refresh the current view instead of clearing it ──
                 // This lets the user see the updated "Already Returned" quantities and the new history entry.
-                await SearchBill();
+                await LoadBillById(OriginalBill.BillId);
                 
                 // Keep the success message visible even after SearchBill updates it
                 StatusMessage = $"✓ Return processed! Return Bill: {returnBill.InvoiceNumber}";
@@ -272,7 +407,12 @@ namespace GroceryPOS.ViewModels
             OriginalBill = null;
             Dispatch(() => Items.Clear());
             Dispatch(() => ReturnHistory.Clear());
+            Dispatch(() => CustomerBills.Clear());
+            _isPopulatingCustomerBills = false;
+            SelectedCustomerBill = null;
             BillIdInput = string.Empty;
+            CustomerPhoneInput = string.Empty;
+            OnPropertyChanged(nameof(HasCustomerBills));
             StatusMessage = "Form cleared.";
         }
     }

@@ -68,23 +68,23 @@ namespace GroceryPOS.Data.Repositories
         }
 
         /// <summary>Soft-deletes a customer by setting IsActive = 0.</summary>
-        public void SoftDelete(int customerId)
+        public bool SoftDelete(int customerId)
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "UPDATE Customers SET IsActive = 0 WHERE CustomerId = @id;";
             cmd.Parameters.AddWithValue("@id", customerId);
-            cmd.ExecuteNonQuery();
+            return cmd.ExecuteNonQuery() > 0;
         }
 
         /// <summary>Reactivates a previously deactivated customer.</summary>
-        public void Reactivate(int customerId)
+        public bool Reactivate(int customerId)
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "UPDATE Customers SET IsActive = 1 WHERE CustomerId = @id;";
             cmd.Parameters.AddWithValue("@id", customerId);
-            cmd.ExecuteNonQuery();
+            return cmd.ExecuteNonQuery() > 0;
         }
 
         // ────────────────────────────────────────────
