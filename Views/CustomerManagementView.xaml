@@ -199,8 +199,12 @@
                     <TextBlock Text="Primary Phone" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4"/>
                     <TextBox Text="{Binding EditPhone, UpdateSourceTrigger=PropertyChanged}"
                              Background="#0F172A" Foreground="White" FontSize="14"
-                             Padding="10,8" Margin="0,0,0,12"
+                             Padding="10,8" Margin="0,0,0,2"
                              BorderBrush="#334155" BorderThickness="1" CaretBrush="White"/>
+                    
+                    <TextBlock Text="⚠ Invalid format (e.g. 03001234567)" 
+                               Foreground="#EF4444" FontSize="11" Margin="2,0,0,10"
+                               Visibility="{Binding IsPhoneValid, Converter={StaticResource InverseBoolToVis}}"/>
 
                     <TextBlock Text="Secondary Phone (Optional)" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4"/>
                     <TextBox Text="{Binding EditPhone2, UpdateSourceTrigger=PropertyChanged}"

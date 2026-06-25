@@ -76,8 +76,17 @@ namespace GroceryPOS.ViewModels
         public string EditPhone
         {
             get => _editPhone;
-            set => SetProperty(ref _editPhone, value);
+            set 
+            { 
+                if (SetProperty(ref _editPhone, value))
+                {
+                    OnPropertyChanged(nameof(IsPhoneValid));
+                }
+            }
         }
+
+        public bool IsPhoneValid => !string.IsNullOrWhiteSpace(EditPhone) && 
+                                    System.Text.RegularExpressions.Regex.IsMatch(EditPhone, "^0[0-9]{10}$");
 
         private string _editPhone2 = string.Empty;
         public string EditPhone2

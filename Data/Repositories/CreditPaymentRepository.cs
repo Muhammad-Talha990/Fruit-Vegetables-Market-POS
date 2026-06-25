@@ -20,8 +20,9 @@ namespace GroceryPOS.Data.Repositories
         /// <summary>
         /// Records a payment installment in the unified Payments table.
         /// </summary>
-        public void RecordPayment(CreditPayment payment)
+        public void RecordPayment(CreditPayment payment, DateTime? capturedAt = null)
         {
+            var at = capturedAt ?? DateTimeHelper.CaptureTransactionTime();
             using var conn = DatabaseHelper.GetConnection();
             using var txn = conn.BeginTransaction();
 
@@ -54,7 +55,7 @@ namespace GroceryPOS.Data.Repositories
                 cmd.Parameters.AddWithValue("@bid", payment.BillId);
                 cmd.Parameters.AddWithValue("@amt", Math.Round(payment.AmountPaid, 2));
                 cmd.Parameters.AddWithValue("@method", payment.PaymentMethod ?? "Cash");
-                cmd.Parameters.AddWithValue("@at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                cmd.Parameters.AddWithValue("@at", at.ToString("yyyy-MM-dd HH:mm:ss"));
                 
                 payment.PaymentId = Convert.ToInt32(cmd.ExecuteScalar());
 
@@ -67,7 +68,7 @@ namespace GroceryPOS.Data.Repositories
                         payment.PaymentId,
                         payment.AmountPaid,
                         $"Payment received (Invoice #{invoiceNum})",
-                        DateTime.Now,
+                        at,
                         "Recovery",
                         conn,
                         txn);

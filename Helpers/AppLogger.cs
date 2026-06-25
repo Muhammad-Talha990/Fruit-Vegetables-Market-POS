@@ -18,7 +18,17 @@ namespace GroceryPOS.Helpers
         }
 
         public static void Info(string message) => Log("INFO", message);
-        public static void Warning(string message) => Log("WARN", message);
+        public static void Warning(string message, Exception? ex = null)
+        {
+            var msg = message;
+            if (ex != null)
+            {
+                msg += $" | Exception: {ex.Message}";
+                if (ex.InnerException != null)
+                    msg += $" | Inner Exception: {ex.InnerException.Message}";
+            }
+            Log("WARN", msg);
+        }
         public static void Error(string message, Exception? ex = null)
         {
             var msg = message;

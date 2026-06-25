@@ -6,6 +6,8 @@
 
     <UserControl.Resources>
         <conv:IsNegativeConverter x:Key="IsNegativeConverter"/>
+        <conv:NumericToVisibilityConverter x:Key="NumericToVis"/>
+        <conv:NumericToVisibilityConverter x:Key="NumericToVisInverted"/>
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="30,24">
@@ -16,7 +18,7 @@
                 <TextBlock Text="{Binding Greeting}" FontSize="26" FontWeight="Bold"
                            Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                 <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal">
-                    <TextBlock Text="⏰" FontSize="24" Foreground="#1E293B" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="&#x23F0;" FontSize="24" Foreground="#1E293B" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <TextBlock FontSize="26" FontWeight="Bold"
                                Foreground="{DynamicResource PrimaryBrush}" Text="{Binding CurrentTime}"/>
                 </StackPanel>
@@ -27,19 +29,20 @@
                      xmlns:System="clr-namespace:System;assembly=mscorlib"/>
             </TextBlock>
 
-            <!-- Stats Cards -->
-            <UniformGrid Columns="6" Margin="0,0,0,28">
+            <!-- Stats Cards (7 cards in a wrapping UniformGrid with 4 columns) -->
+            <UniformGrid Columns="4" Margin="0,0,0,0">
+
                 <!-- Total Sales Today -->
-                <Border Style="{DynamicResource CardBorder}" Margin="0,0,6,0">
+                <Border Style="{DynamicResource CardBorder}" Margin="0,0,8,8">
                     <StackPanel>
-                        <TextBlock Text="💰" FontSize="26" Margin="0,0,0,8"/>
-                        <TextBlock Text="Total Sales Today" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
-                        <TextBlock FontSize="22" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}" Margin="0,4,0,0">
+                        <TextBlock Text="&#x1F4B0;" FontSize="22" Margin="0,0,0,4"/>
+                        <TextBlock Text="Total Sales Today" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}" Margin="0,2,0,0">
                             <TextBlock.Text>
                                 <Binding Path="TodaySales" StringFormat="Rs.{0:N0}"/>
                             </TextBlock.Text>
                         </TextBlock>
-                        <TextBlock Foreground="{DynamicResource SubTextBrush}" FontSize="11" Margin="0,4,0,0">
+                        <TextBlock Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,0">
                             <Run Text="{Binding TodaySaleCount, Mode=OneWay}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                             <Run Text=" transactions"/>
                         </TextBlock>
@@ -47,53 +50,67 @@
                 </Border>
 
                 <!-- Returns Today -->
-                <Border Style="{DynamicResource CardBorder}" Margin="6,0">
+                <Border Style="{DynamicResource CardBorder}" Margin="0,0,8,8">
                     <StackPanel>
-                        <TextBlock Text="↩️" FontSize="26" Margin="0,0,0,8"/>
-                        <TextBlock Text="Returns Today" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
-                        <TextBlock FontSize="22" FontWeight="Bold" Foreground="#FF7043" Margin="0,4,0,0">
+                        <TextBlock Text="&#x21A9;&#xFE0F;" FontSize="22" Margin="0,0,0,4"/>
+                        <TextBlock Text="Returns Today" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="#FF7043" Margin="0,2,0,0">
                             <TextBlock.Text>
                                 <Binding Path="TodayReturns" StringFormat="Rs.{0:N0}"/>
                             </TextBlock.Text>
                         </TextBlock>
-                        <TextBlock Text="items returned today" Foreground="{DynamicResource SubTextBrush}" FontSize="11" Margin="0,4,0,0"/>
+                        <TextBlock Text="items returned today" Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Stock Purchases Today -->
+                <Border Style="{DynamicResource CardBorder}" Margin="0,0,8,8">
+                    <StackPanel>
+                        <TextBlock Text="&#x1F6D2;" FontSize="22" Margin="0,0,0,4"/>
+                        <TextBlock Text="Stock Purchases" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="#F59E0B" Margin="0,2,0,0">
+                            <TextBlock.Text>
+                                <Binding Path="TodayStockPurchases" StringFormat="Rs.{0:N0}"/>
+                            </TextBlock.Text>
+                        </TextBlock>
+                        <TextBlock Text="total spend today" Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
 
                 <!-- Customer Credit (Due) -->
-                <Border Style="{DynamicResource CardBorder}" Margin="6,0">
+                <Border Style="{DynamicResource CardBorder}" Margin="0,0,0,8">
                     <StackPanel>
-                        <TextBlock Text="💳" FontSize="26" Margin="0,0,0,8"/>
-                        <TextBlock Text="Customer Credit" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
-                        <TextBlock FontSize="22" FontWeight="Bold" Foreground="{DynamicResource DangerBrush}" Margin="0,4,0,0">
+                        <TextBlock Text="&#x1F4B3;" FontSize="22" Margin="0,0,0,4"/>
+                        <TextBlock Text="Customer Credit" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="{DynamicResource DangerBrush}" Margin="0,2,0,0">
                             <TextBlock.Text>
                                 <Binding Path="TodayCredit" StringFormat="Rs.{0:N0}"/>
                             </TextBlock.Text>
                         </TextBlock>
-                        <TextBlock Text="unpaid amount today" Foreground="{DynamicResource SubTextBrush}" FontSize="11" Margin="0,4,0,0"/>
+                        <TextBlock Text="unpaid amount today" Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
 
-                <!-- Recovered Credit (Previous Bills) -->
-                <Border Style="{DynamicResource CardBorder}" Margin="6,0">
+                <!-- Recovered Credit -->
+                <Border Style="{DynamicResource CardBorder}" Margin="0,0,8,8">
                     <StackPanel>
-                        <TextBlock Text="💼" FontSize="26" Margin="0,0,0,8"/>
-                        <TextBlock Text="Recovered Credit" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
-                        <TextBlock FontSize="22" FontWeight="Bold" Foreground="#8B5CF6" Margin="0,4,0,0">
+                        <TextBlock Text="&#x1F4BC;" FontSize="22" Margin="0,0,0,4"/>
+                        <TextBlock Text="Recovered Credit" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="#8B5CF6" Margin="0,2,0,0">
                             <TextBlock.Text>
                                 <Binding Path="TodayRecoveredCredit" StringFormat="Rs.{0:N0}"/>
                             </TextBlock.Text>
                         </TextBlock>
-                        <TextBlock Text="from previous invoices" Foreground="{DynamicResource SubTextBrush}" FontSize="11" Margin="0,4,0,0"/>
+                        <TextBlock Text="from previous invoices" Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
 
                 <!-- Cash In Drawer -->
-                <Border Style="{DynamicResource CardBorder}" Margin="6,0">
+                <Border Style="{DynamicResource CardBorder}" Margin="0,0,8,8">
                     <StackPanel>
-                        <TextBlock Text="🏦" FontSize="26" Margin="0,0,0,8"/>
-                        <TextBlock Text="Cash In Drawer" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
-                        <TextBlock FontSize="22" FontWeight="Bold" Margin="0,4,0,0">
+                        <TextBlock Text="&#x1F3E6;" FontSize="22" Margin="0,0,0,4"/>
+                        <TextBlock Text="Cash In Drawer" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Margin="0,2,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
@@ -108,36 +125,37 @@
                                 <Binding Path="TodayCashInDrawer" StringFormat="Rs.{0:N0}"/>
                             </TextBlock.Text>
                         </TextBlock>
-                        <TextBlock Text="cash payments today" Foreground="{DynamicResource SubTextBrush}" FontSize="11" Margin="0,4,0,0"/>
+                        <TextBlock Text="cash payments today" Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
 
                 <!-- Online Payments -->
-                <Border Style="{DynamicResource CardBorder}" Margin="6,0,0,0">
+                <Border Style="{DynamicResource CardBorder}" Margin="0,0,0,8">
                     <StackPanel>
-                        <TextBlock Text="🌐" FontSize="26" Margin="0,0,0,8"/>
-                        <TextBlock Text="Online Payments" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
-                        <TextBlock FontSize="22" FontWeight="Bold" Foreground="#0EA5E9" Margin="0,4,0,0">
+                        <TextBlock Text="&#x1F310;" FontSize="22" Margin="0,0,0,4"/>
+                        <TextBlock Text="Online Payments" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="#0EA5E9" Margin="0,2,0,0">
                             <TextBlock.Text>
                                 <Binding Path="TodayOnlinePayments" StringFormat="Rs.{0:N0}"/>
                             </TextBlock.Text>
                         </TextBlock>
-                        <TextBlock Text="online payments today" Foreground="{DynamicResource SubTextBrush}" FontSize="11" Margin="0,4,0,0"/>
+                        <TextBlock Text="online payments today" Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
+
             </UniformGrid>
 
-            <!-- Two Column Layout -->
-            <Grid>
+            <!-- Two Column Layout: Recent Sales | Low Stock -->
+            <Grid Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Recent Sales -->
-                <Border Grid.Column="0" Style="{DynamicResource CardBorder}" Margin="0,0,12,0">
+                <Border Grid.Column="0" Style="{DynamicResource CardBorder}" Margin="0,0,10,0">
                     <StackPanel>
-                        <TextBlock Text="📋 Recent Sales" FontSize="16" FontWeight="SemiBold"
+                        <TextBlock Text="&#x1F4CB; Recent Sales" FontSize="16" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextBrush}" Margin="0,0,0,14"/>
 
                         <DataGrid ItemsSource="{Binding RecentSales}" Style="{DynamicResource ModernDataGrid}"
@@ -163,11 +181,11 @@
                                 <DataGridTemplateColumn Header="Total" Width="Auto">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding GrandTotal, StringFormat='Rs.{0:N0}'}" VerticalAlignment="Center" Padding="10,0">
+                                            <TextBlock Text="{Binding GrandTotal, StringFormat='Rs.{0:N0}'}"
+                                                       VerticalAlignment="Center" Padding="10,0">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
                                                         <Style.Triggers>
-                                                            <!-- Color-code returns based on Status -->
                                                             <DataTrigger Binding="{Binding Status}" Value="*** RETURN BILL ***">
                                                                 <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
                                                                 <Setter Property="FontWeight" Value="Bold"/>
@@ -185,23 +203,93 @@
                     </StackPanel>
                 </Border>
 
-
-                <!-- Low Stock List -->
-                <Border Grid.Column="1" Style="{DynamicResource CardBorder}" Margin="12,0,0,0">
+                <!-- Low Stock Alert -->
+                <Border Grid.Column="1" Style="{DynamicResource CardBorder}" Margin="10,0,0,0">
                     <StackPanel>
-                        <TextBlock Text="⚠️ Low Stock Alert" FontSize="16" FontWeight="SemiBold"
-                                   Foreground="#F44336" Margin="0,0,0,14"/>
-                        <DataGrid ItemsSource="{Binding LowStockItems}" Style="{DynamicResource ModernDataGrid}"
+
+                        <!-- Header row with dynamic badge -->
+                        <Grid Margin="0,0,0,14">
+                            <TextBlock Text="&#x26A0;&#xFE0F; Low Stock Alert" FontSize="16" FontWeight="SemiBold"
+                                       Foreground="#F44336" VerticalAlignment="Center"/>
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    CornerRadius="10" Padding="8,3">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="#FEE2E2"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding LowStockCount}" Value="0">
+                                                <Setter Property="Background" Value="#DCFCE7"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock FontSize="12" FontWeight="Bold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#DC2626"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding LowStockCount}" Value="0">
+                                                    <Setter Property="Foreground" Value="#16A34A"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                    <TextBlock.Text>
+                                        <Binding Path="LowStockCount" StringFormat="{}{0} item(s)"/>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </Border>
+                        </Grid>
+
+                        <!-- EMPTY STATE: All stock is healthy (shown when LowStockCount == 0) -->
+                        <Border CornerRadius="10" Padding="24,36" Background="#F0FDF4"
+                                Visibility="{Binding LowStockCount, Converter={StaticResource NumericToVisInverted}, ConverterParameter=Inverted}">
+                            <StackPanel HorizontalAlignment="Center">
+                                <TextBlock Text="&#x2705;" FontSize="42" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                                <TextBlock Text="All stock levels are healthy"
+                                           FontSize="15" FontWeight="SemiBold"
+                                           Foreground="#15803D" HorizontalAlignment="Center"/>
+                                <TextBlock Text="No items are currently below their minimum threshold."
+                                           FontSize="12" Foreground="#4B7C59"
+                                           HorizontalAlignment="Center" Margin="0,8,0,0"
+                                           TextWrapping="Wrap" TextAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- LOW STOCK TABLE (shown only when LowStockCount > 0) -->
+                        <DataGrid ItemsSource="{Binding LowStockItems}"
+                                  Visibility="{Binding LowStockCount, Converter={StaticResource NumericToVis}}"
+                                  Style="{DynamicResource ModernDataGrid}"
                                   ColumnHeaderStyle="{DynamicResource ModernDataGridColumnHeader}"
                                   RowStyle="{DynamicResource ModernDataGridRow}"
                                   CellStyle="{DynamicResource ModernDataGridCell}"
                                   MaxHeight="300">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Item" Binding="{Binding Description}" Width="*"/>
-                                <DataGridTextColumn Header="Stock" Binding="{Binding StockQuantity}" Width="Auto"/>
-                                <DataGridTextColumn Header="Min" Binding="{Binding MinStockThreshold}" Width="Auto"/>
+                                <DataGridTemplateColumn Header="Stock" Width="72">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock VerticalAlignment="Center" Padding="14,10"
+                                                       FontWeight="Bold"
+                                                       Text="{Binding StockQuantity, StringFormat={}{0:N0}}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="#DC2626"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding StockQuantity}" Value="0">
+                                                                <Setter Property="Foreground" Value="#7F1D1D"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Min" Binding="{Binding MinStockThreshold}" Width="60"/>
                             </DataGrid.Columns>
                         </DataGrid>
+
                     </StackPanel>
                 </Border>
             </Grid>

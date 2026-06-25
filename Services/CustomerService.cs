@@ -89,6 +89,9 @@ namespace GroceryPOS.Services
         public double GetPendingCredit(int customerId) =>
             _customerRepo.GetPendingCredit(customerId);
 
+        public Customer GetOrCreateWalkIn(string phone) =>
+            _customerRepo.GetOrCreateWalkIn(phone);
+
         public (int BillCount, double TotalAmount) GetCustomerStats(int customerId) =>
             _billRepo.GetCustomerStats(customerId);
 

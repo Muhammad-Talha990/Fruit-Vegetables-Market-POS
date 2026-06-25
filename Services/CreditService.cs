@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GroceryPOS.Data.Repositories;
 using GroceryPOS.Models;
+using GroceryPOS.Helpers;
 
 namespace GroceryPOS.Services
 {
@@ -85,6 +86,8 @@ namespace GroceryPOS.Services
                 throw new InvalidOperationException(
                     $"Payment amount (Rs. {amount:N2}) exceeds remaining balance (Rs. {bill.RemainingAmount:N2}). Overpayment is not allowed.");
 
+            var transactionTime = DateTimeHelper.CaptureTransactionTime();
+
             var payment = new CreditPayment
             {
                 BillId     = billId,
@@ -93,7 +96,7 @@ namespace GroceryPOS.Services
                 PaymentMethod = paymentMethod
             };
 
-            _creditRepo.RecordPayment(payment);
+            _creditRepo.RecordPayment(payment, transactionTime);
             
             // Trigger global UI refresh (Dashboard metrics, Reports, etc.)
             _stockService.NotifyChanged();

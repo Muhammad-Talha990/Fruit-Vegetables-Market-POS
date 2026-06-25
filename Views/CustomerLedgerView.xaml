@@ -51,18 +51,6 @@
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                <Button Content="🖨 Print Ledger" Command="{Binding PrintLedgerCommand}"
-                        Style="{DynamicResource ModernButton}"
-                        Background="{DynamicResource PrimaryBrush}" Foreground="White" FontSize="13"
-                        Padding="14,8" Cursor="Hand" BorderThickness="0" Margin="0,0,8,0">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                        </ControlTemplate>
-                    </Button.Template>
-                </Button>
                 <Button Content="🔄 Refresh" Command="{Binding RefreshCommand}"
                         Style="{DynamicResource ModernButton}"
                         Background="{DynamicResource SidebarBgBrush}" Foreground="White" FontSize="13"

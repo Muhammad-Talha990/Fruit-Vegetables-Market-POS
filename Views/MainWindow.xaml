@@ -9,8 +9,6 @@
         Background="{DynamicResource BgBrush}" FontFamily="{DynamicResource AppFont}">
 
     <Window.Resources>
-        <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
-
         <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
             <local:DashboardView/>
         </DataTemplate>
@@ -35,23 +33,29 @@
         <DataTemplate DataType="{x:Type vm:CustomerLedgerViewModel}">
             <local:CustomerLedgerView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SupplierManagementViewModel}">
+            <local:SupplierManagementView/>
+        </DataTemplate>
+
     </Window.Resources>
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="240"/>
+            <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
         <!-- Sidebar -->
-        <Border Grid.Column="0" Background="{DynamicResource SidebarBgBrush}">
+        <Border Grid.Column="0" Background="{DynamicResource SidebarBgBrush}"
+                Width="240"
+                Visibility="{Binding IsSidebarVisible, Converter={StaticResource BoolToVis}}">
             <DockPanel>
                 <!-- Sidebar Header -->
-                <StackPanel DockPanel.Dock="Top" Margin="0,15,0,15">
-                    <TextBlock Text="🛒" FontSize="32" HorizontalAlignment="Center" Margin="0,0,0,4"/>
-                    <TextBlock Text="GroceryPOS" FontSize="18" FontWeight="Bold" Foreground="White"
+                <StackPanel DockPanel.Dock="Top" Margin="0,20,0,20">
+                    <Image Source="/Assets/logo.png" Height="60" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                    <TextBlock Text="GroceryPOS" FontSize="20" FontWeight="Bold" Foreground="White"
                                HorizontalAlignment="Center" FontFamily="{DynamicResource AppFont}"/>
-                    <TextBlock Text="Point of Sale System" FontSize="11" Foreground="#94A3B8"
+                    <TextBlock Text="Enterprise Edition" FontSize="11" Foreground="#3B82F6" FontWeight="SemiBold"
                                HorizontalAlignment="Center" Margin="0,2,0,0" FontFamily="{DynamicResource AppFont}"/>
                 </StackPanel>
 
@@ -84,6 +88,11 @@
                     <Button Content="👥  Customers" Style="{DynamicResource SidebarButton}"
                             Command="{Binding NavigateCommand}" CommandParameter="Customers"/>
 
+                    <Button Content="🤝  Suppliers" Style="{DynamicResource SidebarButton}"
+                            Command="{Binding NavigateCommand}" CommandParameter="Suppliers"
+                            Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"/>
+
+
                     <Button Content="📈  Reports" Style="{DynamicResource SidebarButton}"
                             Command="{Binding NavigateCommand}" CommandParameter="Reports"
                             Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"/>
@@ -99,7 +108,15 @@
             </DockPanel>
         </Border>
 
-        <!-- Main Content -->
-        <ContentControl Grid.Column="1" Content="{Binding CurrentView}" Margin="0"/>
+        <!-- Main Content Area -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Current Content -->
+            <ContentControl Grid.Row="1" Content="{Binding CurrentView}" Margin="0"/>
+        </Grid>
     </Grid>
 </Window>

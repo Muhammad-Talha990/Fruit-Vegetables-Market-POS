@@ -87,6 +87,9 @@ namespace GroceryPOS.Services
                 using var conn = DatabaseHelper.GetConnection();
                 using var txn = conn.BeginTransaction();
 
+                // Capture transaction time ONCE for all timestamp fields in this operation
+                DateTime txnTime = DateTimeHelper.CaptureTransactionTime();
+
                 try
                 {
                     double totalReturnValue = 0;
@@ -136,7 +139,7 @@ namespace GroceryPOS.Services
 
                     if (cashToRefund > 0)
                     {
-                        InsertPaymentEntry(conn, txn, originalBillId, cashToRefund, "refund");
+                        InsertPaymentEntry(conn, txn, originalBillId, cashToRefund, "refund", txnTime);
                     }
 
                     // 4. Record Ledger Entry (Return clears liability)
@@ -148,7 +151,7 @@ namespace GroceryPOS.Services
                             returnId,
                             totalReturnValue,
                             $"Items Returned (Ref: Inv #{originalBill.InvoiceNumber})",
-                            DateTime.Now,
+                            txnTime,
                             conn,
                             txn);
                     }
@@ -171,7 +174,7 @@ namespace GroceryPOS.Services
                         ParentBillId = originalBillId,
                         CashReceived = cashRefund,
                         RemainingDueAfterThisReturn = creditToReduce,
-                        CreatedAt = DateTime.Now,
+                        CreatedAt = txnTime,
                         CustomerId = originalBill.CustomerId,
                         Customer = originalBill.Customer,
                         BillingAddress = originalBill.BillingAddress,
@@ -206,17 +209,17 @@ namespace GroceryPOS.Services
         /// <summary>
         /// Inserts a single payment entry within a transaction.
         /// </summary>
-        private void InsertPaymentEntry(SqliteConnection conn, SqliteTransaction txn, int billId, double amount, string type)
+        private void InsertPaymentEntry(SqliteConnection conn, SqliteTransaction txn, int billId, double amount, string type, DateTime txnTime)
         {
             using var cmd = conn.CreateCommand();
             cmd.Transaction = txn;
             cmd.CommandText = @"
                 INSERT INTO bill_payment (BillId, Amount, Type, CreatedAt)
                 VALUES (@bid, @amt, @type, @at);";
-            cmd.Parameters.AddWithValue("@bid", billId);
-            cmd.Parameters.AddWithValue("@amt", Math.Round(amount, 2));
+            cmd.Parameters.AddWithValue("@bid",  billId);
+            cmd.Parameters.AddWithValue("@amt",  Math.Round(amount, 2));
             cmd.Parameters.AddWithValue("@type", type);
-            cmd.Parameters.AddWithValue("@at", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@at",   txnTime.ToDbString());  // single-capture timestamp
             cmd.ExecuteNonQuery();
         }
 

@@ -47,7 +47,7 @@
     <Style x:Key="CardBorder" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource CardBgBrush}"/>
         <Setter Property="CornerRadius" Value="12"/>
-        <Setter Property="Padding" Value="18"/>
+        <Setter Property="Padding" Value="12"/>
         <Setter Property="Effect">
             <Setter.Value>
                 <DropShadowEffect ShadowDepth="0" BlurRadius="16" Opacity="0.08" Color="#000000"/>

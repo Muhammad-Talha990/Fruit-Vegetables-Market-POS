@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.Versioning;
 using System.ComponentModel;
 using System.Media;
 using System.Runtime.CompilerServices;
@@ -7,6 +8,7 @@ using System.Windows;
 
 namespace GroceryPOS.ViewModels
 {
+    [SupportedOSPlatform("windows")]
     public class BaseViewModel : INotifyPropertyChanged, IDisposable
     {
         public event PropertyChangedEventHandler? PropertyChanged;

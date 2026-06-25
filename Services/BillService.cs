@@ -46,9 +46,21 @@ namespace GroceryPOS.Services
         public Bill CompleteBill(int? userId, int? customerId, List<BillDescription> items,
             double discountAmount, double taxAmount, double cashReceived, double paidAmount = -1, string? billingAddress = null, string paymentMethod = "Cash", string? onlinePaymentMethod = null, int? accountId = null)
         {
+            var transactionTime = DateTimeHelper.CaptureTransactionTime();
+
             // ── Validate inputs ──
             if (items == null || items.Count == 0)
                 throw new InvalidOperationException("Cannot complete bill with no items.");
+
+            // Ensure every item has a valid description and non-null name
+            foreach (var it in items)
+            {
+                if (string.IsNullOrWhiteSpace(it.ItemDescription))
+                    throw new InvalidOperationException("Cannot save invoice because one or more items have missing descriptions.");
+
+                if (it.Quantity == 0)
+                    throw new InvalidOperationException("Cannot save invoice because one or more items have invalid quantity.");
+            }
 
             if (discountAmount < 0)
                 throw new ArgumentException("Discount amount cannot be negative.");
@@ -108,7 +120,7 @@ namespace GroceryPOS.Services
             // ── Build Bill object ──
             var bill = new Bill
             {
-                CreatedAt       = DateTime.Now,
+                CreatedAt       = transactionTime,
                 SubTotal        = subTotal,
                 DiscountAmount  = discountAmount,
                 TaxAmount       = taxAmount,

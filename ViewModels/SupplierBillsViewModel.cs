@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using Microsoft.Win32;
 using System.Linq;
@@ -17,6 +18,96 @@ namespace GroceryPOS.ViewModels
     {
         private readonly IStockService _stockService;
         private readonly IImageStorageService _imageService;
+        private readonly GroceryPOS.Data.Repositories.ItemRepository _itemRepo;
+
+        // ────────────────────────────────────────────
+        //  STOCK CART (new primary purchase path)
+        // ────────────────────────────────────────────
+
+        /// <summary>The active stock purchase cart. Bound to the cart DataGrid.</summary>
+        public ObservableCollection<StockPurchaseItem> CartItems { get; } = new();
+
+        private double _cartTotal;
+        /// <summary>Live-updating sum of all cart line totals.</summary>
+        public double CartTotal { get => _cartTotal; private set => SetProperty(ref _cartTotal, value); }
+
+        private string _cartStatus = string.Empty;
+        /// <summary>Feedback message shown under the cart (success / error).</summary>
+        public string CartStatus { get => _cartStatus; set => SetProperty(ref _cartStatus, value); }
+
+        private bool _isCartBusy;
+        /// <summary>True while the checkout async operation is running.</summary>
+        public bool IsCartBusy { get => _isCartBusy; set { SetProperty(ref _isCartBusy, value); (CheckoutCartCommand as RelayCommand)?.RaiseCanExecuteChanged(); } }
+
+        // Cart product search
+        private string _cartSearchText = string.Empty;
+        public string CartSearchText
+        {
+            get => _cartSearchText;
+            set { if (SetProperty(ref _cartSearchText, value) && !string.IsNullOrWhiteSpace(value)) _ = ExecuteCartSearch(); }
+        }
+
+        private bool _isCartSearchOpen;
+        public bool IsCartSearchOpen { get => _isCartSearchOpen; set => SetProperty(ref _isCartSearchOpen, value); }
+
+        public ObservableCollection<Item> CartSearchResults { get; } = new();
+
+        private Item? _cartSelectedResult;
+        public Item? CartSelectedResult
+        {
+            get => _cartSelectedResult;
+            set { if (SetProperty(ref _cartSelectedResult, value) && value != null) ExecuteAddItemToCart(value); }
+        }
+
+        private string _cartTempImagePath = string.Empty;
+        public string CartTempImagePath { get => _cartTempImagePath; set { SetProperty(ref _cartTempImagePath, value); (CheckoutCartCommand as RelayCommand)?.RaiseCanExecuteChanged(); } }
+
+        private BitmapImage? _cartImagePreview;
+        public BitmapImage? CartImagePreview { get => _cartImagePreview; set => SetProperty(ref _cartImagePreview, value); }
+
+        public ObservableCollection<Item> AllProducts { get; } = new();
+
+        private Item? _selectedProductFromList;
+        public Item? SelectedProductFromList
+        {
+            get => _selectedProductFromList;
+            set
+            {
+                if (SetProperty(ref _selectedProductFromList, value))
+                {
+                    (AddSelectedFromListToCartCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                }
+            }
+        }
+
+        private string _cartTotalText = "0";
+        public string CartTotalText
+        {
+            get => _cartTotalText;
+            set
+            {
+                if (SetProperty(ref _cartTotalText, value))
+                {
+                    if (double.TryParse(value, out double val))
+                    {
+                        _cartTotal = val;
+                        OnPropertyChanged(nameof(CartTotal));
+                    }
+                }
+            }
+        }
+
+        // Cart commands
+        public ICommand AddToCartCommand { get; }
+        public ICommand RemoveFromCartCommand { get; }
+        public ICommand ClearCartCommand { get; }
+        public ICommand CheckoutCartCommand { get; }
+        public ICommand SelectCartImageCommand { get; }
+        public ICommand AddSelectedFromListToCartCommand { get; }
+
+        // ────────────────────────────────────────────
+        //  Legacy supply history
+        // ────────────────────────────────────────────
 
         public ObservableCollection<Stock> SupplyHistory { get; set; } = new();
         public ObservableCollection<Item> ProductSearchResults { get; set; } = new();
@@ -187,17 +278,29 @@ namespace GroceryPOS.ViewModels
         public ICommand ViewFullBillCommand { get; }
         public ICommand ToggleSearchResultsCommand { get; }
 
-        public SupplierBillsViewModel(IStockService stockService, IImageStorageService imageService)
+        public SupplierBillsViewModel(IStockService stockService, IImageStorageService imageService, GroceryPOS.Data.Repositories.ItemRepository itemRepo)
         {
             _stockService = stockService;
             _imageService = imageService;
+            _itemRepo     = itemRepo;
 
+            // ── Cart commands ──
+            AddToCartCommand    = new RelayCommand<Item>(ExecuteAddItemToCart);
+            RemoveFromCartCommand = new RelayCommand<StockPurchaseItem>(ExecuteRemoveFromCart);
+            ClearCartCommand    = new RelayCommand(ExecuteClearCart, () => CartItems.Count > 0);
+            CheckoutCartCommand = new RelayCommand(async () => await ExecuteCheckoutCartAsync(),
+                                                   () => CartItems.Count > 0 && !IsCartBusy && !string.IsNullOrEmpty(CartTempImagePath));
+            SelectCartImageCommand = new RelayCommand(ExecuteSelectCartImage);
+            AddSelectedFromListToCartCommand = new RelayCommand(ExecuteAddSelectedFromListToCart, () => SelectedProductFromList != null);
+
+            // ── Legacy supply commands ──
             SearchItemCommand = new RelayCommand(async () => await ExecuteExplicitSearchItem());
             ShowAddFormCommand = new RelayCommand(ExecuteShowAddForm);
             SelectImageCommand = new RelayCommand(ExecuteSelectImage);
             SaveSupplyCommand = new RelayCommand(async () => await ExecuteSaveSupply(), () => FoundItem != null && FormQuantity > 0 && FormImagePreview != null);
             CancelAddCommand = new RelayCommand(() => IsAddingNew = false);
             UpdateSupplyCommand = new RelayCommand(async (s) => await ExecuteUpdateSupply(s as Stock));
+
             FindManualItemCommand = new RelayCommand(async () => await ExecuteExplicitManualSearch());
             SelectProductCommand = new RelayCommand((p) => ExecuteSelectProduct(p as Item));
             SelectMainProductCommand = new RelayCommand((p) => ExecuteSelectMainProduct(p as Item));
@@ -205,11 +308,57 @@ namespace GroceryPOS.ViewModels
             ViewFullBillCommand = new RelayCommand(ExecuteViewFullBill, () => SelectedEntry != null && !string.IsNullOrEmpty(SelectedEntry.ImagePath));
             ToggleSearchResultsCommand = new RelayCommand(async () => await ExecuteToggleSearchResults());
 
+            CartItems.CollectionChanged += (s, e) => {
+                if (e.NewItems != null)
+                {
+                    foreach (StockPurchaseItem item in e.NewItems)
+                        item.PropertyChanged += OnCartItemPropertyChanged;
+                }
+                if (e.OldItems != null)
+                {
+                    foreach (StockPurchaseItem item in e.OldItems)
+                        item.PropertyChanged -= OnCartItemPropertyChanged;
+                }
+                RecalculateCartTotal();
+                (ClearCartCommand    as RelayCommand)?.RaiseCanExecuteChanged();
+                (CheckoutCartCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            };
+
             // Subscribe to real-time stock changes
             _stockService.StockChanged += OnStockChanged;
 
             // Auto-load recent supplies on startup
             _ = LoadAllRecentSupplies();
+
+            LoadInitialData();
+        }
+
+        private void LoadInitialData()
+        {
+            Task.Run(() => {
+                try {
+                    var items = _itemRepo.GetAll().OrderBy(i => i.Description).ToList();
+                    Dispatch(() => {
+                        AllProducts.Clear();
+                        foreach (var item in items) AllProducts.Add(item);
+                    });
+                } catch (Exception ex) {
+                    AppLogger.Error("Failed to load products for dropdown", ex);
+                }
+            });
+        }
+        
+        private void OnCartItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(StockPurchaseItem.Quantity) || e.PropertyName == nameof(StockPurchaseItem.CostPrice))
+            {
+                RecalculateCartTotal();
+            }
+        }
+
+        private void ExecuteSelectProductForCart(Item? item)
+        {
+            if (item != null) ExecuteAddItemToCart(item);
         }
 
         private async void OnStockChanged()
@@ -688,6 +837,194 @@ namespace GroceryPOS.ViewModels
                 IsImageAvailable = false;
                 StatusMessage = "Error loading image preview.";
                 ShowPopupError("Error loading image preview.");
+            }
+        }
+
+        // ────────────────────────────────────────────
+        //  CART METHODS
+        // ────────────────────────────────────────────
+
+        private async Task ExecuteCartSearch()
+        {
+            if (string.IsNullOrWhiteSpace(CartSearchText)) return;
+            try
+            {
+                var results = await Task.Run(() =>
+                    new Data.Repositories.ItemRepository().Search(CartSearchText));
+                Dispatch(() =>
+                {
+                    CartSearchResults.Clear();
+                    foreach (var r in results.Take(10)) CartSearchResults.Add(r);
+                    IsCartSearchOpen = CartSearchResults.Count > 0;
+                });
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Cart search failed", ex);
+            }
+        }
+
+        private void ExecuteAddSelectedFromListToCart()
+        {
+            if (SelectedProductFromList == null) return;
+            ExecuteAddItemToCart(SelectedProductFromList);
+            SelectedProductFromList = null; // Clear after adding
+            OnPropertyChanged(nameof(SelectedProductFromList));
+        }
+
+        private void ExecuteAddItemToCart(Item? item)
+        {
+            if (item == null) return;
+
+            // If already in cart, just increment quantity
+            var existing = CartItems.FirstOrDefault(ci => ci.ItemId == item.Id);
+            if (existing != null)
+            {
+                existing.Quantity++;
+            }
+            else
+            {
+                CartItems.Add(new StockPurchaseItem
+                {
+                    ItemId          = item.Id,
+                    ItemDescription = item.Description,
+                    Barcode         = item.Barcode,
+                    Quantity        = 1,
+                    CostPrice       = item.CostPrice
+                });
+            }
+
+            RecalculateCartTotal();
+            (ClearCartCommand    as RelayCommand)?.RaiseCanExecuteChanged();
+            (CheckoutCartCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
+            // Clear search box after selection
+            _cartSearchText = string.Empty;
+            OnPropertyChanged(nameof(CartSearchText));
+            IsCartSearchOpen = false;
+            _cartSelectedResult = null;
+            OnPropertyChanged(nameof(CartSelectedResult));
+
+            CartStatus = string.Empty;
+        }
+
+        private void RecalculateCartTotal()
+        {
+            CartTotal = Math.Round(CartItems.Sum(ci => ci.LineTotal), 2);
+            CartTotalText = CartTotal.ToString("F2");
+            (CheckoutCartCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void ExecuteRemoveFromCart(StockPurchaseItem? item)
+        {
+            if (item == null) return;
+            CartItems.Remove(item);
+            RecalculateCartTotal();
+            (ClearCartCommand    as RelayCommand)?.RaiseCanExecuteChanged();
+            (CheckoutCartCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void ExecuteClearCart()
+        {
+            CartItems.Clear();
+            CartTotal = 0;
+            CartStatus = string.Empty;
+            CartTempImagePath = string.Empty;
+            CartImagePreview = null;
+            (ClearCartCommand    as RelayCommand)?.RaiseCanExecuteChanged();
+            (CheckoutCartCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private async Task ExecuteCheckoutCartAsync()
+        {
+            if (CartItems.Count == 0)
+            {
+                CartStatus = "Cart is empty. Add at least one product.";
+                return;
+            }
+
+            // Validate each line: qty > 0 and cost > 0
+            foreach (var ci in CartItems)
+            {
+                if (ci.Quantity <= 0)
+                {
+                    CartStatus = $"'{ci.ItemDescription}' has an invalid quantity (must be > 0).";
+                    return;
+                }
+                if (ci.CostPrice <= 0)
+                {
+                    CartStatus = $"'{ci.ItemDescription}' has an invalid cost price (must be > 0).";
+                    return;
+                }
+            }
+
+            IsCartBusy = true;
+            CartStatus = "Saving purchase…";
+
+            try
+            {
+                if (string.IsNullOrEmpty(CartTempImagePath))
+                {
+                    CartStatus = "⚠️ Bill image is mandatory to complete purchase.";
+                    return;
+                }
+
+                var purchase = new StockPurchase
+                {
+                    Items = CartItems.ToList(),
+                    TotalAmount = CartTotal
+                };
+
+                var saved = await _stockService.RegisterPurchaseAsync(purchase, CartTempImagePath);
+
+                Dispatch(() =>
+                {
+                    string msg = $"✓ Purchase #{saved.PurchaseId} saved — {saved.Items.Count} item(s), Rs. {saved.TotalAmount:N2} deducted from Cash in Drawer.";
+                    CartStatus = msg;
+                    ExecuteClearCart();
+                    IsAddingNew = false;
+                    ShowPopupSuccess(msg);
+                    _ = LoadAllRecentSupplies();
+                });
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Stock cart checkout failed", ex);
+                CartStatus = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                IsCartBusy = false;
+            }
+        }
+        private void ExecuteSelectCartImage()
+        {
+            var openFileDialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "Image files (*.jpg, *.jpeg, *.png)|*.jpg;*.jpeg;*.png",
+                Title = "Select Supplier Bill Image"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                CartTempImagePath = openFileDialog.FileName;
+                try
+                {
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.UriSource = new Uri(CartTempImagePath);
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+                    CartImagePreview = bitmap;
+                    CartStatus = string.Empty;
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Error("Error loading cart image preview", ex);
+                    CartImagePreview = null;
+                    CartStatus = "Error loading image.";
+                }
             }
         }
     }

@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.Versioning;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
@@ -14,6 +15,7 @@ namespace GroceryPOS.ViewModels
     /// ViewModel for the Customer Ledger screen.
     /// Shows all bills for a customer with credit summary and allows recording payments.
     /// </summary>
+    [SupportedOSPlatform("windows")]
     public class CustomerLedgerViewModel : BaseViewModel
     {
         public class BillAuditTimelineEntry
@@ -478,20 +480,24 @@ namespace GroceryPOS.ViewModels
 
         private void PrintBill(Bill? bill)
         {
-            if (bill == null) return;
-
-            bool isOnline = _printService.IsPrinterOnline();
-            if (isOnline)
+            if (bill == null || Customer == null) return;
+            // Deep load audit logs (payments & returns) to ensure invoice-level data is available for printing
+            try
             {
-                bool printSuccess = _printService.PrintReceipt(bill, _authService.CurrentUser?.FullName ?? "System Admin");
-                if (!printSuccess)
-                {
-                    System.Windows.MessageBox.Show("Failed to communicate with the printer.", "Print Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                }
+                _billRepo.LoadAuditLogs(bill);
             }
-            else
+            catch (Exception ex)
             {
-                System.Windows.MessageBox.Show("Printer is offline.", "Printer Offline", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                AppLogger.Error("Failed to load bill audit logs before printing", ex);
+            }
+
+            // Load the full timeline and filter for this specific bill's events
+            // Use invoice-based ledger printing (new behavior). Do NOT print Dr/Cr running balances.
+            var ok = _printService.PrintInvoiceLedgerStatement(bill.BillId);
+            if (!ok)
+            {
+                // Fallback to standard receipt if invoice-ledger printing fails
+                _printService.PrintReceipt(bill, _authService.CurrentUser?.FullName ?? "System Admin");
             }
         }
 
@@ -503,18 +509,8 @@ namespace GroceryPOS.ViewModels
                 return;
             }
 
-            var timeline = _ledgerRepo.GetLedgerTimeline(Customer.CustomerId);
-            if (timeline.Count == 0)
-            {
-                ShowPopupError("No ledger entries found to print.");
-                return;
-            }
-
-            var ok = _printService.PrintCustomerLedgerStatement(Customer, timeline, null, null);
-            if (!ok)
-            {
-                ShowPopupError("Failed to print customer ledger statement.");
-            }
+            // Deprecated: transaction-based customer ledger printing has been removed.
+            ShowPopupError("Ledger printing disabled. Use invoice-level printing: open a bill and click Print.");
         }
 
         private void CloseBillDetail()

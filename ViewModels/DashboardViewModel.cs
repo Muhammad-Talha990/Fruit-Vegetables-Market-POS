@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
+using GroceryPOS.Data.Repositories;
 using GroceryPOS.Models;
 using GroceryPOS.Services;
 using GroceryPOS.Helpers;
@@ -18,7 +19,7 @@ namespace GroceryPOS.ViewModels
         private readonly BillService _billService;
         private readonly IStockService _stockService;
         private readonly AuthService _authService;
-
+        private readonly StockPurchaseRepository _purchaseRepo;
         private double _todaySales;
         public double TodaySales { get => _todaySales; set => SetProperty(ref _todaySales, value); }
 
@@ -52,6 +53,13 @@ namespace GroceryPOS.ViewModels
         private double _todayCashInDrawer;
         public double TodayCashInDrawer { get => _todayCashInDrawer; set => SetProperty(ref _todayCashInDrawer, value); }
 
+        /// <summary>
+        /// Total amount spent on stock purchases today.
+        /// This is what gets deducted from Cash in Drawer.
+        /// </summary>
+        private double _todayStockPurchases;
+        public double TodayStockPurchases { get => _todayStockPurchases; set => SetProperty(ref _todayStockPurchases, value); }
+
         private double _todayOnlinePayments;
         public double TodayOnlinePayments { get => _todayOnlinePayments; set => SetProperty(ref _todayOnlinePayments, value); }
 
@@ -73,12 +81,13 @@ namespace GroceryPOS.ViewModels
         private DateTime _activeDashboardDate;
         public string CurrentTime => DateTime.Now.ToString("hh:mm:ss tt");
 
-        public DashboardViewModel(AuthService authService, ItemService itemService, BillService billService, IStockService stockService)
+        public DashboardViewModel(AuthService authService, ItemService itemService, BillService billService, IStockService stockService, StockPurchaseRepository purchaseRepo)
         {
-            _authService = authService;
-            _itemService = itemService;
-            _billService = billService;
+            _authService  = authService;
+            _itemService  = itemService;
+            _billService  = billService;
             _stockService = stockService;
+            _purchaseRepo = purchaseRepo;
 
             var hour = DateTime.Now.Hour;
             var timeGreeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
@@ -130,6 +139,10 @@ namespace GroceryPOS.ViewModels
 
             TodayCashInDrawer = _billService.GetTodayCashInDrawer();
             TodayOnlinePayments = _billService.GetTodayOnlinePayments();
+
+            // Stock purchases for the day (cash leaves the drawer)
+            try { TodayStockPurchases = _purchaseRepo.GetTodayPurchasesTotal(); }
+            catch { TodayStockPurchases = 0; }  // guard: table may not exist on v17 upgrade yet
 
             TodayReturns = _billService.GetTodayReturnsTotal();
             TodayNetSales = _billService.GetTodayNetSales();

@@ -14,18 +14,88 @@ namespace GroceryPOS.Services
         private readonly DataCacheService _cache;
         private readonly IImageStorageService _imageService;
         private readonly UniqueIdGenerator _idGenerator;
+        private readonly StockPurchaseRepository _purchaseRepo;
 
         public event Action? StockChanged;
 
-        public StockService(ItemRepository itemRepo, DataCacheService cache, IImageStorageService imageService, UniqueIdGenerator idGenerator)
+        public StockService(ItemRepository itemRepo, DataCacheService cache, IImageStorageService imageService, UniqueIdGenerator idGenerator, StockPurchaseRepository purchaseRepo)
         {
-            _itemRepo = itemRepo;
-            _cache = cache;
+            _itemRepo     = itemRepo;
+            _cache        = cache;
             _imageService = imageService;
-            _idGenerator = idGenerator;
+            _idGenerator  = idGenerator;
+            _purchaseRepo = purchaseRepo;
         }
 
         public void NotifyChanged() => StockChanged?.Invoke();
+
+        // ─────────────────────────────────────────────
+        //  CART-BASED STOCK PURCHASE  (new primary path)
+        // ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Atomically saves a multi-item stock purchase.
+        /// DateTime is captured ONCE at the start of this call and propagated
+        /// to every InventoryLog row so all share an identical timestamp.
+        /// Cash in Drawer is implicitly reduced via GetTodayCashInDrawer().
+        /// </summary>
+        public async Task<StockPurchase> RegisterPurchaseAsync(StockPurchase purchase, string? tempImagePath = null)
+        {
+            if (purchase == null || purchase.Items == null || purchase.Items.Count == 0)
+                throw new ArgumentException("Purchase cart must contain at least one item.");
+
+            // 1. Process Image (Rename and save)
+            // Note: Since StockPurchaseRepository.SavePurchaseWithTransaction generates the ID, 
+            // we have a chicken-and-egg problem if we want the ID in the filename.
+            // We'll use a unique temp name or save after. 
+            // Better: use a GUID or just save after.
+            // Actually, we can use the UniqueIdGenerator if we want a "Bill ID" style name.
+            
+            return await Task.Run(async () =>
+            {
+                // We'll save the image AFTER we get the ID from the DB to keep filenames consistent (e.g., SP_00123.jpg)
+                var saved = _purchaseRepo.SavePurchaseWithTransaction(purchase);
+
+                if (!string.IsNullOrEmpty(tempImagePath))
+                {
+                    try
+                    {
+                        // Generate a pseudo-bill ID for naming the file: "SP-" + PurchaseId
+                        string billId = $"SP-{saved.PurchaseId:D5}";
+                        string permanentPath = await _imageService.SaveBillImageAsync(tempImagePath, billId);
+                        
+                        // Update the record with the image path
+                        saved.ImagePath = permanentPath;
+                        
+                        // We need to update the DB record now that we have the path
+                        // Update both the StockPurchases master and the InventoryLogs (for history visibility)
+                        using var conn = Data.DatabaseHelper.GetConnection();
+                        using var cmd = conn.CreateCommand();
+                        cmd.CommandText = @"
+                            UPDATE StockPurchases SET ImagePath = @img WHERE PurchaseId = @id;
+                            UPDATE InventoryLogs  SET ImagePath = @img WHERE ReferenceId = @id AND ReferenceType = 'Supply';";
+                        cmd.Parameters.AddWithValue("@img", permanentPath);
+                        cmd.Parameters.AddWithValue("@id",  saved.PurchaseId);
+                        cmd.ExecuteNonQuery();
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Error($"Failed to save bill image for Purchase {saved.PurchaseId}", ex);
+                        // We don't fail the whole transaction if just the image fails, but we log it.
+                    }
+                }
+
+                // Update cache for each item
+                foreach (var item in saved.Items)
+                    _cache.UpdateStockInCache(item.ItemId, item.Quantity);
+
+                StockChanged?.Invoke();
+                return saved;
+            });
+        }
+        // ─────────────────────────────────────────────
+        //  Legacy single-item stock operations
+        // ─────────────────────────────────────────────
 
         public void DeductStock(string barcode, double quantity)
         {
@@ -76,7 +146,9 @@ namespace GroceryPOS.Services
             using var transaction = conn.BeginTransaction();
             try
             {
-                // 3a. Save Entry to InventoryLogs
+                // Capture timestamp ONCE for the entire operation
+                DateTime txnTime = DateTimeHelper.CaptureTransactionTime();
+
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.Transaction = transaction;
@@ -86,7 +158,7 @@ namespace GroceryPOS.Services
                     ";
                     cmd.Parameters.AddWithValue("@pid", entry.ProductId);
                     cmd.Parameters.AddWithValue("@qty", entry.Quantity);
-                    cmd.Parameters.AddWithValue("@dt", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                    cmd.Parameters.AddWithValue("@dt",  txnTime.ToDbString());  // single-capture timestamp
                     cmd.Parameters.AddWithValue("@img", (object?)permanentImagePath ?? DBNull.Value);
                     cmd.ExecuteNonQuery();
                 }

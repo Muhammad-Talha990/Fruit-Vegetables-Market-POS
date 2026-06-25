@@ -24,8 +24,22 @@ namespace GroceryPOS.Views
 
         private void Quantity_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
         {
-            // Only allow digits
-            e.Handled = !char.IsDigit(e.Text, e.Text.Length - 1);
+            // Allow digits and one decimal point
+            if (sender is TextBox textBox)
+            {
+                bool isDecimalPoint = e.Text == ".";
+                if (isDecimalPoint && textBox.Text.Contains("."))
+                {
+                    e.Handled = true;
+                    return;
+                }
+                
+                e.Handled = !char.IsDigit(e.Text, e.Text.Length - 1) && !isDecimalPoint;
+            }
+            else
+            {
+                e.Handled = !char.IsDigit(e.Text, e.Text.Length - 1);
+            }
         }
 
         private void Quantity_Pasting(object sender, System.Windows.DataObjectPastingEventArgs e)
@@ -34,7 +48,15 @@ namespace GroceryPOS.Views
             if (e.DataObject.GetDataPresent(typeof(string)))
             {
                 string text = (string)e.DataObject.GetData(typeof(string));
-                if (text.Any(c => !char.IsDigit(c))) // Simple digit check
+                if (text.Any(c => !char.IsDigit(c) && c != '.'))
+                {
+                    e.CancelCommand();
+                }
+                else if (text.Count(c => c == '.') > 1)
+                {
+                    e.CancelCommand();
+                }
+                else if (sender is TextBox tb && tb.Text.Contains(".") && text.Contains("."))
                 {
                     e.CancelCommand();
                 }

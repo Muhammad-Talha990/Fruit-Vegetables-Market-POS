@@ -240,9 +240,28 @@
         </Border>
 
         <!-- Low Stock Report Grid -->
-        <Grid Grid.Row="2" Visibility="{Binding ShowLowStockGrid, Converter={StaticResource BoolToVis}}">
-            <Border Style="{DynamicResource CardBorder}" Padding="0">
+        <Border Grid.Row="2" Style="{DynamicResource CardBorder}" Padding="0"
+                Visibility="{Binding ShowLowStockGrid, Converter={StaticResource BoolToVis}}">
+            <StackPanel>
+
+                <!-- EMPTY STATE: all stock healthy (shown when list is empty) -->
+                <Border CornerRadius="10" Padding="24,48" Background="#F0FDF4" Margin="16"
+                        Visibility="{Binding LowStockReport.Count, Converter={StaticResource InverseCountToVis}}">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="&#x2705;" FontSize="52" HorizontalAlignment="Center" Margin="0,0,0,14"/>
+                        <TextBlock Text="All stock levels are healthy"
+                                   FontSize="18" FontWeight="SemiBold"
+                                   Foreground="#15803D" HorizontalAlignment="Center"/>
+                        <TextBlock Text="No items are currently below their minimum threshold."
+                                   FontSize="13" Foreground="#4B7C59"
+                                   HorizontalAlignment="Center" Margin="0,10,0,0"
+                                   TextWrapping="Wrap" TextAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- LOW STOCK TABLE (shown only when items exist) -->
                 <DataGrid ItemsSource="{Binding LowStockReport}"
+                          Visibility="{Binding LowStockReport.Count, Converter={StaticResource CountToVis}}"
                           Style="{DynamicResource ModernDataGrid}"
                           ColumnHeaderStyle="{DynamicResource ModernDataGridColumnHeader}"
                           RowStyle="{DynamicResource ModernDataGridRow}"
@@ -251,21 +270,32 @@
                         <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="150"/>
                         <DataGridTextColumn Header="Product Name" Binding="{Binding Description}" Width="*"/>
                         <DataGridTextColumn Header="Category" Binding="{Binding ItemCategory}" Width="150"/>
-                        <DataGridTextColumn Header="Current Stock" Binding="{Binding StockQuantity}" Width="120"/>
+                        <DataGridTemplateColumn Header="Current Stock" Width="120">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock VerticalAlignment="Center" Padding="14,10"
+                                               FontWeight="Bold"
+                                               Text="{Binding StockQuantity, StringFormat={}{0:N0}}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#DC2626"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding StockQuantity}" Value="0">
+                                                        <Setter Property="Foreground" Value="#7F1D1D"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Min. Threshold" Binding="{Binding MinStockThreshold}" Width="120"/>
                     </DataGrid.Columns>
                 </DataGrid>
-            </Border>
-            
-            <!-- Empty State Message -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding LowStockReport.Count, Converter={StaticResource InverseCountToVis}}">
-                <TextBlock Text="✅ All stock levels are healthy" FontSize="18" FontWeight="SemiBold" 
-                           Foreground="{DynamicResource SuccessBrush}" HorizontalAlignment="Center"/>
-                <TextBlock Text="No items are currently below their minimum threshold." FontSize="13" 
-                           Foreground="{DynamicResource SubTextBrush}" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+
             </StackPanel>
-        </Grid>
+        </Border>
         <Border Grid.RowSpan="3" Visibility="{Binding IsBillDetailOpen, Converter={StaticResource BoolToVis}}" 
                 Background="#CC000000" IsHitTestVisible="True">
             <Border Background="White" CornerRadius="4" Padding="0"

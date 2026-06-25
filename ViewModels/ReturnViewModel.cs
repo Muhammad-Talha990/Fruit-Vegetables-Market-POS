@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.Versioning;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -12,6 +13,7 @@ using GroceryPOS.Exceptions;
 
 namespace GroceryPOS.ViewModels
 {
+    [SupportedOSPlatform("windows")]
     public class ReturnViewModel : BaseViewModel
     {
         private readonly IReturnService _returnService;
@@ -291,12 +293,16 @@ namespace GroceryPOS.ViewModels
                 Dispatch(() =>
                 {
                     _isPopulatingCustomerBills = true;
+                    SelectedCustomerBill = null; // Reset selection to ensure change notification later
                     CustomerBills.Clear();
                     foreach (var bill in bills)
                         CustomerBills.Add(bill);
 
-                    SelectedCustomerBill = CustomerBills.FirstOrDefault();
                     _isPopulatingCustomerBills = false;
+
+                    // Automatically select and load the first bill (latest) if any exist
+                    SelectedCustomerBill = CustomerBills.FirstOrDefault();
+                    
                     OnPropertyChanged(nameof(HasCustomerBills));
                 });
 

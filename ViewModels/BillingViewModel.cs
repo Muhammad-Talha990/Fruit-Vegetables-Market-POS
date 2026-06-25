@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.Versioning;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -12,6 +13,7 @@ using GroceryPOS.Data.Repositories;
 
 namespace GroceryPOS.ViewModels
 {
+    [SupportedOSPlatform("windows")]
     public class BillingViewModel : BaseViewModel
     {
         private readonly AuthService _authService;
@@ -72,6 +74,7 @@ namespace GroceryPOS.ViewModels
         public bool IsWalkIn => SelectedCustomer == null;
 
         // ── Store Credit ──
+
         public double PendingCreditAmount
         {
             get => SelectedTab?.PendingCreditAmount ?? 0;
@@ -277,6 +280,25 @@ namespace GroceryPOS.ViewModels
         public string StorePhone => "0300-1234567";
         public string CashierName => _authService.CurrentUser?.FullName ?? "Cashier";
         public string CustomerDisplayName => SelectedCustomer?.FullName ?? "Walk-in";
+
+        private string _walkInPhoneInput = string.Empty;
+        public string WalkInPhoneInput
+        {
+            get => _walkInPhoneInput;
+            set
+            {
+                if (SetProperty(ref _walkInPhoneInput, value))
+                {
+                    OnPropertyChanged(nameof(IsWalkInPhoneValid));
+                    (CompleteSaleCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                }
+            }
+        }
+
+        public bool IsWalkInPhoneValid => 
+            string.IsNullOrWhiteSpace(WalkInPhoneInput) || 
+            System.Text.RegularExpressions.Regex.IsMatch(WalkInPhoneInput, "^0[0-9]{10}$");
+
         public CartItem? SelectedCartItem { get; set; }
         public ICommand OpenBillDetailCommand { get; }
         public ICommand CloseBillDetailCommand { get; }
@@ -489,29 +511,53 @@ namespace GroceryPOS.ViewModels
                 }
             }
         }
-        private string GetNextAvailableInvoiceNumber()
+        private void RefreshInvoiceNumbers()
         {
-            // Get base ID from database
-            string baseNumStr = _billService.GetNextInvoiceNumber();
-            if (!int.TryParse(baseNumStr, out int nextId)) nextId = 1;
-
-            // Find highest already assigned ID in open tabs
-            int maxTabId = 0;
-            foreach (var tab in Tabs)
+            try
             {
-                if (int.TryParse(tab.InvoiceNumber, out int tabId))
-                {
-                    if (tabId > maxTabId) maxTabId = tabId;
-                }
-            }
+                // Fetch fresh base number from DB
+                string baseNumStr = _billService.GetNextInvoiceNumber();
+                if (!int.TryParse(baseNumStr, out int nextId)) nextId = 1;
 
-            // The resulting ID should be at least (maxTabID + 1), but also at least nextId
-            int finalId = Math.Max(nextId, maxTabId + 1);
-            return finalId.ToString("D5");
+                // Re-assign numbers sequentially to all tabs to keep them in sync with DB
+                for (int i = 0; i < Tabs.Count; i++)
+                {
+                    Tabs[i].InvoiceNumber = (nextId + i).ToString("D5");
+                }
+                
+                // Notify UI for the active tab's bound InvoiceNumber property
+                OnPropertyChanged(nameof(InvoiceNumber));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Failed to refresh invoice numbers", ex);
+            }
         }
 
-        private void AddNewTab() { var tab = new BillingTab { TabName = $"Bill {Tabs.Count + 1}", InvoiceNumber = GetNextAvailableInvoiceNumber() }; Tabs.Add(tab); SelectedTab = tab; RefocusBarcode(); }
-        private void CloseTab(BillingTab? tab) { if (tab == null || Tabs.Count <= 1) return; Tabs.Remove(tab); SelectedTab = Tabs.LastOrDefault(); for (int i = 0; i < Tabs.Count; i++) Tabs[i].TabName = $"Bill {i + 1}"; NotifyTabPropertiesChanged(); }
+        private void AddNewTab() 
+        { 
+            var tab = new BillingTab { TabName = $"Bill {Tabs.Count + 1}" }; 
+            Tabs.Add(tab); 
+            RefreshInvoiceNumbers();
+            SelectedTab = tab; 
+            RefocusBarcode(); 
+        }
+
+        private void CloseTab(BillingTab? tab) 
+        { 
+            if (tab == null || Tabs.Count <= 1) return; 
+            Tabs.Remove(tab); 
+            
+            // Re-sequence tab names and invoice numbers after closing one
+            for (int i = 0; i < Tabs.Count; i++) 
+            {
+                Tabs[i].TabName = $"Bill {i + 1}";
+            }
+            
+            RefreshInvoiceNumbers();
+            SelectedTab = Tabs.LastOrDefault(); 
+            NotifyTabPropertiesChanged(); 
+        }
         private void ScanBarcode() 
         { 
             StatusMessage = string.Empty;
@@ -708,18 +754,73 @@ namespace GroceryPOS.ViewModels
             OnPropertyChanged(nameof(PreviewDueAmount));
             OnPropertyChanged(nameof(PreviewHasCashReceived));
         }
+        private bool CanCompleteSale()
+        {
+            if (SelectedTab == null || !SelectedTab.CartItems.Any()) return false;
+            return true;
+        }
+
         private async void CompleteSale() 
         { 
+            if (!CanCompleteSale()) return;
+
             try 
             { 
+                if (SelectedTab == null) return;
+
                 StatusMessage = string.Empty;
                 OnPropertyChanged(nameof(StatusMessage));
 
-                if (SelectedTab == null || !SelectedTab.CartItems.Any()) { StatusMessage = "✗ Cart is empty."; OnPropertyChanged(nameof(StatusMessage)); ShowPopupError("Cart is empty."); return; } 
+                var txnTime = DateTimeHelper.CaptureTransactionTime();
+
+                // 1. Resolve Customer (GetOrCreate for Walk-in)
+                Customer? finalCustomer = SelectedCustomer;
+                if (finalCustomer == null)
+                {
+                    if (string.IsNullOrWhiteSpace(WalkInPhoneInput))
+                    {
+                        StatusMessage = "✗ Walk-in phone number is required.";
+                        OnPropertyChanged(nameof(StatusMessage));
+                        ShowPopupError("Walk-in contact is mandatory.\nPlease enter an 11-digit phone number for this walk-in customer.");
+                        return;
+                    }
+                    
+                    if (!IsWalkInPhoneValid || WalkInPhoneInput.Length != 11)
+                    {
+                        StatusMessage = "✗ Invalid phone format.";
+                        OnPropertyChanged(nameof(StatusMessage));
+                        ShowPopupError("Invalid phone number.\nPlease enter a valid 11-digit number starting with '0'.");
+                        return;
+                    }
+
+                    // Alert if the phone number belongs to a registered customer (not a walk-in)
+                    var existing = _customerService.GetCustomerByPhone(WalkInPhoneInput);
+                    if (existing != null && existing.FullName != "Walk-in Customer")
+                    {
+                        var res = MessageBox.Show(
+                            $"The phone number '{WalkInPhoneInput}' is registered to customer '{existing.FullName}'.\n\nDo you want to proceed with this customer?",
+                            "Registered Customer Found",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Question);
+                        
+                        if (res == MessageBoxResult.Yes)
+                        {
+                            finalCustomer = existing;
+                        }
+                        else
+                        {
+                            return; // User wants to change the number
+                        }
+                    }
+                    else
+                    {
+                        finalCustomer = _customerService.GetOrCreateWalkIn(WalkInPhoneInput);
+                    }
+                }
 
                 double.TryParse(DiscountText, out var d); 
                 double.TryParse(TaxText, out var t);
-                double sub     = SelectedTab.CartItems.Sum(i => i.TotalPrice);
+                double sub     = CartItems.Sum(i => i.TotalPrice);
                 double grand   = Math.Round(sub - d + t, 2);
 
                 double cashReceived;
@@ -760,7 +861,7 @@ namespace GroceryPOS.ViewModels
                     paidAmount = Math.Min(cashReceived, grand);
 
                     // For walk-in customers, enforce full payment
-                    if (IsWalkIn)
+                    if (SelectedCustomer == null)
                     {
                         if (cashReceived < grand - 0.01)
                         { StatusMessage = "✗ Insufficient cash."; OnPropertyChanged(nameof(StatusMessage)); ShowPopupError("Insufficient cash."); return; }
@@ -770,8 +871,14 @@ namespace GroceryPOS.ViewModels
 
                 var sb = _billService.CompleteBill(
                     _authService.CurrentUser?.Id, 
-                    SelectedCustomer?.CustomerId, 
-                    SelectedTab.CartItems.Select(c => new Models.BillDescription { ItemId = c.ItemId, Quantity = c.Quantity, UnitPrice = c.UnitPrice, ItemDescription = c.ItemDescription }).ToList(), 
+                    finalCustomer?.CustomerId, 
+                    SelectedTab!.CartItems.Select(c => new Models.BillDescription { 
+                        ItemInternalId = int.TryParse(c.ItemId, out var id) ? id : 0,
+                        ItemId = c.ItemId, 
+                        Quantity = c.Quantity, 
+                        UnitPrice = c.UnitPrice, 
+                        ItemDescription = c.ItemDescription 
+                    }).ToList(), 
                     d, 
                     t, 
                     cashReceived, 
@@ -782,11 +889,16 @@ namespace GroceryPOS.ViewModels
                     SelectedAccount?.Id);
 
                 // Ensure Customer object is attached for PrintService
-                sb.Customer = SelectedCustomer;
+                sb.Customer = finalCustomer;
 
                 await AttemptPrint(sb);
                 StatusMessage = $"✓ Sale Completed: Bill #{sb.InvoiceNumber} | {sb.PaymentStatus}";
                 OnPropertyChanged(nameof(StatusMessage));
+                ShowPopupSuccess(StatusMessage);
+                
+                // Clear walk-in info
+                WalkInPhoneInput = "";
+
                 if (Tabs.Count > 1) CloseTab(SelectedTab); else ClearCart(); 
                 RefocusBarcode();
             } 
@@ -830,7 +942,7 @@ namespace GroceryPOS.ViewModels
             OnPropertyChanged(nameof(DiscountText));
             OnPropertyChanged(nameof(TaxText));
             
-            InvoiceNumber = GetNextAvailableInvoiceNumber(); 
+            RefreshInvoiceNumbers(); 
         }
         private void SearchCustomers() { if (SelectedTab == null) return; SelectedSearchResult = null; if (string.IsNullOrWhiteSpace(CustomerSearchQuery) || CustomerSearchQuery.Length < 1) { SelectedTab.CustomerSearchResults.Clear(); OnPropertyChanged(nameof(CustomerSearchResults)); return; } var results = _customerService.SearchCustomers(CustomerSearchQuery); SelectedTab.CustomerSearchResults.Clear(); foreach (var c in results) SelectedTab.CustomerSearchResults.Add(c); OnPropertyChanged(nameof(CustomerSearchResults)); }
         private void SelectCustomer(Customer? c)

@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.Versioning;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -13,6 +14,7 @@ namespace GroceryPOS.ViewModels
     /// ViewModel for the Reports screen.
     /// Supports Daily, Monthly, and Product-wise reports using the new Bill schema.
     /// </summary>
+    [SupportedOSPlatform("windows")]
     public class ReportsViewModel : BaseViewModel
     {
         private readonly ReportService _reportService;

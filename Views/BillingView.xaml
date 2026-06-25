@@ -79,8 +79,27 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
                     <TextBlock Text="💳 Billing" FontSize="20" FontWeight="Bold"
-                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,2"/>
+                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                    
+                    <Button Command="{Binding DataContext.ToggleSidebarCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Style="{DynamicResource IconButton}" Background="Transparent" BorderThickness="0" Margin="12,0,0,0"
+                            ToolTip="Toggle Sidebar (Maximize Section)">
+                        <TextBlock FontSize="16">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="⛶"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding DataContext.IsSidebarVisible, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                            <Setter Property="Text" Value="🗗"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button>
+                </StackPanel>
                     
                     <!-- Billing Tabs Bar -->
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
@@ -179,17 +198,54 @@
                         </Grid.ColumnDefinitions>
                         
                         <!-- Search Box -->
-                        <TextBox Tag="Search by phone..." Style="{DynamicResource ModernTextBox}"
-                                 Text="{Binding CustomerSearchQuery, UpdateSourceTrigger=PropertyChanged}"
-                                 helpers:FocusHelper.IsFocused="{Binding IsCustomerSearchFocused, Mode=TwoWay}"
-                                 Visibility="{Binding HasSelectedCustomer, Converter={StaticResource InvBoolToVis}}">
-                           <TextBox.InputBindings>
-                               <KeyBinding Key="Return" Command="{Binding SelectCustomerCommand}"/>
-                               <KeyBinding Key="Escape" Command="{Binding ClearCustomerCommand}"/>
-                               <KeyBinding Key="Down" Command="{Binding NavigateSearchCommand}" CommandParameter="Down"/>
-                               <KeyBinding Key="Up" Command="{Binding NavigateSearchCommand}" CommandParameter="Up"/>
-                           </TextBox.InputBindings>
-                        </TextBox>
+                        <Grid Visibility="{Binding HasSelectedCustomer, Converter={StaticResource InvBoolToVis}}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <TextBox Grid.Row="0" Tag="🔍 Search customer by phone..." Style="{DynamicResource ModernTextBox}"
+                                     Text="{Binding CustomerSearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                                     helpers:FocusHelper.IsFocused="{Binding IsCustomerSearchFocused, Mode=TwoWay}">
+                               <TextBox.InputBindings>
+                                   <KeyBinding Key="Return" Command="{Binding SelectCustomerCommand}"/>
+                                   <KeyBinding Key="Escape" Command="{Binding ClearCustomerCommand}"/>
+                                   <KeyBinding Key="Down" Command="{Binding NavigateSearchCommand}" CommandParameter="Down"/>
+                                   <KeyBinding Key="Up" Command="{Binding NavigateSearchCommand}" CommandParameter="Up"/>
+                               </TextBox.InputBindings>
+                            </TextBox>
+                            
+                            <!-- Walk-in Phone Input (Mandatory) -->
+                            <StackPanel Grid.Row="1" Margin="0,8,0,4">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="📱 Walk-in Contact (Mandatory):" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,12,0"/>
+                                    <TextBox Grid.Column="1" Style="{DynamicResource ModernTextBox}" 
+                                             helpers:FocusHelper.NumericOnly="True"
+                                             helpers:FocusHelper.SelectAllOnFocus="True"
+                                             MaxLength="11"
+                                             Text="{Binding WalkInPhoneInput, UpdateSourceTrigger=PropertyChanged}" 
+                                             Tag="Enter 11-digit phone (e.g. 03001234567)" 
+                                             FontSize="14" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}"/>
+                                </Grid>
+                                <TextBlock Text="⚠ Invalid format. Phone must start with '0' and be 11 digits." 
+                                           Foreground="{DynamicResource DangerBrush}" FontSize="11" Margin="0,4,0,0"
+                                           Visibility="{Binding IsWalkInPhoneValid, Converter={StaticResource InvBoolToVis}}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding WalkInPhoneInput.Length}" Value="0">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </Grid>
 
                         <!-- Selected Customer Info -->
                         <Border Background="{DynamicResource PrimaryBrush}" CornerRadius="8" Padding="8,4"
@@ -553,6 +609,7 @@
                                 </DataGridTextColumn.ElementStyle>
                                 <DataGridTextColumn.EditingElementStyle>
                                     <Style TargetType="TextBox" BasedOn="{StaticResource ModernTextBox}">
+                                        <Setter Property="helpers:FocusHelper.NumericOnly" Value="True"/>
                                         <Setter Property="helpers:FocusHelper.SelectAllOnFocus" Value="True"/>
                                         <Setter Property="HorizontalContentAlignment" Value="Center"/>
                                         <Setter Property="Padding" Value="2,4"/>
@@ -1114,6 +1171,21 @@
                 </Border.Effect>
                 <TextBlock Text="{Binding SystemErrorMessage}" 
                            Foreground="#EF4444" FontSize="20" FontWeight="Bold" 
+                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </Border>
+        </Border>
+
+        <!-- ═══ POPUP SUCCESS OVERLAY ═══ -->
+        <Border Grid.ColumnSpan="3" Grid.RowSpan="2" Panel.ZIndex="3001" IsHitTestVisible="False"
+                VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,40,0,0"
+                Visibility="{Binding PopupSuccessVisible, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
+            <Border Background="White" CornerRadius="8" Padding="20,12"
+                    BorderBrush="#22C55E" BorderThickness="2">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="20" ShadowDepth="4" Opacity="0.15" Color="Black"/>
+                </Border.Effect>
+                <TextBlock Text="{Binding PopupSuccessMessage}" 
+                           Foreground="#22C55E" FontSize="20" FontWeight="Bold" 
                            VerticalAlignment="Center" HorizontalAlignment="Center"/>
             </Border>
         </Border>

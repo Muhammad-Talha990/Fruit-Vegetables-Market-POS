@@ -1,13 +1,20 @@
-﻿<Application x:Class="GroceryPOS.App"
+<Application x:Class="GroceryPOS.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:GroceryPOS"
+             xmlns:converters="clr-namespace:GroceryPOS.Converters"
              Startup="Application_Startup">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/LightTheme.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+            <converters:InverseBoolConverter x:Key="InverseBoolConverter"/>
+            <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+            <converters:StringToVisibilityConverter x:Key="StringToVis"/>
+
         </ResourceDictionary>
     </Application.Resources>
 </Application>

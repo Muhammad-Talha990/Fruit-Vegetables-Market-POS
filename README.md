@@ -1,188 +1,114 @@
-# GroceryPOS
+# GroceryPOS — Enterprise Grade Retail Management System
 
-Point-of-sale (POS) desktop application for grocery stores — WPF (.NET) sample.
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![Platform](https://img.shields.io/badge/platform-Windows-blue)
+![Framework](https://img.shields.io/badge/framework-.NET%208%20WPF-orange)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Description
+A professional, commercial-ready Point of Sale (POS) and Inventory Management System designed for grocery stores and retail outlets. Built with a focus on data integrity (3NF SQL Design), performance, and a premium user experience.
 
-GroceryPOS is a Windows desktop application (WPF) that manages billing, inventory, customer credit ledgers, returns, and reports for a small retail grocery store.
+---
 
-## Features
+## 🚀 Key Features
 
-- Billing and invoice printing
-- Customer ledger and credit management
-- Stock and inventory management
-- Returns and return-audit groups
-- Reports and printing
+### 🛒 Billing & Invoicing
+- **High-Speed Checkout**: Optimized for barcode scanners and keyboard-only operation.
+- **Multi-Tab Interface**: Handle multiple customers simultaneously with an intuitive tab system.
+- **Dynamic Pricing**: Automatic calculation of subtotals, taxes, and discounts.
+- **Payment Flexibility**: Support for Cash, Bank Transfer, Easypaisa, and JazzCash.
 
-## Tech Stack
+### 👥 Customer & Credit Management
+- **Smart Ledgers**: 100% accurate, chronological transaction history for every customer.
+- **Credit Tracking**: Manage 'Udhar' (Store Credit) with automated balance reconciliation.
+- **Return Processing**: Integrated return module that updates stock and credit ledgers in real-time.
 
-- .NET (WPF) — C#
-- SQLite (embedded) via DatabaseHelper
-- MVVM architecture
+### 📦 Inventory & Stock Control
+- **Audit Trails**: Every stock movement is logged with a detailed reference (Sale, Return, Purchase).
+- **Low Stock Alerts**: Visual indicators and reports for items reaching critical thresholds.
+- **Stock Purchases**: Manage supplier invoices and deduct purchase amounts from the cash drawer automatically.
 
-## Getting Started
+### 📊 Professional Reporting
+- **Financial Audits**: Daily and date-ranged sales, returns, and credit recovery reports.
+- **Thermal Printing**: Industry-standard 80mm thermal receipt printing with professional branding.
+- **Dashboard Analytics**: Real-time stats for Net Sales, Cash-in-Drawer, and Online Payment splits.
 
-Prerequisites:
+---
 
-- .NET SDK (recommended 6.0 / 7.0 or the version used in the project)
-- Visual Studio 2022+ (or VS Code with C# extension)
+## 🛠 Tech Stack
 
-Install & run:
+- **Core**: .NET 8 (Windows) with WPF (XAML)
+- **Architecture**: MVVM (Model-View-ViewModel) for clean separation of concerns.
+- **Database**: High-performance SQLite engine with 3NF normalized schema.
+- **Security**: BCrypt hashing for user credentials.
+- **Reliability**: Transactional integrity for all financial operations.
 
-```powershell
-dotnet restore
-dotnet build
-dotnet run --project GroceryPOS.csproj
-```
+---
 
-If using Visual Studio, open `GroceryPOS-master.sln` and run the project.
-
-## Configuration & Secrets
-
-- Do not commit secrets (API keys, DB credentials) to the repository. Use environment variables or a `.env` file that is ignored by git.
-- Example environment usage (pseudo):
-
-```powershell
-# set an env var for local run
-$env:MY_APP_CONN = "Data Source=local.db"
-```
-
-## Database
-
-- The repo includes SQL reset scripts: `reset_database_clean.sql`, `reset_transactional_data.sql`.
-- Back up your DB before running reset scripts.
-
-## Screenshots
-
-Placeholder for screenshots — add images to `/Docs/screenshots` and reference them here.
-
-## License
-
-Add your license here (e.g., MIT). Create a `LICENSE` file at repository root.
-
-## Contributing
-
-- Follow the code style used across the repo.
-- Open issues for bugs and feature requests.
-
-## Cleaning up tracked build files (recommended commands)
-
-To stop tracking `bin/` and `obj/` (safe, local files remain):
-
-```bash
-git rm -r --cached bin obj Debug Release
-git add .gitignore
-git commit -m "chore: ignore build artifacts"
-```
-
-If you accidentally committed secrets, consider using `git filter-repo` or the `BFG Repo-Cleaner` to purge sensitive history. See the notes below.
-
-## Notes on removing secrets from history
-
-- BFG example (faster, simpler):
-
-```bash
-# remove a file from history
-bfg --delete-files .env
-# or replace a secret value
-bfg --replace-text replacements.txt
-git reflog expire --expire=now --all && git gc --prune=now --aggressive
-```
-
-- `git filter-repo` (recommended modern tool):
-
-```bash
-git filter-repo --invert-paths --paths .env
-```
-
-Be careful: rewriting history requires force-pushing and coordination with collaborators.
-# GroceryPOS
-
-A desktop Point of Sale (POS) application for grocery stores, built with C# WPF (.NET 8) and SQLite.
-
-## Project Description
-
-GroceryPOS is a Windows desktop billing and store-management system designed for daily retail workflows.  
-It supports billing, stock handling, customer credit, returns, reporting, and receipt printing in a single application.
-
-## Features
-
-- Billing and invoicing with barcode support and multiple payment types
-- Customer management with credit tracking and ledger history
-- Product and inventory management with low-stock monitoring
-- Supplier bill entry with attachment support
-- Returns and refund handling (cash or credit adjustment)
-- Sales and operational reports with date-based filtering
-- Thermal receipt printing (80mm) and PDF export
-- Dashboard metrics for sales, returns, credit, and payment split
-
-## Tech Stack
-
-- UI: WPF (XAML)
-- Runtime: .NET 8 (Windows)
-- Architecture: MVVM
-- Database: SQLite (`Microsoft.Data.Sqlite`)
-- DI: `Microsoft.Extensions.DependencyInjection`
-- Password Hashing: `BCrypt.Net-Next`
-- Printing: `System.Drawing`
-
-## Repository Structure
+## 📁 Repository Structure
 
 ```text
-GroceryPOS-master/
-├── Converters/
-├── Data/
-│   ├── Repositories/
-│   ├── DatabaseHelper.cs
-│   └── DatabaseInitializer.cs
-├── Docs/
-├── Exceptions/
-├── Helpers/
-├── Models/
-├── Services/
-├── Themes/
-├── ViewModels/
-├── Views/
-│   └── Controls/
-├── App.xaml
-├── App.xaml.cs
-├── GroceryPOS.csproj
-└── GroceryPOS-master.sln
+GroceryPOS/
+├── Assets/          # Icons, Branding, and Media assets
+├── Data/            # Repository pattern implementation and SQLite Logic
+├── Docs/            # Detailed documentation (Schema, Audits, Financials)
+├── Helpers/         # Utility classes and shared logic
+├── Models/          # Core business entities
+├── Services/        # Business logic and domain services
+├── ViewModels/      # Application state and UI logic
+├── Views/           # WPF Windows, UserControls, and Themes
+└── Scripts/         # Utility scripts for maintenance and publishing
 ```
 
-## Setup Instructions
+---
+
+## 🚦 Getting Started
 
 ### Prerequisites
+- **Operating System**: Windows 10/11
+- **Developer Tools**: .NET 8 SDK or Visual Studio 2022
 
-- Windows OS (WPF is Windows-only)
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+### Build & Run
 
-### Run Locally
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Muhammad-Talha990/GroceryPOS.git
+   cd GroceryPOS
+   ```
 
-```bash
-dotnet restore
-dotnet build GroceryPOS-master.sln
-dotnet run --project GroceryPOS.csproj
-```
+2. **Restore & Build**:
+   ```bash
+   dotnet restore
+   dotnet build
+   ```
 
-The SQLite database file is generated automatically on first run.
+3. **Launch**:
+   ```bash
+   dotnet run --project GroceryPOS.csproj
+   ```
 
-## Database Notes
+*Note: The database is initialized automatically on the first launch.*
 
-- SQLite schema is initialized and migrated in `DatabaseInitializer`
-- Database path is handled by `DatabaseHelper`
-- Full schema and accounting design notes: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
+---
 
-## Delivery / Production Notes
+## 🛡 Security & Configuration
 
-- Keep generated logs and local databases out of version control
-- Do not commit local environment secrets (`.env`, local appsettings overrides)
-- Build in Release mode for client delivery:
+This project follows professional security standards:
+- **No Hardcoded Secrets**: Credentials are moved to external configurations.
+- **BCrypt Hashing**: All user passwords are encrypted before storage.
+- **Portable DB**: Connection strings are resolved dynamically at runtime.
 
-```bash
-dotnet publish -c Release -r win-x64 --self-contained false
-```
+---
 
-## License
+## 📄 License
 
-This project is for educational and personal use unless otherwise agreed with the client.
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+
+---
+
+## 👨‍💻 Author
+
+**Muhammad Talha**  
+*Senior Software Engineer & POS Specialist*
+
+---
+

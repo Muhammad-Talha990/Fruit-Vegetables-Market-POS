@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.Versioning;
 using System.Windows.Input;
 using Microsoft.Extensions.DependencyInjection;
 using GroceryPOS.Services;
@@ -10,6 +11,7 @@ namespace GroceryPOS.ViewModels
     /// Main shell ViewModel — handles navigation between views and logout.
     /// Professional DI implementation using IServiceProvider for navigation.
     /// </summary>
+    [SupportedOSPlatform("windows")]
     public class MainViewModel : BaseViewModel
     {
         private readonly AuthService _authService;
@@ -45,6 +47,13 @@ namespace GroceryPOS.ViewModels
             set => SetProperty(ref _isAdmin, value);
         }
 
+        private bool _isSidebarVisible = true;
+        public bool IsSidebarVisible
+        {
+            get => _isSidebarVisible;
+            set => SetProperty(ref _isSidebarVisible, value);
+        }
+
         private string _selectedMenu = "Dashboard";
         public string SelectedMenu
         {
@@ -61,6 +70,7 @@ namespace GroceryPOS.ViewModels
 
         public ICommand NavigateCommand { get; }
         public ICommand LogoutCommand { get; }
+        public ICommand ToggleSidebarCommand { get; }
 
         public MainViewModel(AuthService authService, IServiceProvider serviceProvider)
         {
@@ -73,6 +83,7 @@ namespace GroceryPOS.ViewModels
 
             NavigateCommand = new RelayCommand(p => NavigateTo(p?.ToString() ?? "Dashboard"));
             LogoutCommand = new RelayCommand(ExecuteLogout);
+            ToggleSidebarCommand = new RelayCommand(_ => IsSidebarVisible = !IsSidebarVisible);
 
             NavigateTo("Dashboard");
         }
@@ -87,6 +98,12 @@ namespace GroceryPOS.ViewModels
 
         private void NavigateTo(string view)
         {
+            // Auto-restore sidebar if navigating away from billing (optional, but user requested "only if we are billing")
+            if (view != "Billing")
+            {
+                IsSidebarVisible = true;
+            }
+
             _selectedMenu = view;
             OnPropertyChanged(nameof(SelectedMenu));
 
@@ -99,7 +116,9 @@ namespace GroceryPOS.ViewModels
                 "SupplierBills"=> _serviceProvider.GetRequiredService<SupplierBillsViewModel>(),
                 "Returns"      => RefreshReturnVM(),
                 "Customers"    => CreateCustomerManagementVM(),
+                "Suppliers"    => _serviceProvider.GetRequiredService<SupplierManagementViewModel>(),
                 "CustomerLedger" => CreateCustomerLedgerVM(PendingLedgerCustomerId),
+
                 _ => _serviceProvider.GetRequiredService<DashboardViewModel>()
             };
         }

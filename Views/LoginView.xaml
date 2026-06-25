@@ -31,9 +31,9 @@
             <!-- Login Form -->
             <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="48,0">
 
-                <!-- Logo Icon -->
-                <TextBlock Text="🏪" FontSize="64" HorizontalAlignment="Center" Margin="0,0,0,12"/>
-                <TextBlock Text="Welcome Back!" FontSize="26" FontWeight="Bold"
+                <!-- Branded Logo -->
+                <Image Source="/Assets/logo.png" Height="100" HorizontalAlignment="Center" Margin="0,0,0,24"/>
+                <TextBlock Text="Welcome Back" FontSize="26" FontWeight="Bold"
                            Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"
                            FontFamily="{DynamicResource AppFont}"/>
                 <TextBlock Text="Sign in to your account" FontSize="14"

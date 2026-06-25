@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.Data.Sqlite;
 using GroceryPOS.Helpers;
 
@@ -6,30 +7,36 @@ namespace GroceryPOS.Data
 {
     /// <summary>
     /// Creates and maintains the normalized (3NF) database schema for GroceryPOS.
-    /// 
-    /// Tables (10):
-    ///   1. Users          – System users (Admin / Cashier)
-    ///   2. Categories      – Product categories (lookup)
-    ///   3. Items           – Product catalog (PK = ItemId, Barcode optional + unique)
-    ///   4. Customers       – Registered customers with soft-delete
-    ///   5. Bills           – Sale headers (IMMUTABLE once saved)
-    ///   6. BillItems       – Sale line items (IMMUTABLE, surrogate PK)
-    ///   7. bill_payment    – Payment transaction log (Sale / Credit Payment / Refund)
-    ///   8. BillReturns     – Return headers (linked to original Bill)
-    ///   9. BillReturnItems – Return line items (linked to original BillItems)
-    ///  10. InventoryLogs   – Stock movement audit trail
     ///
-    /// Normalization:
+    /// Tables (12):
+    ///   1.  Users               – System users (Admin / Cashier)
+    ///   2.  Categories          – Product categories (lookup)
+    ///   3.  Items               – Product catalog (PK = ItemId, Barcode optional + unique)
+    ///   4.  Customers           – Registered customers with soft-delete, mandatory 11-digit phone
+    ///   5.  Bills               – Sale headers (IMMUTABLE once saved)
+    ///   6.  BillItems           – Sale line items (IMMUTABLE, surrogate PK)
+    ///   7.  bill_payment        – Payment transaction log (Sale / Credit Payment / Refund)
+    ///   8.  BillReturns         – Return headers (linked to original Bill)
+    ///   9.  BillReturnItems     – Return line items (linked to original BillItems)
+    ///  10.  InventoryLogs       – Stock movement audit trail
+    ///  11.  Accounts            – Payment accounts (Bank / Easypaisa / JazzCash)
+    ///  12.  CustomerLedger      – Double-entry audit journal per customer
+    ///  13.  StockPurchases      – Stock purchase master records (cash deducted from drawer)
+    ///  14.  StockPurchaseItems  – Stock purchase line items (links to Items)
+    ///
+    /// Key Business Rules:
     ///   - Stock is CALCULATED from SUM(InventoryLogs.QuantityChange), never stored on Items.
     ///   - Bill totals are CALCULATED from BillItems, never stored on Bills.
-    ///   - All derived values live only in application models, not in the database.
+    ///   - Customer phone is MANDATORY, exactly 11 digits, must start with '0'.
+    ///   - Stock purchases deduct from Cash in Drawer (negative balances are allowed).
+    ///   - All datetime values use a single-capture variable per transaction (no multiple Now calls).
     ///
     /// Safe to call on every application startup (CREATE IF NOT EXISTS + idempotent migrations).
     /// </summary>
     public static class DatabaseInitializer
     {
         // Schema version — increment when adding migrations
-        private const int CurrentSchemaVersion = 17;
+        private const int CurrentSchemaVersion = 22;
 
         /// <summary>
         /// Ensures all tables, indexes, and seed data exist.
@@ -57,6 +64,12 @@ namespace GroceryPOS.Data
                     EnsureCustomerLedgerAuditColumns(conn);
                     // ── Hard guard: make bill_payment canonical even if user_version is stale ──
                     EnsureCanonicalBillPaymentShape(conn);
+                    // ── Hard guard: ensure supplier tables exist even if migration history is stale ──
+                    EnsureSupplierSchema(conn);
+
+                    // Fix any leftover foreign-key references to a legacy Customers_v17 table
+                    // that may have been left behind by interrupted migrations.
+                    FixCustomersV17ForeignKeys(conn);
 
                     // Fresh databases now start directly at the latest schema.
                     if (GetSchemaVersion(conn) == 0)
@@ -68,6 +81,7 @@ namespace GroceryPOS.Data
                     MigrateIfNeeded(conn);
 
                     SeedUsers(conn);
+                    RepairDefaultUserPasswords(conn);
                     SeedCategories(conn);
                     SeedAccounts(conn);
                     SeedItems(conn);
@@ -134,12 +148,14 @@ namespace GroceryPOS.Data
 
             // ────────────────────────────────────────
             //  TABLE 4: Customers
+            //  Phone: mandatory, 11 digits, must start with '0' (e.g. 03001234567)
             // ────────────────────────────────────────
             Execute(conn, @"
                 CREATE TABLE IF NOT EXISTS Customers (
                     CustomerId INTEGER PRIMARY KEY AUTOINCREMENT,
                     FullName   TEXT    NOT NULL,
-                    Phone      TEXT    UNIQUE NOT NULL,
+                    Phone      TEXT    NOT NULL UNIQUE
+                               CHECK(length(Phone) = 11 AND Phone GLOB '0[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'),
                     SecondaryPhone TEXT,
                     Address    TEXT,
                     Address2   TEXT,
@@ -307,26 +323,61 @@ namespace GroceryPOS.Data
             ");
 
             // ────────────────────────────────────────
+            //  TABLE 13: StockPurchases (Master)
+            //  One record per purchase session (cart checkout).
+            //  TotalAmount is deducted from Cash in Drawer.
+            // ────────────────────────────────────────
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS StockPurchases (
+                    PurchaseId      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    PurchaseAt      DATETIME NOT NULL,
+                    TotalAmount     REAL     NOT NULL CHECK(TotalAmount >= 0),
+                    CreatedByUserId INTEGER,
+                    ImagePath       TEXT,
+                    FOREIGN KEY (CreatedByUserId) REFERENCES Users(Id) ON DELETE SET NULL
+                );
+            ");
+
+            // ────────────────────────────────────────
+            //  TABLE 14: StockPurchaseItems (Detail)
+            //  Each row is one product line in a stock purchase.
+            // ────────────────────────────────────────
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS StockPurchaseItems (
+                    Id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    PurchaseId  INTEGER NOT NULL,
+                    ItemId      INTEGER NOT NULL,
+                    Quantity    REAL    NOT NULL CHECK(Quantity > 0),
+                    CostPrice   REAL    NOT NULL CHECK(CostPrice >= 0),
+                    FOREIGN KEY (PurchaseId) REFERENCES StockPurchases(PurchaseId) ON DELETE CASCADE,
+                    FOREIGN KEY (ItemId)     REFERENCES Items(ItemId)              ON DELETE RESTRICT
+                );
+            ");
+
+            // ────────────────────────────────────────
             //  INDEXES
             // ────────────────────────────────────────
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Items_Barcode      ON Items(Barcode) WHERE Barcode IS NOT NULL;");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Items_Category     ON Items(CategoryId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Bills_Customer     ON Bills(CustomerId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Bills_CreatedAt    ON Bills(CreatedAt);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Bills_Status       ON Bills(Status);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_BillItems_BillId   ON BillItems(BillId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_BillItems_ItemId   ON BillItems(ItemId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Items_Barcode           ON Items(Barcode) WHERE Barcode IS NOT NULL;");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Items_Category          ON Items(CategoryId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Bills_Customer          ON Bills(CustomerId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Bills_CreatedAt         ON Bills(CreatedAt);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Bills_Status            ON Bills(Status);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_BillItems_BillId        ON BillItems(BillId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_BillItems_ItemId        ON BillItems(ItemId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId     ON bill_payment(BillId);");
             CreateIndexIfColumnExists(conn, "IX_bill_payment_CreatedAt", "bill_payment", "CreatedAt", "CreatedAt");
-            CreateIndexIfColumnExists(conn, "IX_bill_payment_PaidAt", "bill_payment", "PaidAt", "PaidAt");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Returns_BillId     ON BillReturns(BillId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ReturnItems_RetId  ON BillReturnItems(ReturnId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ReturnItems_BiId   ON BillReturnItems(BillItemId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Inventory_ItemId   ON InventoryLogs(ItemId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Inventory_LogDate  ON InventoryLogs(LogDate);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Customers_Phone    ON Customers(Phone);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_Customer    ON CustomerLedger(CustomerId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_Date        ON CustomerLedger(EntryDate);");
+            CreateIndexIfColumnExists(conn, "IX_bill_payment_PaidAt",    "bill_payment", "PaidAt",    "PaidAt");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Returns_BillId          ON BillReturns(BillId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ReturnItems_RetId       ON BillReturnItems(ReturnId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ReturnItems_BiId        ON BillReturnItems(BillItemId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Inventory_ItemId        ON InventoryLogs(ItemId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Inventory_LogDate       ON InventoryLogs(LogDate);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Customers_Phone         ON Customers(Phone);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_Customer         ON CustomerLedger(CustomerId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_Date             ON CustomerLedger(EntryDate);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_StockPurchases_Date     ON StockPurchases(PurchaseAt);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_StockPurchItems_PurchId ON StockPurchaseItems(PurchaseId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_StockPurchItems_ItemId  ON StockPurchaseItems(ItemId);");
             if (ColumnExists(conn, "CustomerLedger", "SequenceNo"))
             {
                 Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_CustomerDateSeq ON CustomerLedger(CustomerId, EntryDate, SequenceNo, LedgerId);");
@@ -336,6 +387,7 @@ namespace GroceryPOS.Data
                 Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_CustomerDate ON CustomerLedger(CustomerId, EntryDate, LedgerId);");
             }
             CreateIndexIfColumnExists(conn, "IX_Ledger_BillId", "CustomerLedger", "BillId", "BillId");
+            
         }
 
         // ────────────────────────────────────────────
@@ -351,7 +403,8 @@ namespace GroceryPOS.Data
 
             var users = new[]
             {
-                ("admin",   "1234",       "System Administrator", "Admin"),
+                // Format: (Username, Password, FullName, Role)
+                ("admin",   "admin123",   "System Administrator", "Admin"),
                 ("cashier", "cashier123", "Default Cashier",      "Cashier")
             };
 
@@ -370,6 +423,37 @@ namespace GroceryPOS.Data
             }
 
             AppLogger.Info("Default users seeded (admin, cashier).");
+            return;
+        }
+
+        private static void RepairDefaultUserPasswords(SqliteConnection conn)
+        {
+            RepairPasswordIfPlaceholder(conn, "admin", "admin123", "ADMIN_PASSWORD_HERE", "1234");
+            RepairPasswordIfPlaceholder(conn, "cashier", "cashier123", "CASHIER_PASSWORD_HERE", "1234");
+        }
+
+        private static void RepairPasswordIfPlaceholder(SqliteConnection conn, string username, string newPassword, params string[] oldPasswords)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT Id, PasswordHash FROM Users WHERE Username = @username AND IsActive = 1 LIMIT 1;";
+            cmd.Parameters.AddWithValue("@username", username);
+
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read()) return;
+
+            int userId = reader.GetInt32(0);
+            string passwordHash = reader.GetString(1);
+
+            bool matchesKnownPlaceholder = oldPasswords.Any(candidate => BCrypt.Net.BCrypt.Verify(candidate, passwordHash));
+            if (!matchesKnownPlaceholder) return;
+
+            using var updateCmd = conn.CreateCommand();
+            updateCmd.CommandText = "UPDATE Users SET PasswordHash = @hash WHERE Id = @id;";
+            updateCmd.Parameters.AddWithValue("@hash", BCrypt.Net.BCrypt.HashPassword(newPassword));
+            updateCmd.Parameters.AddWithValue("@id", userId);
+            updateCmd.ExecuteNonQuery();
+
+            AppLogger.Info($"Repaired default password for '{username}'.");
         }
 
         // ────────────────────────────────────────────
@@ -968,22 +1052,101 @@ namespace GroceryPOS.Data
                 AppLogger.Info("Migration v17: Standardized CustomerLedger metadata and rebuilt running balances.");
             }
 
-            // --- Real-time Date Fix: Localize UTC timestamps stored previously ---
-            // This 'repairs' entries created after the user's local 7 PM but stored as UTC (previous day date).
-            // We shift everything created in the last 24 hours by +5 hours if it looks like UTC.
-            Execute(conn, @"
-                UPDATE Bills SET CreatedAt = datetime(CreatedAt, '+5 hours') 
-                WHERE CreatedAt > datetime('now', '-24 hours') AND CreatedAt LIKE '%Z' OR CreatedAt NOT LIKE '%:%:%';
-                
-                UPDATE bill_payment SET CreatedAt = datetime(CreatedAt, '+5 hours') 
-                WHERE CreatedAt > datetime('now', '-24 hours');
-                
-                UPDATE InventoryLogs SET LogDate = datetime(LogDate, '+5 hours') 
-                WHERE LogDate > datetime('now', '-24 hours');
-                
-                UPDATE BillReturns SET ReturnedAt = datetime(ReturnedAt, '+5 hours') 
-                WHERE ReturnedAt > datetime('now', '-24 hours');
-            ");
+            // Migration v17 → v18: Enforce 11-digit zero-prefix phone constraint on Customers.
+            // SQLite cannot ADD COLUMN with a CHECK, so we use the safe recreate pattern.
+            if (currentVersion < 18)
+            {
+                MigrateCustomersPhoneConstraint(conn);
+                SetSchemaVersion(conn, 18);
+                AppLogger.Info("Migration v18: Applied 11-digit zero-prefix phone CHECK constraint to Customers.");
+            }
+
+            // Migration v18 → v19: Create StockPurchases + StockPurchaseItems tables.
+            if (currentVersion < 19)
+            {
+                Execute(conn, @"
+                    CREATE TABLE IF NOT EXISTS StockPurchases (
+                        PurchaseId      INTEGER PRIMARY KEY AUTOINCREMENT,
+                        PurchaseAt      DATETIME NOT NULL,
+                        TotalAmount     REAL     NOT NULL CHECK(TotalAmount >= 0),
+                        CreatedByUserId INTEGER,
+                        ImagePath       TEXT,
+                        FOREIGN KEY (CreatedByUserId) REFERENCES Users(Id) ON DELETE SET NULL
+                    );
+                ");
+                Execute(conn, @"
+                    CREATE TABLE IF NOT EXISTS StockPurchaseItems (
+                        Id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        PurchaseId  INTEGER NOT NULL,
+                        ItemId      INTEGER NOT NULL,
+                        Quantity    REAL    NOT NULL CHECK(Quantity > 0),
+                        CostPrice   REAL    NOT NULL CHECK(CostPrice >= 0),
+                        FOREIGN KEY (PurchaseId) REFERENCES StockPurchases(PurchaseId) ON DELETE CASCADE,
+                        FOREIGN KEY (ItemId)     REFERENCES Items(ItemId)              ON DELETE RESTRICT
+                    );
+                ");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_StockPurchases_Date     ON StockPurchases(PurchaseAt);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_StockPurchItems_PurchId ON StockPurchaseItems(PurchaseId);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_StockPurchItems_ItemId  ON StockPurchaseItems(ItemId);");
+                SetSchemaVersion(conn, 19);
+                AppLogger.Info("Migration v19: Created StockPurchases and StockPurchaseItems tables.");
+            }
+            
+            // Migration v19 → v20: Add ImagePath column to StockPurchases (if not already added in v19)
+            if (currentVersion < 20)
+            {
+                AddColumnIfNotExists(conn, "StockPurchases", "ImagePath", "TEXT");
+                SetSchemaVersion(conn, 20);
+                AppLogger.Info("Migration v20: Added ImagePath column to StockPurchases.");
+            }
+
+            // Migration v20 → v21: Fix historical restock images by linking StockPurchases images to InventoryLogs
+            if (currentVersion < 21)
+            {
+                Execute(conn, @"
+                    UPDATE InventoryLogs
+                    SET ImagePath = (SELECT ImagePath FROM StockPurchases WHERE PurchaseId = InventoryLogs.ReferenceId)
+                    WHERE ReferenceType = 'Supply' 
+                      AND (ImagePath IS NULL OR ImagePath = '') 
+                      AND ReferenceId IS NOT NULL 
+                      AND EXISTS (SELECT 1 FROM StockPurchases WHERE PurchaseId = InventoryLogs.ReferenceId AND ImagePath IS NOT NULL);
+                ");
+                SetSchemaVersion(conn, 21);
+                AppLogger.Info("Migration v21: Linked historical StockPurchase images to InventoryLogs.");
+            }
+            
+            // Migration v21 → v22: Create Suppliers and SupplierProducts tables
+            if (currentVersion < 22)
+            {
+                Execute(conn, @"
+                    CREATE TABLE IF NOT EXISTS Suppliers (
+                        PhoneNumber TEXT PRIMARY KEY,
+                        Name        TEXT NOT NULL,
+                        CompanyName TEXT,
+                        Email       TEXT UNIQUE,
+                        Address     TEXT,
+                        CreatedAt   DATETIME DEFAULT CURRENT_TIMESTAMP
+                    );
+                ");
+                Execute(conn, @"
+                    CREATE TABLE IF NOT EXISTS SupplierProducts (
+                        Id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                        SupplierPhone TEXT NOT NULL,
+                        ProductId     INTEGER NOT NULL,
+                        SupplyPrice   REAL,
+                        SupplyDate    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        Notes         TEXT,
+                        UNIQUE(SupplierPhone, ProductId),
+                        FOREIGN KEY (SupplierPhone) REFERENCES Suppliers(PhoneNumber) ON DELETE CASCADE,
+                        FOREIGN KEY (ProductId)     REFERENCES Items(ItemId)      ON DELETE CASCADE
+                    );
+                ");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_SupplierProducts_Phone ON SupplierProducts(SupplierPhone);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_SupplierProducts_Item ON SupplierProducts(ProductId);");
+
+                SetSchemaVersion(conn, 22);
+                AppLogger.Info("Migration v22: Created Suppliers and SupplierProducts tables.");
+            }
 
             AppLogger.Info($"Database migrated successfully to v{CurrentSchemaVersion}.");
         }
@@ -1186,6 +1349,90 @@ namespace GroceryPOS.Data
         // ────────────────────────────────────────────
         //  Sub-Migrations
         // ────────────────────────────────────────────
+
+        /// <summary>
+        /// Migration v18: Recreates the Customers table with the strict phone CHECK constraint.
+        /// All existing rows that pass validation are preserved; non-conforming rows get a
+        /// zero-padded or truncated placeholder so the migration never silently drops data.
+        /// </summary>
+        private static void MigrateCustomersPhoneConstraint(SqliteConnection conn)
+        {
+            AppLogger.Info("Migrating Customers: adding 11-digit phone CHECK constraint...");
+            Execute(conn, "PRAGMA foreign_keys = OFF;");
+            using var txn = conn.BeginTransaction();
+
+            // If the Customers table is missing for any reason, skip this migration.
+            // This prevents attempting to rename a non-existent table which would
+            // lead to "no such table: Customers_v17" errors during runtime.
+            if (!TableExists(conn, "Customers"))
+            {
+                AppLogger.Info("Customers table not found; skipping phone constraint migration.");
+                txn.Rollback();
+                return;
+            }
+
+            try
+            {
+                Execute(conn, "ALTER TABLE Customers RENAME TO Customers_v17;");
+
+                // Create new table with CHECK constraint
+                Execute(conn, @"
+                    CREATE TABLE Customers (
+                        CustomerId     INTEGER PRIMARY KEY AUTOINCREMENT,
+                        FullName       TEXT    NOT NULL,
+                        Phone          TEXT    NOT NULL UNIQUE
+                                       CHECK(length(Phone) = 11 AND Phone GLOB '0[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'),
+                        SecondaryPhone TEXT,
+                        Address        TEXT,
+                        Address2       TEXT,
+                        Address3       TEXT,
+                        IsActive       INTEGER NOT NULL DEFAULT 1,
+                        CreatedAt      DATETIME DEFAULT CURRENT_TIMESTAMP
+                    );
+                ");
+
+                // Copy rows — normalize phone on the fly:
+                //   1. Strip all non-digits
+                //   2. If 11 digits starting with 0 → keep as-is
+                //   3. Otherwise → prefix with '0' and left-pad to 11 (or truncate to 11)
+                //   4. As a last resort produce a unique placeholder 0XXXXXXXXXXX
+                Execute(conn, @"
+                    INSERT INTO Customers (CustomerId, FullName, Phone, SecondaryPhone, Address, Address2, Address3, IsActive, CreatedAt)
+                    SELECT
+                        CustomerId,
+                        FullName,
+                        CASE
+                            -- Already valid: 11 chars starting with '0' that are all digits
+                            WHEN length(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(Phone,'0',''),'1',''),'2',''),'3',''),'4',''),'5',''),'6',''),'7',''),'8',''),'9','')) = 0
+                                 AND length(Phone) = 11 AND substr(Phone,1,1) = '0'
+                                THEN Phone
+                            -- Fallback: generate unique 11-digit placeholder '0' + 10-digit CustomerId
+                            ELSE '0' || substr('0000000000' || CAST(CustomerId AS TEXT), -10, 10)
+                        END,
+                        SecondaryPhone,
+                        Address,
+                        Address2,
+                        Address3,
+                        IsActive,
+                        CreatedAt
+                    FROM Customers_v17;
+                ");
+
+                Execute(conn, "DROP TABLE Customers_v17;");
+                txn.Commit();
+                AppLogger.Info("Customers phone constraint migration completed.");
+            }
+            catch (Exception ex)
+            {
+                txn.Rollback();
+                AppLogger.Error("Customers phone constraint migration failed", ex);
+                throw;
+            }
+            finally
+            {
+                Execute(conn, "PRAGMA foreign_keys = ON;");
+            }
+        }
 
         /// <summary>
         /// Migrates BillItems from composite PK (BillId, ItemId)
@@ -1444,6 +1691,81 @@ namespace GroceryPOS.Data
         }
 
         /// <summary>
+        /// Detects any table definitions that reference the legacy `Customers_v17` table name
+        /// and recreates those tables to reference the correct `Customers` table instead.
+        /// This is defensive: it only operates when a table's CREATE SQL contains the
+        /// legacy identifier and will copy data across without data loss.
+        /// </summary>
+        private static void FixCustomersV17ForeignKeys(SqliteConnection conn)
+        {
+            const string legacy = "Customers_v17";
+            const string replacement = "Customers";
+
+            using var find = conn.CreateCommand();
+            find.CommandText = "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE '%' || @legacy || '%';";
+            find.Parameters.AddWithValue("@legacy", legacy);
+
+            using var reader = find.ExecuteReader();
+            var tablesToFix = new System.Collections.Generic.List<(string name, string sql)>();
+            while (reader.Read())
+            {
+                tablesToFix.Add((reader.GetString(0), reader.IsDBNull(1) ? string.Empty : reader.GetString(1)));
+            }
+
+            foreach (var (name, sql) in tablesToFix)
+            {
+                try
+                {
+                    AppLogger.Info($"Fixing legacy FK reference in table '{name}' (replacing {legacy} → {replacement})...");
+                    Execute(conn, "PRAGMA foreign_keys = OFF;");
+                    using var txn = conn.BeginTransaction();
+
+                    // Rename old table
+                    var oldName = name + "_old";
+                    Execute(conn, $"ALTER TABLE {name} RENAME TO {oldName};");
+
+                    // Build new CREATE TABLE statement by replacing the legacy reference
+                    var newCreateSql = sql.Replace(legacy, replacement);
+                    Execute(conn, newCreateSql + ";");
+
+                    // Copy columns by querying the old table's pragma
+                    using var colsCmd = conn.CreateCommand();
+                    colsCmd.CommandText = $"PRAGMA table_info({oldName});";
+                    using var colsReader = colsCmd.ExecuteReader();
+                    var cols = new System.Collections.Generic.List<string>();
+                    while (colsReader.Read()) cols.Add(colsReader.GetString(colsReader.GetOrdinal("name")));
+                    var colList = string.Join(",", cols);
+
+                    Execute(conn, $"INSERT INTO {name} ({colList}) SELECT {colList} FROM {oldName};");
+
+                    // Recreate indexes for the table (if any)
+                    using var idxCmd = conn.CreateCommand();
+                    idxCmd.CommandText = "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=@old;";
+                    idxCmd.Parameters.AddWithValue("@old", oldName);
+                    using var idxReader = idxCmd.ExecuteReader();
+                    while (idxReader.Read())
+                    {
+                        if (idxReader.IsDBNull(1)) continue;
+                        var idxSql = idxReader.GetString(1).Replace(oldName, name);
+                        Execute(conn, idxSql + ";");
+                    }
+
+                    Execute(conn, $"DROP TABLE {oldName};");
+                    txn.Commit();
+                    AppLogger.Info($"Recreated '{name}' to reference {replacement} successfully.");
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Error($"Failed to fix legacy FK reference in table '{name}'", ex);
+                }
+                finally
+                {
+                    Execute(conn, "PRAGMA foreign_keys = ON;");
+                }
+            }
+        }
+
+        /// <summary>
         /// Ensures bill_payment always has the canonical accounting shape:
         /// (PaymentId, BillId, Amount, Type, CreatedAt).
         /// This is intentionally version-agnostic to self-heal stale user_version values.
@@ -1524,6 +1846,40 @@ namespace GroceryPOS.Data
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_BillId ON bill_payment(BillId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_bill_payment_CreatedAt ON bill_payment(CreatedAt);");
             AppLogger.Info("Self-heal: canonicalized bill_payment table shape (v16).");
+        }
+
+        /// <summary>
+        /// Ensures supplier tables exist regardless of stale migration state.
+        /// </summary>
+        private static void EnsureSupplierSchema(SqliteConnection conn)
+        {
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS Suppliers (
+                    PhoneNumber TEXT PRIMARY KEY,
+                    Name        TEXT NOT NULL,
+                    CompanyName TEXT,
+                    Email       TEXT UNIQUE,
+                    Address     TEXT,
+                    CreatedAt   DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS SupplierProducts (
+                    Id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    SupplierPhone TEXT NOT NULL,
+                    ProductId     INTEGER NOT NULL,
+                    SupplyPrice   REAL,
+                    SupplyDate    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    Notes         TEXT,
+                    UNIQUE(SupplierPhone, ProductId),
+                    FOREIGN KEY (SupplierPhone) REFERENCES Suppliers(PhoneNumber) ON DELETE CASCADE,
+                    FOREIGN KEY (ProductId)     REFERENCES Items(ItemId)      ON DELETE CASCADE
+                );
+            ");
+
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_SupplierProducts_Phone ON SupplierProducts(SupplierPhone);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_SupplierProducts_Item ON SupplierProducts(ProductId);");
         }
 
         /// <summary>

@@ -21,8 +21,11 @@ namespace GroceryPOS.Data.Repositories
         // ────────────────────────────────────────────
 
         /// <summary>Inserts a new customer record.</summary>
+        /// <exception cref="ArgumentException">Thrown when phone does not meet format requirements.</exception>
         public void Save(Customer customer)
         {
+            string phone = NormalizeAndValidatePhone(customer.PrimaryPhone);
+
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
@@ -30,11 +33,10 @@ namespace GroceryPOS.Data.Repositories
                 VALUES (@fullName, @phone, @secondaryPhone, @address, @address2, @address3, 1);
                 SELECT last_insert_rowid();";
 
-            cmd.Parameters.AddWithValue("@fullName", customer.FullName);
-            cmd.Parameters.AddWithValue("@phone",          NormalizePhone(customer.Phone));
+            cmd.Parameters.AddWithValue("@fullName",       customer.FullName);
+            cmd.Parameters.AddWithValue("@phone",          phone);
             cmd.Parameters.AddWithValue("@secondaryPhone", (object?)customer.SecondaryPhone ?? DBNull.Value);
-
-            cmd.Parameters.AddWithValue("@address",  (object?)customer.Address ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@address",  (object?)customer.Address  ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@address2", (object?)customer.Address2 ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@address3", (object?)customer.Address3 ?? DBNull.Value);
 
@@ -42,8 +44,11 @@ namespace GroceryPOS.Data.Repositories
         }
 
         /// <summary>Updates an existing customer's editable fields.</summary>
+        /// <exception cref="ArgumentException">Thrown when phone does not meet format requirements.</exception>
         public void Update(Customer customer)
         {
+            string phone = NormalizeAndValidatePhone(customer.PrimaryPhone);
+
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
@@ -56,11 +61,10 @@ namespace GroceryPOS.Data.Repositories
                     Address3       = @address3
                 WHERE CustomerId = @id;";
 
-            cmd.Parameters.AddWithValue("@fullName", customer.FullName);
-            cmd.Parameters.AddWithValue("@phone",          NormalizePhone(customer.Phone));
+            cmd.Parameters.AddWithValue("@fullName",       customer.FullName);
+            cmd.Parameters.AddWithValue("@phone",          phone);
             cmd.Parameters.AddWithValue("@secondaryPhone", (object?)customer.SecondaryPhone ?? DBNull.Value);
-
-            cmd.Parameters.AddWithValue("@address",  (object?)customer.Address ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@address",  (object?)customer.Address  ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@address2", (object?)customer.Address2 ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@address3", (object?)customer.Address3 ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@id",       customer.CustomerId);
@@ -154,7 +158,9 @@ namespace GroceryPOS.Data.Repositories
             var customers = new List<Customer>();
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = CustomerSelectSql + (activeOnly ? " WHERE c.IsActive = 1" : "") + " ORDER BY c.FullName ASC;";
+            cmd.CommandText = CustomerSelectSql + " WHERE c.FullName != 'Walk-in Customer'";
+            if (activeOnly) cmd.CommandText += " AND c.IsActive = 1";
+            cmd.CommandText += " ORDER BY c.FullName ASC;";
 
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -173,7 +179,7 @@ namespace GroceryPOS.Data.Repositories
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
 
-            cmd.CommandText = CustomerSelectSql + " WHERE c.IsActive = 1";
+            cmd.CommandText = CustomerSelectSql + " WHERE c.IsActive = 1 AND c.FullName != 'Walk-in Customer'";
 
             if (!string.IsNullOrEmpty(normalized))
             {
@@ -268,13 +274,86 @@ namespace GroceryPOS.Data.Repositories
         //  Private helpers
         // ────────────────────────────────────────────
 
-        public string NormalizePhone(string phone)
+        // ────────────────────────────────────────────
+        //  Phone Helpers
+        // ────────────────────────────────────────────
+
+        /// <summary>
+        /// Strips all non-digit characters from a phone string.
+        /// Returns empty string for null/empty input.
+        /// </summary>
+        public string NormalizePhone(string? phone)
         {
             if (string.IsNullOrEmpty(phone)) return string.Empty;
             var result = new System.Text.StringBuilder();
             foreach (char c in phone)
                 if (char.IsDigit(c)) result.Append(c);
             return result.ToString();
+        }
+
+        /// <summary>
+        /// Normalizes AND validates phone. Throws ArgumentException if invalid.
+        /// Rules: exactly 11 digits, must start with '0'.
+        /// </summary>
+        public string NormalizeAndValidatePhone(string? phone)
+        {
+            string digits = NormalizePhone(phone);
+
+            if (digits.Length == 0)
+                throw new ArgumentException("Phone number is required.");
+
+            if (digits.Length != 11)
+                throw new ArgumentException($"Phone number must be exactly 11 digits (e.g. 03001234567). Entered {digits.Length} digit(s).");
+
+            if (digits[0] != '0')
+                throw new ArgumentException("Phone number must start with '0' (e.g. 03001234567).");
+
+            return digits;
+        }
+
+        /// <summary>
+        /// Validates a phone string and returns (isValid, errorMessage).
+        /// Does NOT throw — suitable for UI pre-validation.
+        /// </summary>
+        public (bool IsValid, string Error) TryValidatePhone(string? phone)
+        {
+            try
+            {
+                NormalizeAndValidatePhone(phone);
+                return (true, string.Empty);
+            }
+            catch (ArgumentException ex)
+            {
+                return (false, ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Finds an existing active customer by phone, or creates a minimal walk-in
+        /// customer record if none exists. Used by the billing flow to ensure
+        /// every bill has a CustomerId — even walk-in sales.
+        /// </summary>
+        /// <param name="phone">Must be a valid 11-digit phone number starting with '0'.</param>
+        /// <returns>The found or newly-created Customer.</returns>
+        public Customer GetOrCreateWalkIn(string phone)
+        {
+            string normalized = NormalizeAndValidatePhone(phone);
+
+            // Try to find existing customer
+            var existing = GetByPhone(normalized);
+            if (existing != null)
+                return existing;
+
+            // Create a minimal walk-in record
+            var walkIn = new Customer
+            {
+                FullName = "Walk-in Customer",
+                PrimaryPhone = normalized
+            };
+            Save(walkIn);
+
+            AppLogger.Info($"Walk-in customer auto-created for phone {normalized}. CustomerId={walkIn.CustomerId}");
+            return walkIn;
         }
 
         private Customer MapCustomer(SqliteDataReader reader)

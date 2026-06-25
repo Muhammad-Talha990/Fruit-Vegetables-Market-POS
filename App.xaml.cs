@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -16,6 +17,7 @@ namespace GroceryPOS;
 /// Application entry point.
 /// Initializes the database and manages login/main window lifecycle with Dependency Injection.
 /// </summary>
+[SupportedOSPlatform("windows")]
 public partial class App : Application
 {
     private IServiceProvider _serviceProvider = null!;
@@ -43,6 +45,52 @@ public partial class App : Application
 
             AppLogger.Info("Application started. Database and Safe Cache initialized with DI.");
 
+            // If started with CLI args for printing, perform headless print and exit
+            var args = e.Args ?? Array.Empty<string>();
+            if (args.Length > 0)
+            {
+                try
+                {
+                    // Expected usage: --print-invoice <billId> --pdf <outputPath>
+                    for (int i = 0; i < args.Length; i++)
+                    {
+                        if (args[i].Equals("--print-invoice", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                        {
+                            if (int.TryParse(args[i + 1], out int bid))
+                            {
+                                string? pdfPath = null;
+                                // Look for --pdf
+                                for (int j = 0; j < args.Length; j++)
+                                {
+                                    if (args[j].Equals("--pdf", StringComparison.OrdinalIgnoreCase) && j + 1 < args.Length)
+                                    {
+                                        pdfPath = args[j + 1];
+                                        break;
+                                    }
+                                }
+
+                                var printSvc = _serviceProvider.GetRequiredService<PrintService>();
+                                bool ok = printSvc.PrintInvoiceLedgerStatement(bid, pdfPath);
+                                if (!ok)
+                                {
+                                    AppLogger.Error($"Invoice ledger print failed for BillId={bid}");
+                                }
+
+                                Shutdown();
+                                return;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Error("Headless print failed", ex);
+                    MessageBox.Show($"Headless print failed: {ex.Message}", "Print Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    Shutdown();
+                    return;
+                }
+            }
+
             ShowLogin();
         }
         catch (Exception ex)
@@ -66,6 +114,9 @@ public partial class App : Application
         services.AddSingleton<CustomerRepository>();
         services.AddSingleton<CreditPaymentRepository>();
         services.AddSingleton<AccountRepository>();
+        services.AddSingleton<StockPurchaseRepository>();  // Cart-based stock purchases
+        services.AddSingleton<SupplierRepository>();
+
 
         // --- Service Layer ---
         services.AddSingleton<DataCacheService>(); // Cache must be singleton for consistency
@@ -79,6 +130,8 @@ public partial class App : Application
         services.AddSingleton<PrintService>();
         services.AddSingleton<ReportService>();
         services.AddSingleton<IReturnService, ReturnService>();
+        services.AddSingleton<SupplierService>();
+
 
         // --- Supplier Bill Management ---
         services.AddSingleton<IImageStorageService, ImageStorageService>();
@@ -95,6 +148,8 @@ public partial class App : Application
         services.AddSingleton<ReturnViewModel>();
         services.AddSingleton<CustomerManagementViewModel>();
         services.AddSingleton<CustomerLedgerViewModel>();
+        services.AddTransient<SupplierManagementViewModel>();
+
 
         _serviceProvider = services.BuildServiceProvider();
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
 using GroceryPOS.Helpers;
+using System.Linq;
 using GroceryPOS.Models;
 using System.Collections.ObjectModel;
 
@@ -74,6 +75,12 @@ namespace GroceryPOS.Data.Repositories
             bill.BillId = Convert.ToInt32(billCmd.ExecuteScalar());
 
             // ── Step 2: Insert BillItems and Record Stock Changes ──
+            // Defensive validation: ensure items have descriptions and valid quantities
+            foreach (var corrupted in items.Where(i => string.IsNullOrWhiteSpace(i.ItemDescription) || i.Quantity == 0))
+            {
+                throw new InvalidOperationException("Cannot save invoice because one or more items have missing descriptions or invalid quantities.");
+            }
+
             foreach (var item in items)
             {
                 item.BillId = bill.BillId;
@@ -449,33 +456,46 @@ namespace GroceryPOS.Data.Repositories
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
 
-        /// <summary>Gets today's net cash in drawer: Initial Cash Payments (Bills) + Subsequent Cash (Payments table).</summary>
+        /// <summary>
+        /// Gets today's net cash in drawer:
+        ///   = Initial cash on today's bills (Cash payment method)
+        ///   + Subsequent cash payments collected today
+        ///   - Cash refunds issued today
+        ///   - Stock purchases made today  ← negative impact; can result in a negative value.
+        /// Negative balances ARE intentional and represent cash owed to the drawer.
+        /// </summary>
         public double GetTodayCashInDrawer()
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
-            // All cash received today:
-            // initial cash on today's bills + all cash payments today - all cash refunds today.
             cmd.CommandText = @"
-                SELECT 
-                    (SELECT COALESCE(SUM(InitialPayment), 0) 
-                     FROM Bills 
-                     WHERE date(CreatedAt) = @today 
-                       AND BillPaymentMethod = 'Cash' 
+                SELECT
+                    -- Cash received from today's bills
+                    (SELECT COALESCE(SUM(InitialPayment), 0)
+                     FROM Bills
+                     WHERE date(CreatedAt) = @today
+                       AND BillPaymentMethod = 'Cash'
                        AND Status != 'Cancelled')
                     +
+                    -- Subsequent cash payments collected today (credit recovery etc.)
                     (SELECT COALESCE(SUM(p.Amount), 0)
                      FROM bill_payment p
                      WHERE date(p.CreatedAt) = @today
                        AND p.PaymentMethod = 'Cash'
                        AND p.Type = 'payment')
                     -
+                    -- Cash refunds paid out today
                     (SELECT COALESCE(SUM(p.Amount), 0)
                      FROM bill_payment p
                      WHERE date(p.CreatedAt) = @today
                        AND p.PaymentMethod = 'Cash'
-                       AND p.Type = 'refund');";
+                       AND p.Type = 'refund')
+                    -
+                    -- Stock purchases paid today (cash leaves drawer)
+                    (SELECT COALESCE(SUM(TotalAmount), 0)
+                     FROM StockPurchases
+                     WHERE date(PurchaseAt) = @today);";
             cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
