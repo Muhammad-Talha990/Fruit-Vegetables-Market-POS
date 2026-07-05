@@ -1,6 +1,6 @@
 # GroceryPOS — Enterprise Grade Retail Management System
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+[![.NET Build](https://github.com/Muhammad-Talha990/GroceryPOS/actions/workflows/dotnet-build.yml/badge.svg)](https://github.com/Muhammad-Talha990/GroceryPOS/actions/workflows/dotnet-build.yml)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![Framework](https://img.shields.io/badge/framework-.NET%208%20WPF-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -104,6 +104,18 @@ This project follows professional security standards:
 ## 📄 License
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🤝 Contributing
+
+Contributions are always welcome! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on how to propose bug fixes and improvements.
+
+---
+
+## 📜 Changelog
+
+See the [CHANGELOG.md](CHANGELOG.md) for a history of updates and new features.
 
 ---
 
