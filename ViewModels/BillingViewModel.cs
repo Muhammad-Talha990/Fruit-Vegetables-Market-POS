@@ -69,9 +69,11 @@ namespace GroceryPOS.ViewModels
         public string HistoryPaymentError { get => SelectedTab?.HistoryPaymentError ?? ""; set { if (SelectedTab != null) { SelectedTab.HistoryPaymentError = value; OnPropertyChanged(); } } }
         public bool IsBillDetailOpen { get => SelectedTab?.IsBillDetailOpen ?? false; set { if (SelectedTab != null) { SelectedTab.IsBillDetailOpen = value; OnPropertyChanged(); } } }
 
-        public Customer? SelectedCustomer { get => SelectedTab?.Customer; set { if (SelectedTab != null) { SelectedTab.Customer = value; SelectedTab.CustomerId = value?.CustomerId; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedCustomer)); OnPropertyChanged(nameof(IsWalkIn)); OnPropertyChanged(nameof(IsAmountEditable)); OnPropertyChanged(nameof(CustomerDisplayName)); CalculateChange(); } } }
+        public Customer? SelectedCustomer { get => SelectedTab?.Customer; set { if (SelectedTab != null) { SelectedTab.Customer = value; SelectedTab.CustomerId = value?.CustomerId; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedCustomer)); OnPropertyChanged(nameof(IsWalkIn)); OnPropertyChanged(nameof(IsWalkInCustomerSelected)); OnPropertyChanged(nameof(IsRegisteredCustomerSelected)); OnPropertyChanged(nameof(IsAmountEditable)); OnPropertyChanged(nameof(CustomerDisplayName)); OnPropertyChanged(nameof(HasPendingCredit)); CalculateChange(); } } }
         public bool HasSelectedCustomer => SelectedCustomer != null;
-        public bool IsWalkIn => SelectedCustomer == null;
+        public bool IsWalkIn => SelectedCustomer == null || SelectedCustomer.FullName == "Walk-in Customer";
+        public bool IsWalkInCustomerSelected => SelectedCustomer != null && SelectedCustomer.FullName == "Walk-in Customer";
+        public bool IsRegisteredCustomerSelected => SelectedCustomer != null && SelectedCustomer.FullName != "Walk-in Customer";
 
         // ── Store Credit ──
 
@@ -80,7 +82,7 @@ namespace GroceryPOS.ViewModels
             get => SelectedTab?.PendingCreditAmount ?? 0;
             set { if (SelectedTab != null) { SelectedTab.PendingCreditAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasPendingCredit)); OnPropertyChanged(nameof(PendingCreditDisplay)); } }
         }
-        public bool HasPendingCredit => PendingCreditAmount > 0 && HasSelectedCustomer;
+        public bool HasPendingCredit => PendingCreditAmount > 0 && HasSelectedCustomer && !IsWalkIn;
         public string PendingCreditDisplay => $"⚠ This customer has Rs. {PendingCreditAmount:N0} pending.";
 
 
@@ -260,12 +262,12 @@ namespace GroceryPOS.ViewModels
             }
         }
 
-        public bool IsAmountEditable => IsCashPayment || (!IsCashPayment && HasSelectedCustomer);
+        public bool IsAmountEditable => IsCashPayment || (!IsCashPayment && !IsWalkIn);
 
         // ── Preview-specific computed properties ──
         public double PreviewCashReceived { get { double.TryParse(CashReceivedText, out var v); return v; } }
         public double PreviewChange => Math.Max(0, ChangeAmount);
-        public bool PreviewHasDue => HasSelectedCustomer && PreviewCashReceived < GrandTotal - 0.01;
+        public bool PreviewHasDue => !IsWalkIn && HasSelectedCustomer && PreviewCashReceived < GrandTotal - 0.01;
         public double PreviewPaidAmount => Math.Min(PreviewCashReceived, GrandTotal);
         public double PreviewDueAmount => Math.Max(0, GrandTotal - PreviewCashReceived);
         public bool PreviewShowTax => TaxAmount > 0;
@@ -291,6 +293,10 @@ namespace GroceryPOS.ViewModels
                 {
                     OnPropertyChanged(nameof(IsWalkInPhoneValid));
                     (CompleteSaleCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    if (IsWalkInPhoneValid && _walkInPhoneInput.Length == 11)
+                    {
+                        TrySelectWalkInCustomer(_walkInPhoneInput);
+                    }
                 }
             }
         }
@@ -327,6 +333,7 @@ namespace GroceryPOS.ViewModels
                     {
                         SelectedOnlineMethod = value.DisplayName;
                     }
+                    OnPropertyChanged(nameof(PreviewPaymentMethodText));
                 }
             }
         }
@@ -356,6 +363,7 @@ namespace GroceryPOS.ViewModels
                     OnPropertyChanged(nameof(IsCashPayment));
                     OnPropertyChanged(nameof(IsOnlinePayment));
                     OnPropertyChanged(nameof(IsAmountEditable));
+                    OnPropertyChanged(nameof(PreviewPaymentMethodText));
                     if (!IsCashPayment)
                     {
                         // Online: auto-set received = grand total
@@ -375,6 +383,23 @@ namespace GroceryPOS.ViewModels
                 }
             }
         }
+        
+        public string PreviewPaymentMethodText
+        {
+            get
+            {
+                if (IsOnlinePayment)
+                {
+                    var accountName = SelectedAccount?.DisplayName ?? SelectedOnlineMethod;
+                    if (!string.IsNullOrEmpty(accountName))
+                    {
+                        return $"Online ({accountName})";
+                    }
+                }
+                return SelectedPaymentMethod;
+            }
+        }
+        
         public bool IsCashPayment    => SelectedPaymentMethod == "Cash";
         public bool IsOnlinePayment  => SelectedPaymentMethod == "Online";
 
@@ -396,6 +421,7 @@ namespace GroceryPOS.ViewModels
         public ICommand CloseTabCommand { get; }
         public ICommand TogglePreviewCommand { get; }
         public ICommand SelectCustomerCommand { get; }
+        public ICommand SelectWalkInCustomerCommand { get; }
         public ICommand ClearCustomerCommand { get; }
         public ICommand LoadPreviewToCartCommand { get; }
         public ICommand OpenHistoryPaymentCommand { get; }
@@ -436,6 +462,7 @@ namespace GroceryPOS.ViewModels
             CloseTabCommand = new RelayCommand(obj => CloseTab(obj as BillingTab));
             TogglePreviewCommand = new RelayCommand(() => { IsPreviewVisible = !IsPreviewVisible; OnPropertyChanged(nameof(IsPreviewVisible)); });
             SelectCustomerCommand = new RelayCommand(obj => SelectCustomer(obj as Customer));
+            SelectWalkInCustomerCommand = new RelayCommand(_ => TrySelectWalkInCustomer(_walkInPhoneInput));
             ClearCustomerCommand = new RelayCommand(_ => ClearCustomer());
             LoadPreviewToCartCommand= new RelayCommand(_ => { if (PreviewHistoryBill != null) LoadBillIntoCart(PreviewHistoryBill); });
             OpenHistoryPaymentCommand = new RelayCommand(_ => { if (PreviewHistoryBill != null) { var fresh = _billRepo.GetById(PreviewHistoryBill.BillId); if (fresh != null && SelectedTab != null) { fresh.Customer = PreviewHistoryBill.Customer; SelectedTab.PreviewHistoryBill = fresh; } HistoryPaymentAmount = ""; HistoryPaymentNote = ""; HistoryPaymentError = ""; SelectedHistoryPaymentMethod = "Cash"; SelectedHistoryAccount = HistoryActiveAccounts.FirstOrDefault(); SelectedHistoryOnlineMethod = null; IsHistoryPaymentOpen = true; OnPropertyChanged(nameof(PreviewHistoryBill)); } });
@@ -477,6 +504,9 @@ namespace GroceryPOS.ViewModels
         }
 
         private void LoadProducts() { var items = _itemService.GetAllItems(); ItemList = new ObservableCollection<Item>(items); FilteredItemList = new ObservableCollection<Item>(items); }
+        private string _onlinePaymentBreakdownTooltip = "No online payments today";
+        public string OnlinePaymentBreakdownTooltip { get => _onlinePaymentBreakdownTooltip; set => SetProperty(ref _onlinePaymentBreakdownTooltip, value); }
+
         private void LoadDashboardStats()
         {
             StatTotalSales = _billService.GetTodayTotal();
@@ -487,6 +517,19 @@ namespace GroceryPOS.ViewModels
             StatStoreCredit = _billService.GetTodayStoreCredit();
             StatCashInDrawer = _billService.GetTodayCashInDrawer();
             StatOnlinePayments = _billService.GetTodayOnlinePayments();
+
+            // Populate breakdown tooltip
+            var from = DateTime.Today;
+            var to = from.AddDays(1);
+            var breakdown = _billService.GetOnlinePaymentBreakdown(from, to);
+            if (breakdown.Any())
+            {
+                OnlinePaymentBreakdownTooltip = "Breakdown:\n" + string.Join("\n", breakdown.Select(kv => $"• {kv.Key}: Rs.{kv.Value:N0}"));
+            }
+            else
+            {
+                OnlinePaymentBreakdownTooltip = "No online payments today";
+            }
         }
         private void FilterProducts()
         {
@@ -837,7 +880,7 @@ namespace GroceryPOS.ViewModels
                         return;
                     }
 
-                    if (HasSelectedCustomer)
+                    if (HasSelectedCustomer && !IsWalkIn)
                     {
                         // Online + registered: allow partial payment, rest goes to credit
                         double.TryParse(CashReceivedText, out cashReceived);
@@ -861,7 +904,7 @@ namespace GroceryPOS.ViewModels
                     paidAmount = Math.Min(cashReceived, grand);
 
                     // For walk-in customers, enforce full payment
-                    if (SelectedCustomer == null)
+                    if (IsWalkIn)
                     {
                         if (cashReceived < grand - 0.01)
                         { StatusMessage = "✗ Insufficient cash."; OnPropertyChanged(nameof(StatusMessage)); ShowPopupError("Insufficient cash."); return; }
@@ -945,6 +988,35 @@ namespace GroceryPOS.ViewModels
             RefreshInvoiceNumbers(); 
         }
         private void SearchCustomers() { if (SelectedTab == null) return; SelectedSearchResult = null; if (string.IsNullOrWhiteSpace(CustomerSearchQuery) || CustomerSearchQuery.Length < 1) { SelectedTab.CustomerSearchResults.Clear(); OnPropertyChanged(nameof(CustomerSearchResults)); return; } var results = _customerService.SearchCustomers(CustomerSearchQuery); SelectedTab.CustomerSearchResults.Clear(); foreach (var c in results) SelectedTab.CustomerSearchResults.Add(c); OnPropertyChanged(nameof(CustomerSearchResults)); }
+        private void TrySelectWalkInCustomer(string phone)
+        {
+            if (string.IsNullOrWhiteSpace(phone) || phone.Length != 11 || !IsWalkInPhoneValid)
+                return;
+
+            if (SelectedCustomer != null && SelectedCustomer.Phone == phone)
+                return;
+
+            var existing = _customerService.GetCustomerByPhone(phone);
+            if (existing != null && existing.FullName != "Walk-in Customer")
+            {
+                var res = System.Windows.MessageBox.Show(
+                    $"The phone number '{phone}' is registered to customer '{existing.FullName}'.\n\nDo you want to proceed with this customer?",
+                    "Registered Customer Found",
+                    System.Windows.MessageBoxButton.YesNo,
+                    System.Windows.MessageBoxImage.Question);
+
+                if (res == System.Windows.MessageBoxResult.Yes)
+                {
+                    SelectCustomer(existing);
+                    WalkInPhoneInput = "";
+                }
+                return;
+            }
+
+            var walkInCustomer = _customerService.GetOrCreateWalkIn(phone);
+            SelectCustomer(walkInCustomer);
+            WalkInPhoneInput = "";
+        }
         private void SelectCustomer(Customer? c)
         {
             var targetCustomer = c ?? SelectedSearchResult;
@@ -974,6 +1046,7 @@ namespace GroceryPOS.ViewModels
 
             // Clear customer identity
             SelectedCustomer = null; 
+            WalkInPhoneInput = "";
             SelectedTab.CustomerBills.Clear(); 
             SelectedTab.CustomerSearchQuery = ""; 
             SelectedTab.CustomerSearchResults.Clear(); 
@@ -1009,6 +1082,8 @@ namespace GroceryPOS.ViewModels
             OnPropertyChanged(nameof(CustomerSearchQuery)); 
             OnPropertyChanged(nameof(CustomerSearchResults)); 
             OnPropertyChanged(nameof(IsWalkIn)); 
+            OnPropertyChanged(nameof(IsWalkInCustomerSelected));
+            OnPropertyChanged(nameof(IsRegisteredCustomerSelected));
             OnPropertyChanged(nameof(HasSelectedCustomer));
             OnPropertyChanged(nameof(PendingCreditAmount));
         }
@@ -1101,21 +1176,53 @@ namespace GroceryPOS.ViewModels
             SelectedTab.LoadedHistoryBillId = b.BillId;
             RecalculateTotal();
         }
-        private void SaveNewCustomer() { try { if (string.IsNullOrWhiteSpace(NewCustomerName) || string.IsNullOrWhiteSpace(NewCustomerPhone)) { RegistrationErrorMessage = "Name and Phone are required."; OnPropertyChanged(nameof(RegistrationErrorMessage)); return; } 
-            var customer = new Customer { 
-                Name = NewCustomerName, 
-                FullName = NewCustomerName, 
-                PrimaryPhone = NewCustomerPhone, 
-                SecondaryPhone = NewCustomerSecondaryPhone, 
-                Address = NewCustomerAddress,
-                Address2 = NewCustomerAddress2,
-                Address3 = NewCustomerAddress3
-            };
-            _customerService.RegisterCustomer(customer);
-            SelectCustomer(customer); 
-            SelectCustomer(customer);
-            IsRegistrationVisible = false; OnPropertyChanged(nameof(IsRegistrationVisible)); ClearRegistrationForm(); }
-            catch (Exception ex) { RegistrationErrorMessage = ex.Message; OnPropertyChanged(nameof(RegistrationErrorMessage)); } }
+        private void SaveNewCustomer()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(NewCustomerName) || string.IsNullOrWhiteSpace(NewCustomerPhone))
+                {
+                    RegistrationErrorMessage = "Name and Phone are required.";
+                    OnPropertyChanged(nameof(RegistrationErrorMessage));
+                    return;
+                }
+
+                var existing = _customerService.GetCustomerByPhone(NewCustomerPhone);
+                if (existing != null && existing.FullName.Equals("Walk-in Customer", StringComparison.OrdinalIgnoreCase))
+                {
+                    var confirmResult = MessageBox.Show(
+                        $"A Walk-in Customer with the phone number '{NewCustomerPhone}' already exists.\n\nDo you want to convert this record to a registered customer? This will preserve all previous bills and purchase history.",
+                        "Convert Walk-in Customer",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (confirmResult != MessageBoxResult.Yes)
+                        return;
+                }
+
+                var customer = new Customer
+                {
+                    Name = NewCustomerName,
+                    FullName = NewCustomerName,
+                    PrimaryPhone = NewCustomerPhone,
+                    SecondaryPhone = NewCustomerSecondaryPhone,
+                    Address = NewCustomerAddress,
+                    Address2 = NewCustomerAddress2,
+                    Address3 = NewCustomerAddress3
+                };
+                _customerService.RegisterCustomer(customer);
+                SelectCustomer(customer);
+                SelectCustomer(customer);
+                IsRegistrationVisible = false;
+                OnPropertyChanged(nameof(IsRegistrationVisible));
+                ClearRegistrationForm();
+            }
+            catch (Exception ex)
+            {
+                RegistrationErrorMessage = ex.Message;
+                OnPropertyChanged(nameof(RegistrationErrorMessage));
+            }
+        }
         private void ClearRegistrationForm()
         {
             NewCustomerName = "";
@@ -1281,7 +1388,7 @@ namespace GroceryPOS.ViewModels
             }
         }
 
-        private void NotifyTabPropertiesChanged() { OnPropertyChanged(nameof(CartItems)); OnPropertyChanged(nameof(DiscountText)); OnPropertyChanged(nameof(TaxText)); OnPropertyChanged(nameof(CashReceivedText)); OnPropertyChanged(nameof(InvoiceNumber)); OnPropertyChanged(nameof(SelectedCustomer)); OnPropertyChanged(nameof(HasSelectedCustomer)); OnPropertyChanged(nameof(IsWalkIn)); OnPropertyChanged(nameof(CustomerSearchQuery)); OnPropertyChanged(nameof(CustomerSearchResults)); OnPropertyChanged(nameof(SelectedSearchResult)); OnPropertyChanged(nameof(CustomerBills)); OnPropertyChanged(nameof(PreviewHistoryBill)); OnPropertyChanged(nameof(IsHistoryPaymentOpen)); OnPropertyChanged(nameof(HistoryPaymentAmount)); OnPropertyChanged(nameof(HistoryPaymentNote)); OnPropertyChanged(nameof(HistoryPaymentError)); OnPropertyChanged(nameof(PendingCreditAmount)); OnPropertyChanged(nameof(HasPendingCredit)); OnPropertyChanged(nameof(PendingCreditDisplay)); OnPropertyChanged(nameof(SelectedBillingAddress)); OnPropertyChanged(nameof(StatusMessage)); OnPropertyChanged(nameof(IsBillDetailOpen)); }
+        private void NotifyTabPropertiesChanged() { OnPropertyChanged(nameof(CartItems)); OnPropertyChanged(nameof(DiscountText)); OnPropertyChanged(nameof(TaxText)); OnPropertyChanged(nameof(CashReceivedText)); OnPropertyChanged(nameof(InvoiceNumber)); OnPropertyChanged(nameof(SelectedCustomer)); OnPropertyChanged(nameof(HasSelectedCustomer)); OnPropertyChanged(nameof(IsWalkIn)); OnPropertyChanged(nameof(IsWalkInCustomerSelected)); OnPropertyChanged(nameof(IsRegisteredCustomerSelected)); OnPropertyChanged(nameof(CustomerSearchQuery)); OnPropertyChanged(nameof(CustomerSearchResults)); OnPropertyChanged(nameof(SelectedSearchResult)); OnPropertyChanged(nameof(CustomerBills)); OnPropertyChanged(nameof(PreviewHistoryBill)); OnPropertyChanged(nameof(IsHistoryPaymentOpen)); OnPropertyChanged(nameof(HistoryPaymentAmount)); OnPropertyChanged(nameof(HistoryPaymentNote)); OnPropertyChanged(nameof(HistoryPaymentError)); OnPropertyChanged(nameof(PendingCreditAmount)); OnPropertyChanged(nameof(HasPendingCredit)); OnPropertyChanged(nameof(PendingCreditDisplay)); OnPropertyChanged(nameof(SelectedBillingAddress)); OnPropertyChanged(nameof(StatusMessage)); OnPropertyChanged(nameof(IsBillDetailOpen)); }
 
         private void LoadHistoryActiveAccounts()
         {

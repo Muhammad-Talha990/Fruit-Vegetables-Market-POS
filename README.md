@@ -27,10 +27,12 @@ A professional, commercial-ready Point of Sale (POS) and Inventory Management Sy
 - **Low Stock Alerts**: Visual indicators and reports for items reaching critical thresholds.
 - **Stock Purchases**: Manage supplier invoices and deduct purchase amounts from the cash drawer automatically.
 
-### 📊 Professional Reporting
+### 📊 Professional Reporting & Analytics (v1.1.0)
+- **Interactive Analytics Dashboard**: Beautiful pure-WPF bar charts displaying daily sales trends and top-performing products.
+- **KPI Summary Cards**: Real-time metrics for Total Revenue, Net Sales, Returns, Average Order Value, and Outstanding Credit.
+- **Advanced Audit Trail**: Comprehensive transaction grid with search, advanced filtering, and color-coded status badges for Sales and Returns.
 - **Financial Audits**: Daily and date-ranged sales, returns, and credit recovery reports.
 - **Thermal Printing**: Industry-standard 80mm thermal receipt printing with professional branding.
-- **Dashboard Analytics**: Real-time stats for Net Sales, Cash-in-Drawer, and Online Payment splits.
 
 ---
 

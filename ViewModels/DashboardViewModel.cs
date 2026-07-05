@@ -1,11 +1,13 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Windows;
 using System.Windows.Input;
 using GroceryPOS.Data.Repositories;
 using GroceryPOS.Models;
 using GroceryPOS.Services;
 using GroceryPOS.Helpers;
+using GroceryPOS.Views;
 
 namespace GroceryPOS.ViewModels
 {
@@ -74,8 +76,10 @@ namespace GroceryPOS.ViewModels
 
         public ObservableCollection<Bill> RecentSales { get; set; } = new();
         public ObservableCollection<Item> LowStockItems { get; set; } = new();
+        public ObservableCollection<OnlinePaymentBreakdownItem> OnlinePaymentBreakdown { get; set; } = new();
 
         public ICommand RefreshCommand { get; }
+        public ICommand OpenBillDetailCommand { get; }
 
         private readonly System.Windows.Threading.DispatcherTimer _clockTimer;
         private DateTime _activeDashboardDate;
@@ -95,6 +99,7 @@ namespace GroceryPOS.ViewModels
             _activeDashboardDate = DateTime.Now.Date;
 
             RefreshCommand = new RelayCommand(LoadData);
+            OpenBillDetailCommand = new RelayCommand<Bill>(OpenBillDetail);
 
             // Live clock
             _clockTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -135,10 +140,22 @@ namespace GroceryPOS.ViewModels
             TodayRecoveredCredit = _billService.GetTodayRecoveredCredit();
             TodayCashRefunds = _billService.GetTodayCashRefunded();
             // Cash in drawer already includes direct sales cash + recovered credit cash - cash refunds.
-            TodayCashInHand = _billService.GetTodayCashInDrawer();
-
             TodayCashInDrawer = _billService.GetTodayCashInDrawer();
             TodayOnlinePayments = _billService.GetTodayOnlinePayments();
+            // Cash in Hand is the sum of cash in drawer and online payments
+            TodayCashInHand = TodayCashInDrawer + TodayOnlinePayments;
+
+            // Populate online payment breakdown
+            Dispatch(() =>
+            {
+                OnlinePaymentBreakdown.Clear();
+                var from = DateTime.Today;
+                var to = from.AddDays(1);
+                foreach (var kvp in _billService.GetOnlinePaymentBreakdown(from, to))
+                {
+                    OnlinePaymentBreakdown.Add(new OnlinePaymentBreakdownItem { Method = kvp.Key, Amount = kvp.Value });
+                }
+            });
 
             // Stock purchases for the day (cash leaves the drawer)
             try { TodayStockPurchases = _purchaseRepo.GetTodayPurchasesTotal(); }
@@ -174,6 +191,34 @@ namespace GroceryPOS.ViewModels
             var timeGreeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
             Greeting = $"{timeGreeting}, {_authService.CurrentUser?.FullName ?? "User"}!";
         }
+        private void OpenBillDetail(Bill? bill)
+        {
+            if (bill == null) return;
+            try
+            {
+                // Load fresh bill data with full audit logs
+                var freshBill = _billService.GetBillById(bill.BillId);
+                if (freshBill == null)
+                {
+                    MessageBox.Show($"Bill #{bill.InvoiceNumber} not found.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var vm = new BillDetailViewModel(freshBill);
+                var window = new BillDetailWindow
+                {
+                    DataContext = vm,
+                    Owner = Application.Current.MainWindow
+                };
+                window.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Failed to open bill detail", ex);
+                MessageBox.Show("Failed to load bill details.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         public override void Dispose()
         {
             _clockTimer.Stop();
@@ -181,5 +226,11 @@ namespace GroceryPOS.ViewModels
                 _stockService.StockChanged -= LoadData;
             base.Dispose();
         }
+    }
+
+    public class OnlinePaymentBreakdownItem
+    {
+        public string Method { get; set; } = string.Empty;
+        public double Amount { get; set; }
     }
 }

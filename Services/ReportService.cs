@@ -147,5 +147,27 @@ namespace GroceryPOS.Services
         /// </summary>
         public Dictionary<string, double> GetOnlinePaymentBreakdown(DateTime from, DateTime to)
             => _billRepo.GetOnlinePaymentBreakdown(from, to);
+
+        // ── Analytics for Dashboard ──
+
+        /// <summary>Per-day sales + returns series for a date range.</summary>
+        public List<(DateTime Date, double TotalSales, double TotalReturns, int BillCount)>
+            GetDailySalesSeries(DateTime from, DateTime to)
+            => _billRepo.GetDailySalesSeries(from, to);
+
+        /// <summary>Top N products by revenue in a date range.</summary>
+        public List<(string Name, double Revenue, int Qty)>
+            GetTopProductsSeries(DateTime from, DateTime to, int topN = 5)
+            => _billRepo.GetTopProductsSeries(from, to, topN);
+
+        /// <summary>Payment method revenue breakdown for a date range.</summary>
+        public Dictionary<string, double>
+            GetPaymentMethodBreakdownForRange(DateTime from, DateTime to)
+            => _billRepo.GetPaymentMethodBreakdownForRange(from, to);
+
+        /// <summary>Cashier performance (bill count + revenue) for a date range.</summary>
+        public List<(string CashierName, int BillCount, double Revenue)>
+            GetCashierPerformance(DateTime from, DateTime to)
+            => _billRepo.GetCashierPerformance(from, to);
     }
 }

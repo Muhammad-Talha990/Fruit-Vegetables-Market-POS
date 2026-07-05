@@ -6,6 +6,7 @@
         xmlns:converters="clr-namespace:GroceryPOS.Converters"
         Title="GroceryPOS — Point of Sale" Height="780" Width="1280"
         WindowStartupLocation="CenterScreen" WindowState="Maximized"
+        Icon="/Assets/logo.png"
         Background="{DynamicResource BgBrush}" FontFamily="{DynamicResource AppFont}">
 
     <Window.Resources>
@@ -75,35 +76,113 @@
 
                 <!-- Navigation Menu -->
                 <StackPanel Margin="0,0,0,0">
-                    <Button Content="📊  Dashboard" Style="{DynamicResource SidebarButton}"
-                            Command="{Binding NavigateCommand}" CommandParameter="Dashboard"/>
+                    <Button Content="📊  Dashboard" Command="{Binding NavigateCommand}" CommandParameter="Dashboard">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedMenu}" Value="Dashboard">
+                                        <Setter Property="Background" Value="#334155"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
-                    <Button Content="📦  Products" Style="{DynamicResource SidebarButton}"
-                            Command="{Binding NavigateCommand}" CommandParameter="Products"
-                            Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"/>
+                    <Button Content="📦  Products" Command="{Binding NavigateCommand}" CommandParameter="Products"
+                            Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedMenu}" Value="Products">
+                                        <Setter Property="Background" Value="#334155"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
-                    <Button Content="💳  Billing" Style="{DynamicResource SidebarButton}"
-                            Command="{Binding NavigateCommand}" CommandParameter="Billing"/>
+                    <Button Content="💳  Billing" Command="{Binding NavigateCommand}" CommandParameter="Billing">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedMenu}" Value="Billing">
+                                        <Setter Property="Background" Value="#334155"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
-                    <Button Content="👥  Customers" Style="{DynamicResource SidebarButton}"
-                            Command="{Binding NavigateCommand}" CommandParameter="Customers"/>
+                    <Button Content="👥  Customers" Command="{Binding NavigateCommand}" CommandParameter="Customers">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedMenu}" Value="Customers">
+                                        <Setter Property="Background" Value="#334155"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
-                    <Button Content="🤝  Suppliers" Style="{DynamicResource SidebarButton}"
-                            Command="{Binding NavigateCommand}" CommandParameter="Suppliers"
-                            Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"/>
+                    <Button Content="🤝  Suppliers" Command="{Binding NavigateCommand}" CommandParameter="Suppliers"
+                            Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedMenu}" Value="Suppliers">
+                                        <Setter Property="Background" Value="#334155"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
+                    <Button Content="📈  Reports" Command="{Binding NavigateCommand}" CommandParameter="Reports"
+                            Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedMenu}" Value="Reports">
+                                        <Setter Property="Background" Value="#334155"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
-                    <Button Content="📈  Reports" Style="{DynamicResource SidebarButton}"
-                            Command="{Binding NavigateCommand}" CommandParameter="Reports"
-                            Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"/>
+                    <Button Content="🧾  Stock" Command="{Binding NavigateCommand}" CommandParameter="SupplierBills"
+                            Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedMenu}" Value="SupplierBills">
+                                        <Setter Property="Background" Value="#334155"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
-
-                    <Button Content="🧾  Stock" Style="{DynamicResource SidebarButton}"
-                            Command="{Binding NavigateCommand}" CommandParameter="SupplierBills"
-                            Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"/>
-
-                    <Button Content="🔄  Returns" Style="{DynamicResource SidebarButton}"
-                            Command="{Binding NavigateCommand}" CommandParameter="Returns"/>
+                    <Button Content="🔄  Returns" Command="{Binding NavigateCommand}" CommandParameter="Returns">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedMenu}" Value="Returns">
+                                        <Setter Property="Background" Value="#334155"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </StackPanel>
             </DockPanel>
         </Border>

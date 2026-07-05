@@ -61,7 +61,12 @@
                         <TextBlock.Text><Binding Path="StatCashInDrawer" StringFormat="Rs.{0:N0}"/></TextBlock.Text>
                     </TextBlock>
                 </StackPanel>
-                <StackPanel HorizontalAlignment="Center">
+                <StackPanel HorizontalAlignment="Center" ToolTipService.ToolTip="{Binding StatOnlinePaymentBreakdownTooltip, FallbackValue='No online payments'}">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="ToolTipService.ToolTip" Value="{Binding OnlinePaymentBreakdownTooltip}"/>
+                        </Style>
+                    </StackPanel.Style>
                     <TextBlock Text="Online Payments" FontSize="11" Foreground="#94A3B8" HorizontalAlignment="Center"/>
                     <TextBlock FontSize="16" FontWeight="Bold" Foreground="#0EA5E9" HorizontalAlignment="Center">
                         <TextBlock.Text><Binding Path="StatOnlinePayments" StringFormat="Rs.{0:N0}"/></TextBlock.Text>
@@ -229,7 +234,11 @@
                                              MaxLength="11"
                                              Text="{Binding WalkInPhoneInput, UpdateSourceTrigger=PropertyChanged}" 
                                              Tag="Enter 11-digit phone (e.g. 03001234567)" 
-                                             FontSize="14" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}"/>
+                                             FontSize="14" FontWeight="Bold" Foreground="{DynamicResource PrimaryBrush}">
+                                        <TextBox.InputBindings>
+                                            <KeyBinding Key="Return" Command="{Binding SelectWalkInCustomerCommand}"/>
+                                        </TextBox.InputBindings>
+                                    </TextBox>
                                 </Grid>
                                 <TextBlock Text="⚠ Invalid format. Phone must start with '0' and be 11 digits." 
                                            Foreground="{DynamicResource DangerBrush}" FontSize="11" Margin="0,4,0,0"
@@ -279,25 +288,40 @@
                                                       Visibility="{Binding CustomerBills.Count, Converter={StaticResource CountToVis}}">
                                                 <ComboBox.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Grid Margin="2">
-                                                            <Grid.Resources>
-                                                                <Style TargetType="TextBlock">
+                                                        <Border Padding="4,2" CornerRadius="4">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="Transparent"/>
+                                                                    <Setter Property="BorderThickness" Value="0"/>
                                                                     <Style.Triggers>
                                                                         <DataTrigger Binding="{Binding PaymentStatus}" Value="PartialPaid">
-                                                                            <Setter Property="Foreground" Value="#F59E0B"/>
+                                                                            <Setter Property="Background" Value="#FEF9C3"/>
+                                                                            <Setter Property="BorderBrush" Value="#FEF08A"/>
+                                                                            <Setter Property="BorderThickness" Value="1"/>
                                                                         </DataTrigger>
                                                                     </Style.Triggers>
                                                                 </Style>
-                                                            </Grid.Resources>
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                            </Grid.ColumnDefinitions>
-                                                            <TextBlock Text="{Binding InvoiceNumber, StringFormat='Inv: {0}', Mode=OneWay}" FontWeight="Bold" Margin="0,0,10,0"/>
-                                                            <TextBlock Grid.Column="1" Text="{Binding BillDateTime, StringFormat='{}{0:dd MMM, HH:mm}'}" Margin="0,0,10,0" Opacity="0.7"/>
-                                                            <TextBlock Grid.Column="2" FontWeight="Black" Text="{Binding GrandTotal, StringFormat='Total: Rs.{0:N0}'}"/>
-                                                        </Grid>
+                                                            </Border.Style>
+                                                            <Grid Margin="2">
+                                                                <Grid.Resources>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding PaymentStatus}" Value="PartialPaid">
+                                                                                <Setter Property="Foreground" Value="#F59E0B"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Grid.Resources>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding InvoiceNumber, StringFormat='Inv: {0}', Mode=OneWay}" FontWeight="Bold" Margin="0,0,10,0"/>
+                                                                <TextBlock Grid.Column="1" Text="{Binding BillDateTime, StringFormat='{}{0:dd MMM, HH:mm}'}" Margin="0,0,10,0" Opacity="0.7"/>
+                                                                <TextBlock Grid.Column="2" FontWeight="Black" Text="{Binding GrandTotal, StringFormat='Total: Rs.{0:N0}'}"/>
+                                                            </Grid>
+                                                        </Border>
                                                     </DataTemplate>
                                                 </ComboBox.ItemTemplate>
                                             </ComboBox>
@@ -318,7 +342,7 @@
                                     </Grid>
 
                                     <!-- Address Selection Dropdown -->
-                                    <Grid Margin="0,2,0,0">
+                                    <Grid Margin="0,2,0,0" Visibility="{Binding IsRegisteredCustomerSelected, Converter={StaticResource BoolToVis}}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
@@ -447,7 +471,7 @@
                                     <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="20,0,0,0">
                                         <TextBlock Text="{Binding TotalAmount, StringFormat='Rs.{0:N0}'}" 
                                                    FontWeight="Black" FontSize="14" Foreground="{DynamicResource SuccessBrush}" HorizontalAlignment="Right"/>
-                                        <TextBlock Text="{Binding BillCount, StringFormat='{}{0} orders'}" 
+                                        <TextBlock Text="{Binding BillCountDisplay}" 
                                                    FontSize="11" Foreground="{DynamicResource SubTextBrush}" HorizontalAlignment="Right" Opacity="0.8"/>
                                     </StackPanel>
                                 </Grid>
@@ -938,7 +962,7 @@
                         <!-- Payment Info -->
                         <Grid Margin="0,8,0,2">
                             <TextBlock Text="Payment:" FontSize="9" Foreground="#334155"/>
-                            <TextBlock Text="{Binding SelectedPaymentMethod}" FontSize="9" HorizontalAlignment="Right" Foreground="#1E293B"/>
+                            <TextBlock Text="{Binding PreviewPaymentMethodText}" FontSize="9" HorizontalAlignment="Right" Foreground="#1E293B"/>
                         </Grid>
                         <Grid Margin="0,2" Visibility="{Binding PreviewHasCashReceived, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="Cash Received:" FontSize="9" Foreground="#334155"/>

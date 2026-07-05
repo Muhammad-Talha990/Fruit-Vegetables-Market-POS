@@ -27,9 +27,24 @@ namespace GroceryPOS.Services
 
         public void RegisterCustomer(Customer customer)
         {
-            ValidateCustomerFields(customer, isUpdate: false);
-            _customerRepo.Save(customer);
-            AppLogger.Info($"CustomerService: Registered new customer '{customer.FullName}' (ID: {customer.CustomerId}).");
+            if (customer == null) throw new ArgumentNullException(nameof(customer));
+
+            string normalized = NormalizePhone(customer.PrimaryPhone);
+            var existing = _customerRepo.GetByPhone(normalized);
+
+            if (existing != null && existing.FullName.Equals("Walk-in Customer", StringComparison.OrdinalIgnoreCase))
+            {
+                customer.CustomerId = existing.CustomerId;
+                ValidateCustomerFields(customer, isUpdate: true);
+                _customerRepo.Update(customer);
+                AppLogger.Info($"CustomerService: Converted walk-in customer '{customer.FullName}' (ID: {customer.CustomerId}) to registered customer.");
+            }
+            else
+            {
+                ValidateCustomerFields(customer, isUpdate: false);
+                _customerRepo.Save(customer);
+                AppLogger.Info($"CustomerService: Registered new customer '{customer.FullName}' (ID: {customer.CustomerId}).");
+            }
         }
 
         // ────────────────────────────────────────────

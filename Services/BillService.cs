@@ -22,12 +22,14 @@ namespace GroceryPOS.Services
         private readonly BillRepository _billRepo;
         private readonly DataCacheService _cache;
         private readonly IStockService _stockService;
+        private readonly CustomerRepository _customerRepo;
 
-        public BillService(BillRepository billRepo, DataCacheService cache, IStockService stockService)
+        public BillService(BillRepository billRepo, DataCacheService cache, IStockService stockService, CustomerRepository customerRepo)
         {
             _billRepo = billRepo;
             _cache = cache;
             _stockService = stockService;
+            _customerRepo = customerRepo;
         }
 
         // ────────────────────────────────────────────
@@ -99,7 +101,7 @@ namespace GroceryPOS.Services
             // ── Enforce credit rules ──
             if (paidAmount < grandTotal)
             {
-                if (customerId == null)
+                if (customerId == null || _customerRepo.GetById(customerId.Value)?.FullName == "Walk-in Customer")
                     throw new InvalidOperationException("Credit sales are not allowed for walk-in customers. Please enter the full amount or register the customer.");
 
                 if (paidAmount < 0)

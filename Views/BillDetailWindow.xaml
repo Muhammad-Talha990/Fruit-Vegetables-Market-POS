@@ -1,0 +1,344 @@
+<Window x:Class="GroceryPOS.Views.BillDetailWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Bill Details" Height="620" Width="700"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        MinHeight="500" MinWidth="580"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent">
+
+    <Border CornerRadius="16" Background="{DynamicResource BgBrush}"
+            BorderBrush="#CBD5E1" BorderThickness="1"
+            Effect="{DynamicResource WindowDropShadow}">
+        <Border.Resources>
+            <DropShadowEffect x:Key="WindowDropShadow" BlurRadius="24" ShadowDepth="4" Opacity="0.18" Color="#000"/>
+        </Border.Resources>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Title Bar -->
+            <Border Grid.Row="0" Background="#1E293B" CornerRadius="16,16,0,0" Padding="20,14"
+                    MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#x1F4CB;" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="Bill Details — Invoice #" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="White" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding Bill.InvoiceNumber}" FontSize="16" FontWeight="Bold"
+                                   Foreground="#60A5FA" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Button Content="✕" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            FontSize="16" FontWeight="Bold" Foreground="White" Cursor="Hand"
+                            Click="CloseButton_Click"
+                            Background="Transparent" BorderThickness="0" Padding="8,4">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="bd" Background="Transparent" CornerRadius="6" Padding="8,4">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="bd" Property="Background" Value="#DC2626"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Content -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,16">
+                <StackPanel>
+
+                    <!-- Header Info Cards -->
+                    <UniformGrid Columns="3" Margin="0,0,0,16">
+                        <!-- Customer -->
+                        <Border CornerRadius="10" Background="#F1F5F9" Padding="14,10" Margin="0,0,8,0">
+                            <StackPanel>
+                                <TextBlock Text="Customer" FontSize="10" Foreground="#64748B" FontWeight="Medium"/>
+                                <TextBlock Text="{Binding CustomerName}" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="#1E293B" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding CustomerPhone}" FontSize="11" Foreground="#64748B"/>
+                            </StackPanel>
+                        </Border>
+                        <!-- Date / Time -->
+                        <Border CornerRadius="10" Background="#F1F5F9" Padding="14,10" Margin="0,0,8,0">
+                            <StackPanel>
+                                <TextBlock Text="Date &amp; Time" FontSize="10" Foreground="#64748B" FontWeight="Medium"/>
+                                <TextBlock Text="{Binding Bill.CreatedAt, StringFormat='dd MMM yyyy'}" FontSize="14"
+                                           FontWeight="SemiBold" Foreground="#1E293B" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding Bill.CreatedAt, StringFormat='hh:mm tt'}" FontSize="11" Foreground="#64748B"/>
+                            </StackPanel>
+                        </Border>
+                        <!-- Payment Status -->
+                        <Border CornerRadius="10" Padding="14,10">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#DCFCE7"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Bill.PaymentStatus}" Value="PartialPaid">
+                                            <Setter Property="Background" Value="#FEF3C7"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel>
+                                <TextBlock Text="Payment Status" FontSize="10" Foreground="#64748B" FontWeight="Medium"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <TextBlock FontSize="15" FontWeight="Bold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="✅ Paid"/>
+                                                <Setter Property="Foreground" Value="#16A34A"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Bill.PaymentStatus}" Value="PartialPaid">
+                                                        <Setter Property="Text" Value="⏳ Credit Due"/>
+                                                        <Setter Property="Foreground" Value="#D97706"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock FontSize="15" FontWeight="Bold" Margin="6,0,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Setter Property="Foreground" Value="#DC2626"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Bill.PaymentStatus}" Value="PartialPaid">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Setter Property="Text" Value="{Binding Bill.RemainingAmount, StringFormat='(Rs.{0:N0})'}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </UniformGrid>
+
+                    <!-- Items Table -->
+                    <TextBlock Text="&#x1F6D2; Items" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8"/>
+                    <Border CornerRadius="10" BorderBrush="#E2E8F0" BorderThickness="1" Margin="0,0,0,16">
+                        <DataGrid ItemsSource="{Binding Bill.Items}" AutoGenerateColumns="False"
+                                  IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                  BorderThickness="0" Background="Transparent"
+                                  CanUserAddRows="False" CanUserDeleteRows="False"
+                                  CanUserReorderColumns="False" CanUserResizeRows="False"
+                                  RowBackground="White" AlternatingRowBackground="#F8FAFC"
+                                  ColumnHeaderHeight="36" RowHeight="32">
+                            <DataGrid.ColumnHeaderStyle>
+                                <Style TargetType="DataGridColumnHeader">
+                                    <Setter Property="Background" Value="#F1F5F9"/>
+                                    <Setter Property="Foreground" Value="#475569"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter Property="FontSize" Value="11"/>
+                                    <Setter Property="Padding" Value="10,6"/>
+                                    <Setter Property="BorderBrush" Value="#E2E8F0"/>
+                                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                </Style>
+                            </DataGrid.ColumnHeaderStyle>
+                            <DataGrid.CellStyle>
+                                <Style TargetType="DataGridCell">
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Padding" Value="10,4"/>
+                                    <Setter Property="FontSize" Value="12"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="DataGridCell">
+                                                <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+                                                    <ContentPresenter VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </DataGrid.CellStyle>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Product" Binding="{Binding ItemDescription}" Width="*"/>
+                                <DataGridTextColumn Header="Qty" Binding="{Binding Quantity}" Width="50"/>
+                                <DataGridTextColumn Header="Price" Binding="{Binding UnitPrice, StringFormat='Rs.{0:N0}'}" Width="80"/>
+                                <DataGridTextColumn Header="Discount" Binding="{Binding DiscountAmount, StringFormat='Rs.{0:N0}'}" Width="80"/>
+                                <DataGridTextColumn Header="Total" Binding="{Binding TotalPrice, StringFormat='Rs.{0:N0}'}" Width="80">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <!-- Financial Summary -->
+                    <TextBlock Text="&#x1F4B0; Financial Summary" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8"/>
+                    <Border CornerRadius="10" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1"
+                            Padding="16,12" Margin="0,0,0,16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="Sub Total" FontSize="12" Foreground="#64748B"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" Foreground="#1E293B"
+                                       Text="{Binding Bill.SubTotal, StringFormat='Rs.{0:N0}'}" HorizontalAlignment="Right"/>
+
+                            <TextBlock Grid.Row="1" Text="Tax" FontSize="12" Foreground="#64748B" Margin="0,4,0,0"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" FontSize="12" Foreground="#1E293B" Margin="0,4,0,0"
+                                       Text="{Binding Bill.TaxAmount, StringFormat='Rs.{0:N0}'}" HorizontalAlignment="Right"/>
+
+                            <TextBlock Grid.Row="2" Text="Discount" FontSize="12" Foreground="#64748B" Margin="0,4,0,0"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" FontSize="12" Foreground="#DC2626" Margin="0,4,0,0"
+                                       Text="{Binding Bill.DiscountAmount, StringFormat='-Rs.{0:N0}'}" HorizontalAlignment="Right"/>
+
+                            <Border Grid.Row="3" Grid.ColumnSpan="2" BorderBrush="#CBD5E1" BorderThickness="0,1,0,0" Margin="0,8,0,8"/>
+
+                            <TextBlock Grid.Row="4" Text="Grand Total" FontSize="13" FontWeight="Bold" Foreground="#1E293B"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" FontSize="13" FontWeight="Bold" Foreground="#1E293B"
+                                       Text="{Binding Bill.GrandTotal, StringFormat='Rs.{0:N0}'}" HorizontalAlignment="Right"/>
+
+                            <TextBlock Grid.Row="5" Text="Total Paid" FontSize="12" Foreground="#16A34A" Margin="0,4,0,0"/>
+                            <TextBlock Grid.Row="5" Grid.Column="1" FontSize="12" Foreground="#16A34A" Margin="0,4,0,0"
+                                       Text="{Binding Bill.PaidAmount, StringFormat='Rs.{0:N0}'}" HorizontalAlignment="Right"/>
+
+                            <TextBlock Grid.Row="6" FontSize="13" FontWeight="Bold" Margin="0,4,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="Remaining Due"/>
+                                        <Setter Property="Foreground" Value="#16A34A"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Bill.HasPendingCredit}" Value="True">
+                                                <Setter Property="Foreground" Value="#DC2626"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Grid.Row="6" Grid.Column="1" FontSize="13" FontWeight="Bold"
+                                       Margin="0,4,0,0" HorizontalAlignment="Right"
+                                       Text="{Binding Bill.RemainingAmount, StringFormat='Rs.{0:N0}'}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#16A34A"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Bill.HasPendingCredit}" Value="True">
+                                                <Setter Property="Foreground" Value="#DC2626"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </Border>
+
+                    <!-- Payment History (only if there are entries) -->
+                    <StackPanel Visibility="{Binding HasPaymentLogs, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="&#x1F4B3; Payment History" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8"/>
+                        <Border CornerRadius="10" BorderBrush="#E2E8F0" BorderThickness="1" Margin="0,0,0,16">
+                            <ItemsControl ItemsSource="{Binding Bill.PaymentLogs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="12,8" BorderBrush="#F1F5F9" BorderThickness="0,0,0,1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" FontSize="11" Foreground="#64748B"
+                                                           Text="{Binding PaidAt, StringFormat='dd MMM yyyy hh:mm tt'}"
+                                                           VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                                <TextBlock Grid.Column="1" FontSize="11" Foreground="#475569"
+                                                           Text="{Binding DisplayNote}" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" FontSize="12" FontWeight="SemiBold"
+                                                           VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="#16A34A"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding TransactionType}" Value="Refund">
+                                                                    <Setter Property="Foreground" Value="#DC2626"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                    <TextBlock.Text>
+                                                        <Binding Path="AmountPaid" StringFormat="Rs.{0:N0}"/>
+                                                    </TextBlock.Text>
+                                                </TextBlock>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Return History (only if there are entries) -->
+                    <StackPanel Visibility="{Binding HasReturnLogs, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="&#x21A9;&#xFE0F; Return History" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="#F44336" Margin="0,0,0,8"/>
+                        <Border CornerRadius="10" BorderBrush="#FEE2E2" BorderThickness="1"
+                                Background="#FEF2F2" Margin="0,0,0,16">
+                            <ItemsControl ItemsSource="{Binding Bill.ReturnLogs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="12,8" BorderBrush="#FECACA" BorderThickness="0,0,0,1">
+                                            <StackPanel>
+                                                <Grid>
+                                                    <TextBlock FontSize="11" Foreground="#64748B"
+                                                               Text="{Binding ReturnedAt, StringFormat='dd MMM yyyy hh:mm tt'}"/>
+                                                    <TextBlock HorizontalAlignment="Right" FontSize="12"
+                                                               FontWeight="Bold" Foreground="#DC2626"
+                                                               Text="{Binding RefundAmount, StringFormat='Refund: Rs.{0:N0}'}"/>
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding Items}" Margin="8,4,0,0">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock FontSize="11" Foreground="#7F1D1D" Margin="0,1,0,0">
+                                                                <Run Text="{Binding ItemDescription, Mode=OneWay}"/>
+                                                                <Run Text=" × "/>
+                                                                <Run Text="{Binding Quantity, Mode=OneWay}"/>
+                                                                <Run Text=" = Rs."/>
+                                                                <Run Text="{Binding TotalPrice, StringFormat='{}{0:N0}', Mode=OneWay}"/>
+                                                            </TextBlock>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</Window>

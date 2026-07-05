@@ -82,9 +82,10 @@ namespace GroceryPOS.Data
 
                     SeedUsers(conn);
                     RepairDefaultUserPasswords(conn);
-                    SeedCategories(conn);
-                    SeedAccounts(conn);
-                    SeedItems(conn);
+                    // Commented out to prevent test data from shipping to clients
+                    // SeedCategories(conn);
+                    // SeedAccounts(conn);
+                    // SeedItems(conn);
                 }
 
                 AppLogger.Info("Database initialized successfully. All tables and indexes created.");

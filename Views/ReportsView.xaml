@@ -9,43 +9,98 @@
         <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <converters:CountToVisibilityConverter x:Key="CountToVis"/>
         <converters:CountToVisibilityConverter x:Key="InverseCountToVis" Inverse="True"/>
-        <converters:NumericToVisibilityConverter x:Key="NumericToVis"/>
+
+        <!-- KPI Card Style -->
+        <Style x:Key="KpiCard" TargetType="Border">
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="18,14"/>
+            <Setter Property="Background" Value="{DynamicResource CardBgBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- Tab Header Button -->
+        <Style x:Key="TabBtn" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource SubTextBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Padding" Value="18,8"/>
+            <Setter Property="BorderThickness" Value="0,0,0,2"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Foreground" Value="#14B8A6"/>
+                                <Setter Property="BorderBrush" Value="#14B8A6"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#0F172A10"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
-    <Grid Margin="30,24">
+    <Grid Margin="28,20">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>  <!-- Header -->
+            <RowDefinition Height="Auto"/>  <!-- Filters + Tabs bar -->
+            <RowDefinition Height="*"/>     <!-- Content -->
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,20">
-            <TextBlock Text="📈 Sales Reports" FontSize="24" FontWeight="Bold"
-                       Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
-            <TextBlock Text="View and analyze your sales data" FontSize="13"
-                       Foreground="{DynamicResource SubTextBrush}"/>
-        </StackPanel>
+        <!-- ═══════════════════════════════════════════════════════
+             ROW 0 — Page Header
+        ════════════════════════════════════════════════════════ -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
 
-        <!-- Filters -->
-        <Border Grid.Row="1" Style="{DynamicResource CardBorder}" Margin="0,0,0,16" Padding="16">
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="📊 Reports &amp; Analytics" FontSize="22" FontWeight="Bold"
+                           Foreground="{DynamicResource TextBrush}" Margin="0,0,0,2"/>
+                <TextBlock Text="Business insights, audit trail &amp; inventory reports"
+                           FontSize="12" Foreground="{DynamicResource SubTextBrush}"/>
+            </StackPanel>
+
+            <Button Grid.Column="1" Content="↻  Refresh" VerticalAlignment="Center"
+                    Style="{DynamicResource AccentButton}" Command="{Binding RefreshCommand}"
+                    Padding="16,8" FontSize="12"/>
+        </Grid>
+
+        <!-- ═══════════════════════════════════════════════════════
+             ROW 1 — Filters + Tab Bar
+        ════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="1" Style="{DynamicResource CardBorder}" Padding="16,12" Margin="0,0,0,14">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
+                <!-- Report Type -->
                 <StackPanel Grid.Column="0" Margin="0,0,16,0">
                     <TextBlock Text="Report Type" FontSize="11" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
-                    <ComboBox Style="{DynamicResource ModernComboBox}" 
+                    <ComboBox Style="{DynamicResource ModernComboBox}"
                               SelectedValuePath="Content"
-                              SelectedValue="{Binding SelectedReportType}" Width="140">
+                              SelectedValue="{Binding SelectedReportType}" Width="130">
                         <ComboBoxItem Content="Daily"/>
                         <ComboBoxItem Content="Weekly"/>
                         <ComboBoxItem Content="Monthly"/>
@@ -55,211 +110,461 @@
                     </ComboBox>
                 </StackPanel>
 
-                <StackPanel Grid.Column="1" Margin="0,0,16,0"
+                <!-- From Date -->
+                <StackPanel Grid.Column="1" Margin="0,0,12,0"
                             Visibility="{Binding IsFromDateVisible, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="{Binding FromDateLabel}" FontSize="11" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
-                    <DatePicker SelectedDate="{Binding FromDate}" Width="150" FontSize="13"/>
+                    <TextBlock Text="{Binding FromDateLabel}" FontSize="11"
+                               Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
+                    <DatePicker SelectedDate="{Binding FromDate}" Width="145" FontSize="12"/>
                 </StackPanel>
 
+                <!-- To Date -->
                 <StackPanel Grid.Column="2" Margin="0,0,16,0"
                             Visibility="{Binding IsToDateVisible, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="To Date" FontSize="11" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
-                    <DatePicker SelectedDate="{Binding ToDate}" Width="150" FontSize="13"/>
+                    <TextBlock Text="To Date" FontSize="11"
+                               Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
+                    <DatePicker SelectedDate="{Binding ToDate}" Width="145" FontSize="12"/>
                 </StackPanel>
 
+                <!-- Tab Buttons -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Bottom">
+                    <RadioButton x:Name="TabOverview" Content="📈 Overview" Style="{StaticResource TabBtn}" IsChecked="True"
+                                 GroupName="ReportTabs" Checked="TabOverview_Checked"/>
+                    <RadioButton x:Name="TabAudit" Content="📋 Audit Trail" Style="{StaticResource TabBtn}"
+                                 GroupName="ReportTabs" Checked="TabAudit_Checked"/>
+                    <RadioButton x:Name="TabProducts" Content="📦 Products" Style="{StaticResource TabBtn}"
+                                 GroupName="ReportTabs" Checked="TabProducts_Checked"/>
+                    <RadioButton x:Name="TabLowStock" Content="⚠️ Low Stock" Style="{StaticResource TabBtn}"
+                                 GroupName="ReportTabs" Checked="TabLowStock_Checked"/>
+                </StackPanel>
+
+                <!-- Export Button -->
                 <Button Grid.Column="4" Content="📥 Export CSV" Style="{DynamicResource PrimaryButton}"
-                        Command="{Binding ExportReportCommand}" VerticalAlignment="Bottom" Padding="20,10"
-                        HorizontalAlignment="Right"/>
+                        Command="{Binding ExportReportCommand}" VerticalAlignment="Bottom"
+                        Padding="16,8" FontSize="12"/>
             </Grid>
         </Border>
 
-        <!-- Financial Summary Cards -->
-        <Border Grid.Row="2" Style="{DynamicResource CardBorder}" Padding="20,16" Margin="0,0,0,16" 
-                Background="{DynamicResource SidebarBgBrush}"
-                Visibility="{Binding ShowSalesGrid, Converter={StaticResource BoolToVis}}">
-            <Grid>
+        <!-- ═══════════════════════════════════════════════════════
+             ROW 2 — TAB CONTENT
+        ════════════════════════════════════════════════════════ -->
+
+        <!-- ──────── TAB: OVERVIEW / ANALYTICS ──────── -->
+        <Grid x:Name="PanelOverview" Grid.Row="2"
+              Visibility="{Binding ShowSalesGrid, Converter={StaticResource BoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- KPI Cards -->
+                <RowDefinition Height="*"/>    <!-- Charts -->
+            </Grid.RowDefinitions>
+
+            <!-- KPI Cards Row -->
+            <Grid Grid.Row="0" Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Total Sales -->
-                <StackPanel Grid.Column="0" HorizontalAlignment="Center">
-                    <TextBlock Text="Total Sales" FontSize="12" Foreground="White" Opacity="0.8" HorizontalAlignment="Center"/>
-                    <TextBlock FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" Margin="0,4,0,0">
-                        <TextBlock.Text>
-                            <Binding Path="TotalRevenue" StringFormat="Rs.{0:N0}"/>
-                        </TextBlock.Text>
-                    </TextBlock>
-                </StackPanel>
-
-                <!-- Returns -->
-                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
-                    <TextBlock Text="Returns" FontSize="12" Foreground="White" Opacity="0.8" HorizontalAlignment="Center"/>
-                    <TextBlock FontSize="22" FontWeight="Bold" Foreground="#FFAB91" HorizontalAlignment="Center" Margin="0,4,0,0">
-                        <TextBlock.Text>
-                            <Binding Path="TotalReturns" StringFormat="Rs.{0:N0}"/>
-                        </TextBlock.Text>
-                    </TextBlock>
-                </StackPanel>
+                <!-- Total Revenue -->
+                <Border Grid.Column="0" Style="{StaticResource KpiCard}" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="💰 Total Revenue" FontSize="11" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock Text="{Binding TotalRevenue, StringFormat='Rs. {0:N0}'}"
+                                   FontSize="20" FontWeight="Bold" Foreground="#14B8A6" Margin="0,4,0,0"/>
+                        <TextBlock Text="{Binding TotalSalesCount, StringFormat='{}{0} bills'}"
+                                   FontSize="10" Foreground="{DynamicResource SubTextBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
 
                 <!-- Net Sales -->
-                <StackPanel Grid.Column="2" HorizontalAlignment="Center">
-                    <TextBlock Text="Net Sales" FontSize="12" Foreground="White" Opacity="0.8" HorizontalAlignment="Center"/>
-                    <TextBlock FontSize="22" FontWeight="Bold" Foreground="#80CBC4" HorizontalAlignment="Center" Margin="0,4,0,0">
-                        <TextBlock.Text>
-                            <Binding Path="NetSales" StringFormat="Rs.{0:N0}"/>
-                        </TextBlock.Text>
-                    </TextBlock>
-                </StackPanel>
+                <Border Grid.Column="1" Style="{StaticResource KpiCard}" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="📈 Net Sales" FontSize="11" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock Text="{Binding NetSales, StringFormat='Rs. {0:N0}'}"
+                                   FontSize="20" FontWeight="Bold" Foreground="#22C55E" Margin="0,4,0,0"/>
+                        <TextBlock Text="After returns" FontSize="10"
+                                   Foreground="{DynamicResource SubTextBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Total Returns -->
+                <Border Grid.Column="2" Style="{StaticResource KpiCard}" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="↩️ Returns" FontSize="11" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock Text="{Binding TotalReturns, StringFormat='Rs. {0:N0}'}"
+                                   FontSize="20" FontWeight="Bold" Foreground="#EF4444" Margin="0,4,0,0"/>
+                        <TextBlock Text="{Binding TotalReturnCount, StringFormat='{}{0} transactions'}"
+                                   FontSize="10" Foreground="{DynamicResource SubTextBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Avg Order -->
+                <Border Grid.Column="3" Style="{StaticResource KpiCard}" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="🧾 Avg Order" FontSize="11" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock Text="{Binding AvgOrderValue, StringFormat='Rs. {0:N0}'}"
+                                   FontSize="20" FontWeight="Bold" Foreground="#6366F1" Margin="0,4,0,0"/>
+                        <TextBlock Text="Per bill" FontSize="10"
+                                   Foreground="{DynamicResource SubTextBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
 
                 <!-- Outstanding Credit -->
-                <StackPanel Grid.Column="3" HorizontalAlignment="Center">
-                    <TextBlock Text="Outstanding Credit" FontSize="12" Foreground="White" Opacity="0.8" HorizontalAlignment="Center"/>
-                    <TextBlock FontSize="22" FontWeight="Bold" Foreground="#EF9A9A" HorizontalAlignment="Center" Margin="0,4,0,0">
-                        <TextBlock.Text>
-                            <Binding Path="OutstandingCredit" StringFormat="Rs.{0:N0}"/>
-                        </TextBlock.Text>
-                    </TextBlock>
-                </StackPanel>
-            </Grid>
-        </Border>
+                <Border Grid.Column="4" Style="{StaticResource KpiCard}" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="⏳ Outstanding" FontSize="11" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock Text="{Binding OutstandingCredit, StringFormat='Rs. {0:N0}'}"
+                                   FontSize="20" FontWeight="Bold" Foreground="#F59E0B" Margin="0,4,0,0"/>
+                        <TextBlock Text="Credit due" FontSize="10"
+                                   Foreground="{DynamicResource SubTextBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
 
-        <!-- Sales Report Grid -->
-        <Border Grid.Row="3" Style="{DynamicResource CardBorder}" Padding="0"
-                Visibility="{Binding ShowSalesGrid, Converter={StaticResource BoolToVis}}">
+                <!-- Bill Count -->
+                <Border Grid.Column="5" Style="{StaticResource KpiCard}">
+                    <StackPanel>
+                        <TextBlock Text="📊 Total Bills" FontSize="11" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock Text="{Binding TotalSalesCount}"
+                                   FontSize="20" FontWeight="Bold" Foreground="#0EA5E9" Margin="0,4,0,0"/>
+                        <TextBlock Text="{Binding TotalReturnCount, StringFormat='{}{0} returns'}"
+                                   FontSize="10" Foreground="{DynamicResource SubTextBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Charts Row -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3*"/>  <!-- Sales Bar Chart -->
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="2*"/>  <!-- Right panels -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Sales Trend Chart -->
+                <Border Grid.Column="0" Style="{DynamicResource CardBorder}" Padding="16,14">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Chart Header -->
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock Text="Sales Trend" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock Text="Revenue over the selected period"
+                                           FontSize="11" Foreground="{DynamicResource SubTextBrush}"/>
+                            </StackPanel>
+                            <!-- Legend -->
+                            <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Rectangle Width="12" Height="12" Fill="#14B8A6" RadiusX="2" RadiusY="2" Margin="0,0,5,0"/>
+                                <TextBlock Text="Sales" FontSize="11" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                                <Rectangle Width="12" Height="12" Fill="#FB7185" RadiusX="2" RadiusY="2" Margin="0,0,5,0"/>
+                                <TextBlock Text="Returns" FontSize="11" Foreground="{DynamicResource SubTextBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Bar Chart -->
+                        <controls:BarChartControl Grid.Row="1"
+                            DataSource="{Binding DailySalesChart}"
+                            ShowSecondaryBar="True"
+                            BarColor="#14B8A6"/>
+
+                        <!-- Empty state -->
+                        <Border Grid.Row="1" CornerRadius="8" Background="#F8FAFC" Margin="0,4"
+                                Visibility="{Binding DailySalesChart.Count, Converter={StaticResource InverseCountToVis}}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="📈" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                <TextBlock Text="No sales data for this period"
+                                           FontSize="13" Foreground="#94A3B8" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Right Column: Top Products + Payment Methods -->
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="14"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Top Products -->
+                    <Border Grid.Row="0" Style="{DynamicResource CardBorder}" Padding="16,14">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                                <TextBlock Text="🏆 Top 5 Products" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock Text="By revenue in period"
+                                           FontSize="11" Foreground="{DynamicResource SubTextBrush}"/>
+                            </StackPanel>
+                            <controls:BarChartControl Grid.Row="1"
+                                DataSource="{Binding TopProductsChart}"
+                                ShowSecondaryBar="False"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Payment Method + Cashier Performance -->
+                    <Border Grid.Row="2" Style="{DynamicResource CardBorder}" Padding="16,14">
+                        <StackPanel>
+                            <TextBlock Text="💳 Payment Breakdown" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}" Margin="0,0,0,10"/>
+                            <ItemsControl ItemsSource="{Binding PaymentMethodStats}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="6"/>
+                                            </Grid.RowDefinitions>
+                                            <Grid Grid.Row="0" Margin="0,0,0,3">
+                                                <TextBlock Text="{Binding Method}" FontSize="11"
+                                                           Foreground="{DynamicResource TextBrush}" FontWeight="Medium"/>
+                                                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding DisplayAmount}" FontSize="11"
+                                                               Foreground="#14B8A6" FontWeight="SemiBold" Margin="0,0,6,0"/>
+                                                    <TextBlock Text="{Binding DisplayPercent}" FontSize="10"
+                                                               Foreground="{DynamicResource SubTextBrush}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Border Grid.Row="1" CornerRadius="3" Background="#E2E8F0">
+                                                <Border CornerRadius="3" Background="#14B8A6" HorizontalAlignment="Left">
+                                                    <Border.Width>
+                                                        <MultiBinding>
+                                                            <MultiBinding.Converter>
+                                                                <converters:PercentToWidthConverter/>
+                                                            </MultiBinding.Converter>
+                                                            <Binding Path="Percent"/>
+                                                            <Binding RelativeSource="{RelativeSource AncestorType=Border, AncestorLevel=2}"
+                                                                     Path="ActualWidth"/>
+                                                        </MultiBinding>
+                                                    </Border.Width>
+                                                    <Border.Height>
+                                                        <x:Static Member="SystemParameters.MinimumVerticalDragDistance"/>
+                                                    </Border.Height>
+                                                </Border>
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Cashier Performance -->
+                            <TextBlock Text="👤 Cashier Performance" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}" Margin="0,14,0,8"/>
+                            <ItemsControl ItemsSource="{Binding CashierPerformance}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,6">
+                                            <TextBlock VerticalAlignment="Center">
+                                                <Run Text="{Binding CashierName}" FontWeight="Medium"
+                                                     Foreground="{DynamicResource TextBrush}"/>
+                                                <Run Text="  " />
+                                                <Run Text="{Binding BillCount, StringFormat='({0} bills)'}"
+                                                     Foreground="#94A3B8" FontSize="10"/>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding DisplayRevenue}" HorizontalAlignment="Right"
+                                                       FontWeight="SemiBold" Foreground="#14B8A6" FontSize="12"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- ──────── TAB: AUDIT TRAIL ──────── -->
+        <Border x:Name="PanelAudit" Grid.Row="2" Style="{DynamicResource CardBorder}" Padding="0"
+                Visibility="Collapsed">
             <DockPanel>
-                <!-- Controls: Search & Filter -->
-                <Grid DockPanel.Dock="Top" Margin="16,16,16,0">
+                <!-- Search & Filter Bar -->
+                <Grid DockPanel.Dock="Top" Margin="16,14,16,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    
-                    <StackPanel Grid.Column="0" HorizontalAlignment="Left">
-                        <TextBlock Text="Search Report History" FontSize="11" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
-                        <Grid>
-                            <TextBox x:Name="SearchBox" Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" 
-                                     Style="{DynamicResource ModernTextBox}"
-                                     Width="300" />
-                            <TextBlock Text="🔍 Invoice # or Customer Name..." 
-                                       IsHitTestVisible="False"
-                                       VerticalAlignment="Center" Margin="10,0,0,0"
-                                       Foreground="{DynamicResource SubTextBrush}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding ElementName=SearchBox, Path=Text}" Value="">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding ElementName=SearchBox, Path=Text}" Value="{x:Null}">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </Grid>
-                    </StackPanel>
-                             
-                    <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                        <TextBlock Text="Filter by Bill Type" FontSize="11" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
-                        <ComboBox ItemsSource="{Binding AvailableBillFilters}" 
+
+                    <!-- Search -->
+                    <Grid Grid.Column="0" Margin="0,0,12,0">
+                        <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{DynamicResource ModernTextBox}" Padding="36,8,8,8"/>
+                        <TextBlock Text="🔍  Search by Invoice #, Customer or Cashier…"
+                                   IsHitTestVisible="False" VerticalAlignment="Center" Margin="12,0,0,0"
+                                   Foreground="{DynamicResource SubTextBrush}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SearchQuery}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+
+                    <!-- Filter Dropdown -->
+                    <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                        <TextBlock Text="Filter" FontSize="11" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,3"/>
+                        <ComboBox ItemsSource="{Binding AvailableBillFilters}"
                                   SelectedItem="{Binding SelectedBillFilter}"
-                                  Style="{DynamicResource ModernComboBox}"
-                                  Width="180" 
-                                  VerticalContentAlignment="Center"/>
+                                  Style="{DynamicResource ModernComboBox}" Width="160"/>
                     </StackPanel>
+
+                    <!-- Count -->
+                    <Border Grid.Column="2" CornerRadius="20" Background="#F0FDF4"
+                            BorderBrush="#BBF7D0" BorderThickness="1" Padding="12,6" VerticalAlignment="Bottom">
+                        <TextBlock FontSize="12" FontWeight="Medium" Foreground="#16A34A">
+                            <Run Text="{Binding SalesReport.Count, Mode=OneWay}"/>
+                            <Run Text=" records"/>
+                        </TextBlock>
+                    </Border>
                 </Grid>
 
                 <!-- Legend -->
-                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="16,10" HorizontalAlignment="Right">
-                    <Border Background="#FEF9C3" Width="12" Height="12" CornerRadius="2" Margin="0,0,6,0" BorderBrush="#FEF08A" BorderThickness="1"/>
-                    <TextBlock Text="Credit Sale" FontSize="11" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,16,0" VerticalAlignment="Center"/>
-                    
-                    <Border Background="Transparent" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Width="12" Height="12" CornerRadius="2" Margin="0,0,6,0"/>
-                    <TextBlock Text="Normal Sale" FontSize="11" Foreground="{DynamicResource SubTextBrush}" VerticalAlignment="Center"/>
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="16,8" HorizontalAlignment="Right">
+                    <Border Background="#FEF9C3" Width="11" Height="11" CornerRadius="2" Margin="0,0,5,0" BorderBrush="#FEF08A" BorderThickness="1"/>
+                    <TextBlock Text="Credit Sale" FontSize="10" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                    <Border Background="#FEE2E2" Width="11" Height="11" CornerRadius="2" Margin="0,0,5,0" BorderBrush="#FECACA" BorderThickness="1"/>
+                    <TextBlock Text="Return" FontSize="10" Foreground="{DynamicResource SubTextBrush}" VerticalAlignment="Center"/>
                 </StackPanel>
 
+                <!-- Audit DataGrid -->
                 <DataGrid ItemsSource="{Binding SalesReport}"
                           Style="{DynamicResource ModernDataGrid}"
                           ColumnHeaderStyle="{DynamicResource ModernDataGridColumnHeader}"
-                          CellStyle="{DynamicResource ModernDataGridCell}">
-                <DataGrid.RowStyle>
-                    <Style TargetType="DataGridRow" BasedOn="{StaticResource ModernDataGridRow}">
-                        <Style.Triggers>
-                            <!-- Credit Report: Light Yellow -->
-                            <DataTrigger Binding="{Binding HasPendingCredit}" Value="True">
-                                <Setter Property="Background" Value="#FEF9C3"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </DataGrid.RowStyle>
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Invoice #" Binding="{Binding InvoiceNumber}" Width="110"/>
-                    <DataGridTextColumn Header="Customer" Binding="{Binding Customer.Name}" Width="150"/>
-                    <DataGridTextColumn Header="Cashier" Binding="{Binding User.FullName}" Width="140"/>
-                    <DataGridTextColumn Header="Date/Time" Binding="{Binding SaleDate, StringFormat='dd/MM/yyyy HH:mm'}" Width="*"/>
-                    
-                    <DataGridTemplateColumn Header="Actions" Width="180">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal">
-                                    <Button Content="📂 View" Style="{DynamicResource AccentButton}" 
-                                            Command="{Binding DataContext.ViewBillCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}" Margin="0,0,8,0" Padding="8,4" FontSize="11"/>
-                                    <Button Content="🖨️ Print" Style="{DynamicResource PrimaryButton}" 
-                                            Command="{Binding DataContext.PrintBillCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}" Padding="8,4" FontSize="11" Background="{DynamicResource SuccessBrush}"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                </DataGrid.Columns>
-            </DataGrid>
+                          CellStyle="{DynamicResource ModernDataGridCell}"
+                          Margin="0,10,0,0">
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource ModernDataGridRow}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasPendingCredit}" Value="True">
+                                    <Setter Property="Background" Value="#FFFEF9C3"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsReturn}" Value="True">
+                                    <Setter Property="Background" Value="#FFFEE2E2"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Invoice #"      Binding="{Binding InvoiceNumber}"                           Width="90"/>
+                        <DataGridTextColumn Header="Type"           Binding="{Binding Type}"                                    Width="65"/>
+                        <DataGridTextColumn Header="Customer"       Binding="{Binding Customer.FullName}"                       Width="140"/>
+                        <DataGridTextColumn Header="Cashier"        Binding="{Binding User.FullName}"                           Width="120"/>
+                        <DataGridTextColumn Header="Method"         Binding="{Binding PaymentMethod}"                           Width="80"/>
+                        <DataGridTextColumn Header="Grand Total"    Binding="{Binding GrandTotal, StringFormat='Rs. {0:N0}'}"   Width="100"/>
+                        <DataGridTextColumn Header="Paid"           Binding="{Binding PaidAmount, StringFormat='Rs. {0:N0}'}"   Width="90"/>
+                        <DataGridTextColumn Header="Remaining"      Binding="{Binding RemainingAmount, StringFormat='Rs. {0:N0}'}" Width="90"/>
+                        <DataGridTemplateColumn Header="Status" Width="80">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="10" Padding="8,3" Margin="4,4"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#DCFCE7"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding PaymentStatus}" Value="PartialPaid">
+                                                        <Setter Property="Background" Value="#FEF9C3"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsReturn}" Value="True">
+                                                        <Setter Property="Background" Value="#FEE2E2"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock VerticalAlignment="Center" FontSize="10" FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="Paid"/>
+                                                    <Setter Property="Foreground" Value="#16A34A"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding PaymentStatus}" Value="PartialPaid">
+                                                            <Setter Property="Text" Value="Partial"/>
+                                                            <Setter Property="Foreground" Value="#92400E"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsReturn}" Value="True">
+                                                            <Setter Property="Text" Value="Return"/>
+                                                            <Setter Property="Foreground" Value="#DC2626"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Date / Time"    Binding="{Binding SaleDate, StringFormat='dd/MM/yy HH:mm'}" Width="*"/>
+                        <DataGridTemplateColumn Header="Actions" Width="160">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="4,2">
+                                        <Button Content="📂 View" Style="{DynamicResource AccentButton}"
+                                                Command="{Binding DataContext.ViewBillCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}" Margin="0,0,6,0" Padding="8,4" FontSize="11"/>
+                                        <Button Content="🖨️ Print" Style="{DynamicResource PrimaryButton}"
+                                                Command="{Binding DataContext.PrintBillCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}" Padding="8,4" FontSize="11"
+                                                Background="{DynamicResource SuccessBrush}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
             </DockPanel>
         </Border>
 
-        <!-- Product-wise Report Grid -->
-        <Border Grid.Row="2" Style="{DynamicResource CardBorder}" Padding="0"
-                Visibility="{Binding ShowProductGrid, Converter={StaticResource BoolToVis}}">
+        <!-- ──────── TAB: PRODUCT REPORT ──────── -->
+        <Border x:Name="PanelProducts" Grid.Row="2" Style="{DynamicResource CardBorder}" Padding="0"
+                Visibility="Collapsed">
             <DataGrid ItemsSource="{Binding ProductReport}"
                       Style="{DynamicResource ModernDataGrid}"
                       ColumnHeaderStyle="{DynamicResource ModernDataGridColumnHeader}"
                       RowStyle="{DynamicResource ModernDataGridRow}"
                       CellStyle="{DynamicResource ModernDataGridCell}">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Product Name" Binding="{Binding ItemDescription}" Width="*"/>
-                    <DataGridTextColumn Header="Quantity Sold" Binding="{Binding QuantitySold}" Width="120"/>
-                    <DataGridTextColumn Header="Total Revenue" Binding="{Binding TotalRevenue, StringFormat='Rs.{0:N0}'}" Width="140"/>
+                    <DataGridTextColumn Header="Product Name"   Binding="{Binding ItemDescription}" Width="*"/>
+                    <DataGridTextColumn Header="Quantity Sold"  Binding="{Binding QuantitySold}"    Width="130"/>
+                    <DataGridTextColumn Header="Total Revenue"  Binding="{Binding TotalRevenue, StringFormat='Rs. {0:N0}'}" Width="150"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
 
-        <!-- Low Stock Report Grid -->
-        <Border Grid.Row="2" Style="{DynamicResource CardBorder}" Padding="0"
-                Visibility="{Binding ShowLowStockGrid, Converter={StaticResource BoolToVis}}">
+        <!-- ──────── TAB: LOW STOCK ──────── -->
+        <Border x:Name="PanelLowStock" Grid.Row="2" Style="{DynamicResource CardBorder}" Padding="0"
+                Visibility="Collapsed">
             <StackPanel>
-
-                <!-- EMPTY STATE: all stock healthy (shown when list is empty) -->
+                <!-- Empty state -->
                 <Border CornerRadius="10" Padding="24,48" Background="#F0FDF4" Margin="16"
                         Visibility="{Binding LowStockReport.Count, Converter={StaticResource InverseCountToVis}}">
                     <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="&#x2705;" FontSize="52" HorizontalAlignment="Center" Margin="0,0,0,14"/>
-                        <TextBlock Text="All stock levels are healthy"
-                                   FontSize="18" FontWeight="SemiBold"
+                        <TextBlock Text="✅" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                        <TextBlock Text="All stock levels are healthy" FontSize="17" FontWeight="SemiBold"
                                    Foreground="#15803D" HorizontalAlignment="Center"/>
                         <TextBlock Text="No items are currently below their minimum threshold."
-                                   FontSize="13" Foreground="#4B7C59"
-                                   HorizontalAlignment="Center" Margin="0,10,0,0"
-                                   TextWrapping="Wrap" TextAlignment="Center"/>
+                                   FontSize="12" Foreground="#4B7C59" HorizontalAlignment="Center"
+                                   Margin="0,8,0,0" TextWrapping="Wrap" TextAlignment="Center"/>
                     </StackPanel>
                 </Border>
 
-                <!-- LOW STOCK TABLE (shown only when items exist) -->
+                <!-- Low Stock Table -->
                 <DataGrid ItemsSource="{Binding LowStockReport}"
                           Visibility="{Binding LowStockReport.Count, Converter={StaticResource CountToVis}}"
                           Style="{DynamicResource ModernDataGrid}"
@@ -267,9 +572,9 @@
                           RowStyle="{DynamicResource ModernDataGridRow}"
                           CellStyle="{DynamicResource ModernDataGridCell}">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="150"/>
-                        <DataGridTextColumn Header="Product Name" Binding="{Binding Description}" Width="*"/>
-                        <DataGridTextColumn Header="Category" Binding="{Binding ItemCategory}" Width="150"/>
+                        <DataGridTextColumn Header="Barcode"       Binding="{Binding Barcode}"          Width="140"/>
+                        <DataGridTextColumn Header="Product Name"  Binding="{Binding Description}"      Width="*"/>
+                        <DataGridTextColumn Header="Category"      Binding="{Binding ItemCategory}"     Width="140"/>
                         <DataGridTemplateColumn Header="Current Stock" Width="120">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -293,34 +598,39 @@
                         <DataGridTextColumn Header="Min. Threshold" Binding="{Binding MinStockThreshold}" Width="120"/>
                     </DataGrid.Columns>
                 </DataGrid>
-
             </StackPanel>
         </Border>
-        <Border Grid.RowSpan="3" Visibility="{Binding IsBillDetailOpen, Converter={StaticResource BoolToVis}}" 
+
+        <!-- ──────── BILL DETAIL OVERLAY ──────── -->
+        <Border Grid.RowSpan="3"
+                Visibility="{Binding IsBillDetailOpen, Converter={StaticResource BoolToVis}}"
                 Background="#CC000000" IsHitTestVisible="True">
-            <Border Background="White" CornerRadius="4" Padding="0"
-                    VerticalAlignment="Center" HorizontalAlignment="Center" 
-                    Width="400" MaxHeight="750"
+            <Border Background="White" CornerRadius="12" Padding="0"
+                    VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Width="420" MaxHeight="720"
                     BorderBrush="#E2E8F0" BorderThickness="1">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.3" Color="Black"/>
                 </Border.Effect>
                 <DockPanel>
-                    <!-- Modal Header (Close Button) -->
-                    <Grid DockPanel.Dock="Top" Background="#F8FAFC" Height="40">
-                         <Button HorizontalAlignment="Right" Content="X" 
-                                Background="Transparent" Foreground="#64748B" FontSize="16"
-                                Padding="15,0" BorderThickness="0" Cursor="Hand"
+                    <Border DockPanel.Dock="Top" Background="#F8FAFC" Height="44" CornerRadius="12,12,0,0">
+                        <Grid>
+                            <TextBlock Text="Bill Details" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="#1E293B" VerticalAlignment="Center" Margin="20,0,0,0"/>
+                            <Button HorizontalAlignment="Right" Content="✕"
+                                    Background="Transparent" Foreground="#64748B" FontSize="14"
+                                Padding="16,0" BorderThickness="0" Cursor="Hand"
                                 Command="{Binding CloseBillDetailCommand}"/>
-                    </Grid>
-
-                    <!-- Print Button at Bottom -->
-                    <Border DockPanel.Dock="Bottom" Background="#F8FAFC" Padding="20,15" BorderThickness="0,1,0,0" BorderBrush="#E2E8F0">
-                        <Button Content="🖨️  Re-Print Receipt" Command="{Binding PrintBillCommand}" CommandParameter="{Binding SelectedHistoryBill}"
-                                Style="{DynamicResource PrimaryButton}" Background="#22C55E" Padding="20,10" HorizontalAlignment="Center"/>
+                        </Grid>
                     </Border>
-
-                    <!-- Shared Receipt Control -->
+                    <Border DockPanel.Dock="Bottom" Background="#F8FAFC" Padding="20,12"
+                            BorderThickness="0,1,0,0" BorderBrush="#E2E8F0">
+                        <Button Content="🖨️  Re-Print Receipt"
+                                Command="{Binding PrintBillCommand}"
+                                CommandParameter="{Binding SelectedHistoryBill}"
+                                Style="{DynamicResource PrimaryButton}"
+                                Background="#22C55E" Padding="20,10" HorizontalAlignment="Center"/>
+                    </Border>
                     <controls:BillReceiptControl Bill="{Binding SelectedHistoryBill}"/>
                 </DockPanel>
             </Border>

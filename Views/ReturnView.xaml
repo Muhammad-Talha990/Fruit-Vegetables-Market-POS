@@ -12,10 +12,12 @@
         <converters:CountToVisibilityConverter x:Key="CountToVisibilityConverter"/>
         <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
         <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InverseBoolToVisibilityConverter x:Key="InvBoolToVis"/>
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
         
         <Style x:Key="CustomerBillComboBoxStyle" TargetType="ComboBox">
-            <Setter Property="Height" Value="54"/>
-            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Padding" Value="8,4"/>
             <Setter Property="Background" Value="White"/>
             <Setter Property="BorderBrush" Value="#CBD5E1"/>
             <Setter Property="BorderThickness" Value="1.2"/>
@@ -42,31 +44,33 @@
         </Style>
     </UserControl.Resources>
     
-    <Grid Margin="30,24">
+    <Grid Margin="20,12">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         
         <!-- Main Content (Column 0) -->
-        <Grid Grid.Column="0">
+        <Grid Grid.Column="0" Margin="0,0,10,0">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*" MinHeight="200"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/> <!-- 0: Header -->
+                <RowDefinition Height="Auto"/> <!-- 1: Search Bar & Status -->
+                <RowDefinition Height="Auto"/> <!-- 2: Top Bill Details Banner -->
+                <RowDefinition Height="*" MinHeight="150"/> <!-- 3: Items available for return (Cart) -->
+                <RowDefinition Height="Auto"/> <!-- 4: Bottom Return Summary & Total Amount -->
+                <RowDefinition Height="Auto"/> <!-- 5: History Title -->
+                <RowDefinition Height="Auto"/> <!-- 6: Return History Table -->
+                <RowDefinition Height="Auto"/> <!-- 7: Action Buttons -->
             </Grid.RowDefinitions>
 
         <!-- Header (Row 0) -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,24">
-            <TextBlock Text="🔄 Bill Item Return" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
-            <TextBlock Text="Process product returns from previous bills" FontSize="14" Foreground="{DynamicResource SubTextBrush}" Margin="0,4,0,0"/>
+        <StackPanel Grid.Row="0" Margin="0,0,0,4">
+            <TextBlock Text="🔄 Bill Item Return" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
+            <TextBlock Text="Process product returns from previous bills" FontSize="11" Foreground="{DynamicResource SubTextBrush}" Margin="0,1,0,0"/>
         </StackPanel>
 
         <!-- Search Bar (Row 1) -->
-        <Border Grid.Row="1" Style="{DynamicResource CardBorder}" Padding="16" Margin="0,0,0,20">
+        <Border Grid.Row="1" Style="{DynamicResource CardBorder}" Padding="8,6" Margin="0,0,0,4">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -85,21 +89,21 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Enter Bill ID:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
-                <TextBox Grid.Row="0" Grid.Column="1" Style="{DynamicResource ModernTextBox}" Text="{Binding BillIdInput, UpdateSourceTrigger=PropertyChanged}" FontSize="16">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Enter Bill ID:" VerticalAlignment="Center" Margin="0,0,6,0" FontWeight="SemiBold" FontSize="11"/>
+                <TextBox Grid.Row="0" Grid.Column="1" Style="{DynamicResource ModernTextBox}" Text="{Binding BillIdInput, UpdateSourceTrigger=PropertyChanged}" FontSize="12" Height="28" Padding="6,2">
                     <TextBox.InputBindings>
                         <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
                     </TextBox.InputBindings>
                 </TextBox>
-                <Button Grid.Row="0" Grid.Column="2" Content="🔍 Search Bill" Style="{DynamicResource PrimaryButton}" Command="{Binding SearchCommand}" Margin="12,0,0,0" Padding="20,0"/>
+                <Button Grid.Row="0" Grid.Column="2" Content="🔍 Search Bill" Style="{DynamicResource PrimaryButton}" Command="{Binding SearchCommand}" Margin="6,0,0,0" Padding="12,0" Height="28" FontSize="11"/>
 
-                <TextBlock Grid.Row="0" Grid.Column="4" Text="Customer Phone:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
-                <TextBox Grid.Row="0" Grid.Column="5" Style="{DynamicResource ModernTextBox}" Text="{Binding CustomerPhoneInput, UpdateSourceTrigger=PropertyChanged}" FontSize="16" MaxLength="11">
+                <TextBlock Grid.Row="0" Grid.Column="4" Text="Customer Phone:" VerticalAlignment="Center" Margin="0,0,6,0" FontWeight="SemiBold" FontSize="11"/>
+                <TextBox Grid.Row="0" Grid.Column="5" Style="{DynamicResource ModernTextBox}" Text="{Binding CustomerPhoneInput, UpdateSourceTrigger=PropertyChanged}" FontSize="12" MaxLength="11" Height="28" Padding="6,2">
                     <TextBox.InputBindings>
                         <KeyBinding Key="Enter" Command="{Binding SearchByPhoneCommand}"/>
                     </TextBox.InputBindings>
                 </TextBox>
-                <Button Grid.Row="0" Grid.Column="6" Content="📱 Search Bills" Style="{DynamicResource SecondaryButton}" Command="{Binding SearchByPhoneCommand}" Margin="12,0,0,0" Padding="14,9" MinWidth="132"/>
+                <Button Grid.Row="0" Grid.Column="6" Content="📱 Search Bills" Style="{DynamicResource SecondaryButton}" Command="{Binding SearchByPhoneCommand}" Margin="6,0,0,0" Padding="8,0" MinWidth="90" Height="28" FontSize="11"/>
 
                 <ComboBox Grid.Row="0" Grid.Column="7"
                           Margin="12,0,0,0"
@@ -112,30 +116,77 @@
                           ToolTip="Select bill found by customer phone">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Orientation="Vertical">
-                                    <TextBlock Text="{Binding InvoiceNumber, StringFormat='Bill #{0}'}"
-                                               FontWeight="SemiBold"
-                                               Foreground="#0F172A"/>
-                                    <TextBlock Text="{Binding CreatedAt, StringFormat='{}{0:dd MMM yyyy, hh:mm tt}'}"
-                                               FontSize="11"
-                                               Foreground="#64748B"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                    <TextBlock Text="{Binding GrandTotal, StringFormat='Total: Rs. {0:N0}'}"
-                                               FontSize="11"
-                                               Foreground="#1E293B"
-                                               HorizontalAlignment="Right"/>
-                                    <TextBlock Text="{Binding RemainingAmount, StringFormat='Pending: Rs. {0:N0}'}"
-                                               FontSize="11"
-                                               Foreground="#DC2626"
-                                               HorizontalAlignment="Right"/>
-                                </StackPanel>
-                            </Grid>
+                            <Border Padding="6,4" CornerRadius="4" Margin="0,2" x:Name="ItemBorder">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <!-- Highlight style for bills with pending amount -->
+                                        <Setter Property="Background" Value="#FEF9C3"/>
+                                        <Setter Property="BorderBrush" Value="#FEF08A"/>
+                                        <Setter Property="BorderThickness" Value="1"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding RemainingAmount}" Value="0">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="BorderThickness" Value="0"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding RemainingAmount}" Value="0.0">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="BorderThickness" Value="0"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Vertical">
+                                        <TextBlock Text="{Binding InvoiceNumber, StringFormat='Bill #{0}'}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#0F172A"/>
+                                        <TextBlock Text="{Binding CreatedAt, StringFormat='{}{0:dd MMM yyyy, hh:mm tt}'}"
+                                                   FontSize="11"
+                                                   Foreground="#64748B"
+                                                   x:Name="DateText"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" HorizontalAlignment="Right" x:Name="RightPanel">
+                                        <TextBlock Text="{Binding GrandTotal, StringFormat='Total: Rs. {0:N0}'}"
+                                                   FontSize="11"
+                                                   Foreground="#1E293B"
+                                                   HorizontalAlignment="Right"/>
+                                        <TextBlock Text="{Binding RemainingAmount, StringFormat='Pending: Rs. {0:N0}'}"
+                                                   FontSize="11"
+                                                   HorizontalAlignment="Right">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <!-- Highlight text style -->
+                                                    <Setter Property="Foreground" Value="#DC2626"/>
+                                                    <Setter Property="FontWeight" Value="Bold"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding RemainingAmount}" Value="0">
+                                                            <Setter Property="Foreground" Value="#94A3B8"/>
+                                                            <Setter Property="FontWeight" Value="Normal"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding RemainingAmount}" Value="0.0">
+                                                            <Setter Property="Foreground" Value="#94A3B8"/>
+                                                            <Setter Property="FontWeight" Value="Normal"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" Value="{x:Null}">
+                                    <Setter TargetName="RightPanel" Property="Visibility" Value="Collapsed"/>
+                                    <Setter TargetName="DateText" Property="Visibility" Value="Collapsed"/>
+                                    <!-- Also remove border and background highlight when in the selection box to keep it clean -->
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="Transparent"/>
+                                    <Setter TargetName="ItemBorder" Property="BorderThickness" Value="0"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
@@ -143,11 +194,12 @@
                         Content="Load"
                         Style="{DynamicResource AccentButton}"
                         Command="{Binding LoadSelectedBillCommand}"
-                        Margin="12,0,0,0"
-                        Padding="16,0"
+                        Margin="8,0,0,0"
+                        Padding="12,0"
+                        Height="28" FontSize="11"
                         IsEnabled="{Binding HasCustomerBills}"/>
 
-                <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="10" Margin="0,10,0,0">
+                <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="10" Margin="0,2,0,0">
                     <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center"
                                Foreground="{Binding StatusMessage, Converter={StaticResource StatusColorConverter}}"
                                FontWeight="Medium" TextWrapping="Wrap"/>
@@ -155,12 +207,98 @@
             </Grid>
         </Border>
 
-        <!-- Items Grid (Row 2) -->
-        <GroupBox Grid.Row="2" Header="Items available for return" Foreground="{DynamicResource SubTextBrush}" FontWeight="SemiBold" Margin="0,0,0,10" VerticalAlignment="Stretch">
+        <!-- Top Bill & Customer Details Banner (Row 2) -->
+        <Border Grid.Row="2" Style="{DynamicResource CardBorder}" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" Padding="8,6" Margin="0,0,0,4"
+                Visibility="{Binding OriginalBill, Converter={StaticResource NullToVisibilityConverter}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2.5*"/> <!-- Customer Info -->
+                    <ColumnDefinition Width="1"/>    <!-- Separator -->
+                    <ColumnDefinition Width="2*"/>   <!-- Bill Info -->
+                    <ColumnDefinition Width="1"/>    <!-- Separator -->
+                    <ColumnDefinition Width="2.5*"/> <!-- Financial Summary -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Left Column: Customer Details -->
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                        <TextBlock Text="👤 CUSTOMER DETAILS" FontSize="10" FontWeight="Black" Foreground="{DynamicResource PrimaryBrush}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding DisplayCustomerName}" FontSize="12" FontWeight="Bold" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <TextBlock Text="📱 Phone:" FontSize="12" Foreground="#64748B" FontWeight="SemiBold" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding DisplayCustomerPhone}" FontSize="12" Foreground="#334155" FontWeight="Medium"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <TextBlock Text="📍 Address:" FontSize="11" Foreground="#64748B" FontWeight="SemiBold" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding DisplayCustomerAddress}" FontSize="11" Foreground="#334155" FontWeight="Medium" TextWrapping="Wrap" MaxHeight="30" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Vertical Separator -->
+                <Rectangle Grid.Column="1" Fill="#E2E8F0" Width="1" Margin="0,2"/>
+
+                <!-- Middle Column: Bill Details -->
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="16,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                        <TextBlock Text="📄 BILL INFORMATION" FontSize="10" FontWeight="Black" Foreground="{DynamicResource PrimaryBrush}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding DisplayInvoiceNumber}" FontSize="12" FontWeight="Bold" Foreground="#0F172A"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <TextBlock Text="🕒 Date:" FontSize="12" Foreground="#64748B" FontWeight="SemiBold" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding DisplayBillDate}" FontSize="12" Foreground="#334155" FontWeight="Medium"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <TextBlock Text="💳 Payment:" FontSize="11" Foreground="#64748B" FontWeight="SemiBold" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding DisplayPaymentMethod}" FontSize="11" Foreground="#334155" FontWeight="Medium"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Vertical Separator -->
+                <Rectangle Grid.Column="3" Fill="#E2E8F0" Width="1" Margin="0,2"/>
+
+                <!-- Right Column: Financial Overview -->
+                <StackPanel Grid.Column="4" VerticalAlignment="Center" Margin="16,0,0,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                        <TextBlock Text="💰 BILL FINANCIALS" FontSize="10" FontWeight="Black" Foreground="{DynamicResource PrimaryBrush}"/>
+                    </StackPanel>
+                    <Grid Margin="0,1">
+                        <TextBlock Text="Original Total:" FontSize="11" Foreground="#64748B" FontWeight="Medium"/>
+                        <TextBlock Text="{Binding DisplayOriginalTotal, StringFormat='Rs. {0:N0}'}" FontSize="12" FontWeight="Bold" Foreground="#0F172A" HorizontalAlignment="Right"/>
+                    </Grid>
+                    <Grid Margin="0,1">
+                        <TextBlock Text="Paid Amount:" FontSize="11" Foreground="#64748B" FontWeight="Medium"/>
+                        <TextBlock Text="{Binding DisplayPaidAmount, StringFormat='Rs. {0:N0}'}" FontSize="12" FontWeight="Bold" Foreground="#16A34A" HorizontalAlignment="Right"/>
+                    </Grid>
+                    <Grid Margin="0,1">
+                        <TextBlock Text="Remaining Due / Credit:" FontSize="11" Foreground="#64748B" FontWeight="Medium"/>
+                        <TextBlock Text="{Binding DisplayRemainingDue, StringFormat='Rs. {0:N0}'}" FontSize="12" FontWeight="Bold" HorizontalAlignment="Right">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#DC2626"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding DisplayRemainingDue}" Value="0">
+                                            <Setter Property="Foreground" Value="#16A34A"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <Grid Margin="0,1">
+                        <TextBlock Text="Returned Amount:" FontSize="11" Foreground="#64748B" FontWeight="Medium"/>
+                        <TextBlock Text="{Binding DisplayReturnedAmount, StringFormat='Rs. {0:N0}'}" FontSize="12" FontWeight="Bold" Foreground="#EF4444" HorizontalAlignment="Right"/>
+                    </Grid>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Items available for return (Cart) (Row 3) -->
+        <GroupBox Grid.Row="3" Header="Items available for return" Foreground="{DynamicResource SubTextBrush}" FontWeight="SemiBold" Margin="0,0,0,6" VerticalAlignment="Stretch">
             <Border Style="{DynamicResource CardBorder}" Padding="0">
                 <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False" CanUserAddRows="False" Style="{DynamicResource ModernDataGrid}"
                           ColumnHeaderStyle="{DynamicResource ModernDataGridColumnHeader}" CellStyle="{DynamicResource ModernDataGridCell}"
-                          VerticalAlignment="Top" MaxHeight="350" RowHeight="38">
+                          VerticalAlignment="Stretch" MinHeight="150" RowHeight="26">
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow" BasedOn="{StaticResource ModernDataGridRow}">
                             <Style.Triggers>
@@ -178,7 +316,15 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="120" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Unit Price" Binding="{Binding UnitPrice, StringFormat='Rs. {0:N2}'}" Width="100" IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="Padding" Value="0,0,10,0"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn Header="Sold" Binding="{Binding OriginalQuantity}" Width="65" IsReadOnly="True">
                              <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
@@ -226,21 +372,82 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Return Amount" Binding="{Binding TotalPrice, StringFormat='Rs. {0:N2}'}" Width="120" IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="Padding" Value="0,0,10,0"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>
         </GroupBox>
 
-        <!-- History Title (Row 3) -->
-        <TextBlock Grid.Row="3" Text="📜 Previous Returns for this Bill" FontSize="16" FontWeight="Bold" Margin="0,15,0,8"
+        <!-- Bottom Return Summary & Total Amount (Row 4) -->
+        <Border Grid.Row="4" Style="{DynamicResource CardBorder}" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" Padding="12,8" Margin="0,0,0,6"
+                Visibility="{Binding OriginalBill, Converter={StaticResource NullToVisibilityConverter}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/> <!-- Breakdown Details -->
+                    <ColumnDefinition Width="Auto"/> <!-- Total Return Amount -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Left Side: Credit Recovery & Cash Refund Breakdown -->
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <!-- When there is credit recovery -->
+                    <StackPanel Orientation="Horizontal" Visibility="{Binding ShowLiveCreditRecovery, Converter={StaticResource BoolToVis}}" Margin="0,0,0,4">
+                        <Border Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="🔁 Credits Recovered: " FontSize="12" FontWeight="Bold" Foreground="#1E40AF"/>
+                                <TextBlock Text="{Binding LiveCreditRecovery, StringFormat='Rs. {0:N2}'}" FontSize="12" FontWeight="Black" Foreground="#1D4ED8"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="(Adjusted against customer pending due)" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" FontStyle="Italic"/>
+                    </StackPanel>
+
+                    <!-- When there is cash refund -->
+                    <StackPanel Orientation="Horizontal" Visibility="{Binding ShowLiveCashRefund, Converter={StaticResource BoolToVis}}">
+                        <Border Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="💵 CASH REFUND DUE: " FontSize="12" FontWeight="Bold" Foreground="#92400E"/>
+                                <TextBlock Text="{Binding LiveCashRefund, StringFormat='Rs. {0:N2}'}" FontSize="12" FontWeight="Black" Foreground="#B45309"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="(Remaining amount returned to customer)" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" FontStyle="Italic"
+                                   Visibility="{Binding ShowLiveCreditRecovery, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="(Full return amount paid in cash)" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" FontStyle="Italic"
+                                   Visibility="{Binding ShowLiveCreditRecovery, Converter={StaticResource InvBoolToVis}}"/>
+                    </StackPanel>
+
+                    <!-- When 0 return amount entered -->
+                    <TextBlock Text="ℹ Enter return quantity in table above to calculate refund &amp; credit adjustment." 
+                               FontSize="12" Foreground="#94A3B8" FontStyle="Italic"
+                               Visibility="{Binding HasLiveReturn, Converter={StaticResource InvBoolToVis}}"/>
+                </StackPanel>
+
+                <!-- Right Side: Total Return Amount -->
+                <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="TOTAL RETURN AMOUNT" FontSize="11" FontWeight="Black" Foreground="#64748B" HorizontalAlignment="Right"/>
+                    <TextBlock Text="{Binding CurrentReturnGrandTotal, StringFormat='Rs. {0:N2}'}" FontSize="22" FontWeight="Black" Foreground="#15803D" HorizontalAlignment="Right" Margin="0,2,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- History Title (Row 5) -->
+        <TextBlock Grid.Row="5" Text="📜 Previous Returns for this Bill" FontSize="16" FontWeight="Bold" Margin="0,15,0,8"
                    Visibility="{Binding ReturnHistory.Count, Converter={StaticResource CountToVisibilityConverter}}"
                    xmlns:conv="clr-namespace:GroceryPOS.Converters"/>
 
-        <!-- Return History (Row 4) -->
-        <Border Grid.Row="4" Style="{DynamicResource CardBorder}" Padding="0" Margin="0,0,0,10"
+        <!-- Return History (Row 6) -->
+        <Border Grid.Row="6" Style="{DynamicResource CardBorder}" Padding="0" Margin="0,0,0,10"
                 Visibility="{Binding ReturnHistory.Count, Converter={StaticResource CountToVisibilityConverter}}">
             <DataGrid ItemsSource="{Binding ReturnHistory}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True"
-                      Style="{DynamicResource ModernDataGrid}" MaxHeight="250"
+                      Style="{DynamicResource ModernDataGrid}" MaxHeight="110"
                       ColumnHeaderStyle="{DynamicResource ModernDataGridColumnHeader}" RowStyle="{DynamicResource ModernDataGridRow}" CellStyle="{DynamicResource ModernDataGridCell}">
                  <DataGrid.Columns>
                     <DataGridTextColumn Header="Return #" Binding="{Binding ReturnBillId}" Width="90">
@@ -291,8 +498,8 @@
             </DataGrid>
         </Border>
 
-        <!-- Footer Actions (Row 5) -->
-        <Border Grid.Row="5" Margin="0,20,0,0">
+        <!-- Footer Actions (Row 7) -->
+        <Border Grid.Row="7" Margin="0,8,0,0">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="✖ Clear" Style="{DynamicResource SecondaryButton}" Width="110" Margin="0,0,15,0" Command="{Binding ClearFormCommand}"/>
                 <Button Content="View Preview" Style="{DynamicResource AccentButton}" Width="150" Margin="0,0,15,0" 
@@ -429,12 +636,12 @@
                         <!-- Cash Refund Row (visible only when cash refund > 0) -->
                         <Border CornerRadius="8" Padding="12,8" Margin="0,4"
                                 Background="#FEF3C7"
-                                Visibility="{Binding ShowCashRefundRow, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding ShowLiveCashRefund, Converter={StaticResource BoolToVis}}">
                             <StackPanel>
-                                <TextBlock Text="✅ CASH REFUND" FontSize="11" FontWeight="Bold" Foreground="#92400E"/>
+                                <TextBlock Text="💵 CASH REFUND" FontSize="11" FontWeight="Bold" Foreground="#92400E"/>
                                 <TextBlock FontSize="12" Foreground="#78350F" Margin="0,2,0,0">
                                     <Run Text="Amount to return: Rs. "/>
-                                    <Run Text="{Binding ReturnResultCashRefund, StringFormat='{}{0:N0}', Mode=OneWay}" FontWeight="Bold"/>
+                                    <Run Text="{Binding LiveCashRefund, StringFormat='{}{0:N0}', Mode=OneWay}" FontWeight="Bold"/>
                                 </TextBlock>
                             </StackPanel>
                         </Border>
@@ -442,12 +649,12 @@
                         <!-- Credit Adjustment Row (visible only when credit > 0) -->
                         <Border CornerRadius="8" Padding="12,8" Margin="0,4"
                                 Background="#EFF6FF"
-                                Visibility="{Binding ShowCreditAdjustRow, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding ShowLiveCreditRecovery, Converter={StaticResource BoolToVis}}">
                             <StackPanel>
                                 <TextBlock Text="🔁 ADJUSTED AGAINST CREDIT" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"/>
                                 <TextBlock FontSize="12" Foreground="#1E40AF" Margin="0,2,0,0">
                                     <Run Text="Amount adjusted: Rs. "/>
-                                    <Run Text="{Binding ReturnResultCreditAdjusted, StringFormat='{}{0:N0}', Mode=OneWay}" FontWeight="Bold"/>
+                                    <Run Text="{Binding LiveCreditRecovery, StringFormat='{}{0:N0}', Mode=OneWay}" FontWeight="Bold"/>
                                 </TextBlock>
                                 <TextBlock Text="No cash refund for this portion." FontSize="10" Foreground="#3B82F6" Margin="0,2,0,0"/>
                             </StackPanel>

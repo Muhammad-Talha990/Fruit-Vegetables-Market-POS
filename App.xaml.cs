@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using GroceryPOS.Data;
 using GroceryPOS.Data.Repositories;
@@ -27,6 +28,7 @@ public partial class App : Application
         // Global exception handling
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
 
         // Auto-select text via preview mouseDown for standard experience
         EventManager.RegisterClassHandler(typeof(TextBox), UIElement.PreviewMouseLeftButtonDownEvent, new MouseButtonEventHandler(TextBox_PreviewMouseDown));
@@ -154,33 +156,48 @@ public partial class App : Application
         _serviceProvider = services.BuildServiceProvider();
     }
 
-    private void ShowLogin()
+    private Window? _currentWindow;
+
+    private void ShowLogin(bool rebuildContainer = false)
     {
+        if (rebuildContainer)
+        {
+            ConfigureServices();
+            var cache = _serviceProvider.GetRequiredService<DataCacheService>();
+            cache.LoadAllData();
+        }
+
         var loginVM = _serviceProvider.GetRequiredService<LoginViewModel>();
         loginVM.Reset();
         var loginView = new LoginView { DataContext = loginVM };
 
         loginVM.LoginSucceeded += () =>
         {
-            loginView.Hide();
             ShowMainWindow();
         };
 
+        var oldWindow = _currentWindow;
+        _currentWindow = loginView;
+        Application.Current.MainWindow = loginView;
         loginView.Show();
+        oldWindow?.Close();
     }
 
     private void ShowMainWindow()
     {
         var mainVM = _serviceProvider.GetRequiredService<MainViewModel>();
-        var mainWindow = mainVM.InitializeView(); // Ensure the view is created with the resolved VM
+        var mainWindow = mainVM.InitializeView(); 
         
         mainVM.LogoutRequested += () =>
         {
-            mainWindow.Hide();
-            ShowLogin();
+            ShowLogin(rebuildContainer: true);
         };
 
+        var oldWindow = _currentWindow;
+        _currentWindow = mainWindow;
+        Application.Current.MainWindow = mainWindow;
         mainWindow.Show();
+        oldWindow?.Close();
     }
 
     private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
@@ -199,6 +216,12 @@ public partial class App : Application
                 ShowErrorDialog("A critical system error occurred.", ex);
             });
         }
+    }
+
+    private void TaskScheduler_UnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        AppLogger.Error("Unobserved Task Exception", e.Exception);
+        e.SetObserved();
     }
 
     private void ShowErrorDialog(string userMessage, Exception ex)

@@ -49,3 +49,5 @@ appsettings.Local.json
 *.bak
 *.old
 *.orig
+*_wpftmp.csproj
+Setup/Releases/

@@ -134,19 +134,17 @@
                         </Style>
                     </DataGrid.CellStyle>
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Date" Binding="{Binding CreatedAt, StringFormat='dd/MM/yy HH:mm'}" Width="150" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Invoice" Binding="{Binding InvoiceNumber}" Width="100" IsReadOnly="True">
+                        <DataGridTextColumn Header="Date" Binding="{Binding CreatedAt, StringFormat='dd/MM/yy HH:mm'}" Width="160" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Invoice" Binding="{Binding InvoiceNumber}" Width="130" IsReadOnly="True">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="FontWeight" Value="Bold"/>
                                     <Setter Property="VerticalAlignment" Value="Center"/>
-                                    <Setter Property="HorizontalAlignment" Value="Center"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Debit" Binding="{Binding GrandTotal, StringFormat='Rs. {0:N0}'}" Width="120" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Credit" Binding="{Binding PaidAmount, StringFormat='Rs. {0:N0}'}" Width="120" IsReadOnly="True">
+                        <DataGridTextColumn Header="Debit (Bill Amount)" Binding="{Binding GrandTotal, StringFormat='Rs. {0:N0}'}" Width="150" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Credit (Paid)" Binding="{Binding PaidAmount, StringFormat='Rs. {0:N0}'}" Width="150" IsReadOnly="True">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -154,40 +152,68 @@
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Header="Running Balance" Binding="{Binding RemainingAmount, StringFormat='Rs. {0:N0}'}" Width="130" IsReadOnly="True">
+                        <DataGridTextColumn Header="Running Balance" Binding="{Binding RemainingAmount, StringFormat='Rs. {0:N0}'}" Width="150" IsReadOnly="True">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="FontWeight" Value="Bold"/>
                                     <Setter Property="HorizontalAlignment" Value="Right"/>
+                                    <!-- Default: green (fully paid) -->
+                                    <Setter Property="Foreground" Value="#16A34A"/>
+                                    <Style.Triggers>
+                                        <!-- Red when there is a pending balance -->
+                                        <DataTrigger Binding="{Binding HasPendingCredit}" Value="True">
+                                            <Setter Property="Foreground" Value="#DC2626"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
 
-                        <DataGridTemplateColumn Width="190" Header="Actions">
+                        <DataGridTemplateColumn Width="*" Header="Actions">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="8,4">
                                         <Button Content="View Detail"
                                                 Command="{Binding DataContext.ViewBillCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                 CommandParameter="{Binding}"
-                                                Background="Transparent" Foreground="#3B82F6" BorderThickness="0"
-                                                Cursor="Hand" Padding="4,2" Margin="0,0,12,0">
+                                                Background="#EFF6FF" Foreground="#2563EB" BorderBrush="#BFDBFE" BorderThickness="1"
+                                                Cursor="Hand" Padding="10,4" Margin="0,0,8,0">
                                             <Button.Template>
                                                 <ControlTemplate TargetType="Button">
-                                                    <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="12"/>
+                                                    <Border Background="{TemplateBinding Background}" 
+                                                            BorderBrush="{TemplateBinding BorderBrush}" 
+                                                            BorderThickness="{TemplateBinding BorderThickness}" 
+                                                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                                        <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#DBEAFE"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
                                                 </ControlTemplate>
                                             </Button.Template>
                                         </Button>
 
-                                        <Button Content="Pay"
+                                        <Button Content="Pay Due"
                                                 Command="{Binding DataContext.OpenPaymentPanelCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                 CommandParameter="{Binding}"
-                                                Background="Transparent" Foreground="#22C55E" BorderThickness="0"
-                                                Cursor="Hand" Padding="4,2" Margin="0,0,12,0"
+                                                Background="#F0FDF4" Foreground="#16A34A" BorderBrush="#BBF7D0" BorderThickness="1"
+                                                Cursor="Hand" Padding="10,4" Margin="0,0,8,0"
                                                 Visibility="{Binding HasPendingCredit, Converter={StaticResource WpfBoolToVis}}">
                                             <Button.Template>
                                                 <ControlTemplate TargetType="Button">
-                                                    <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="12"/>
+                                                    <Border Background="{TemplateBinding Background}" 
+                                                            BorderBrush="{TemplateBinding BorderBrush}" 
+                                                            BorderThickness="{TemplateBinding BorderThickness}" 
+                                                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                                        <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#DCFCE7"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
                                                 </ControlTemplate>
                                             </Button.Template>
                                         </Button>
@@ -195,11 +221,21 @@
                                         <Button Content="Print"
                                                 Command="{Binding DataContext.PrintBillCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                 CommandParameter="{Binding}"
-                                                Background="Transparent" Foreground="#94A3B8" BorderThickness="0"
-                                                Cursor="Hand" Padding="4,2">
+                                                Background="#F8FAFC" Foreground="#64748B" BorderBrush="#E2E8F0" BorderThickness="1"
+                                                Cursor="Hand" Padding="10,4">
                                             <Button.Template>
                                                 <ControlTemplate TargetType="Button">
-                                                    <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="12"/>
+                                                    <Border Background="{TemplateBinding Background}" 
+                                                            BorderBrush="{TemplateBinding BorderBrush}" 
+                                                            BorderThickness="{TemplateBinding BorderThickness}" 
+                                                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                                        <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#F1F5F9"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
                                                 </ControlTemplate>
                                             </Button.Template>
                                         </Button>

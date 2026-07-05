@@ -156,7 +156,7 @@ namespace GroceryPOS.Data.Repositories
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
                        (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                       (SELECT COALESCE(SUM(CASE WHEN Type = 'payment' THEN Amount WHEN Type = 'refund' THEN -Amount ELSE 0 END), 0)
+                       (SELECT COALESCE(SUM(CASE WHEN Type = 'payment' THEN Amount ELSE 0 END), 0)
                         FROM bill_payment
                         WHERE BillId = b.BillId) as AdditionalPaid,
                        (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned
@@ -204,7 +204,7 @@ namespace GroceryPOS.Data.Repositories
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
                        (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                       (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount WHEN p.Type = 'refund' THEN -p.Amount ELSE 0 END), 0)
+                       (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount ELSE 0 END), 0)
                         FROM bill_payment p
                         WHERE p.BillId = b.BillId) as AdditionalPaid,
                        (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned
@@ -237,7 +237,7 @@ namespace GroceryPOS.Data.Repositories
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
                        (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                       (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount WHEN p.Type = 'refund' THEN -p.Amount ELSE 0 END), 0)
+                       (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount ELSE 0 END), 0)
                         FROM bill_payment p
                         WHERE p.BillId = b.BillId) as AdditionalPaid,
                        (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned
@@ -682,7 +682,7 @@ namespace GroceryPOS.Data.Repositories
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
                         (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                        (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount WHEN p.Type = 'refund' THEN -p.Amount ELSE 0 END), 0)
+                        (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount ELSE 0 END), 0)
                          FROM bill_payment p
                          WHERE p.BillId = b.BillId) as AdditionalPaid,
                         (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned,
@@ -717,7 +717,7 @@ namespace GroceryPOS.Data.Repositories
                        c.FullName as CustomerName, c.Phone as CustomerPhone, c.Address as CustomerAddress,
                        a.AccountTitle, a.AccountType, a.BankName,
                         (SELECT COALESCE(SUM(Quantity * UnitPrice), 0) FROM BillItems WHERE BillId = b.BillId) as SubTotal,
-                        (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount WHEN p.Type = 'refund' THEN -p.Amount ELSE 0 END), 0)
+                        (SELECT COALESCE(SUM(CASE WHEN p.Type = 'payment' THEN p.Amount ELSE 0 END), 0)
                          FROM bill_payment p
                          WHERE p.BillId = b.BillId) as AdditionalPaid,
                         (SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId) as TotalReturned,
@@ -1081,12 +1081,166 @@ namespace GroceryPOS.Data.Repositories
             return allBills.Where(b => b.RemainingAmount > 0 && b.Status != "Cancelled").ToList();
         }
 
-        /// <summary>
-        /// Returns all bills for a customer for the ledger view (all statuses, Sale type only).
-        /// </summary>
+        /// <summary>Returns all bills for a customer for the ledger view (all statuses, Sale type only).</summary>
         public List<Bill> GetLedgerByCustomer(int customerId)
         {
             return GetBillsByCustomerId(customerId);
+        }
+
+        // ─────────────────────────────────────────────────────────
+        //  ANALYTICS QUERIES (for Reports Dashboard)
+        // ─────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Returns per-day aggregated sales and return totals for a date range.
+        /// Each tuple: (Date, TotalSales, TotalReturns, BillCount)
+        /// </summary>
+        public List<(DateTime Date, double TotalSales, double TotalReturns, int BillCount)> GetDailySalesSeries(DateTime from, DateTime to)
+        {
+            var results = new List<(DateTime, double, double, int)>();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT
+                    date(b.CreatedAt) AS SaleDate,
+                    COALESCE(SUM(CASE WHEN b.Type = 'Sale' THEN
+                        (SELECT COALESCE(SUM(Quantity * UnitPrice - COALESCE(DiscountAmount,0)), 0) FROM BillItems WHERE BillId = b.BillId)
+                        + COALESCE(b.TaxAmount,0) - COALESCE(b.DiscountAmount,0)
+                    ELSE 0 END), 0) AS DaySales,
+                    COALESCE(SUM(CASE WHEN b.Type = 'Return' THEN
+                        ABS((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId))
+                    ELSE 0 END), 0) AS DayReturns,
+                    COUNT(CASE WHEN b.Type = 'Sale' THEN 1 END) AS BillCount
+                FROM Bills b
+                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
+                  AND b.Status != 'Cancelled'
+                GROUP BY date(b.CreatedAt)
+                ORDER BY SaleDate ASC;";
+            cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var date = DateTime.Parse(reader.GetString(0));
+                var sales = reader.IsDBNull(1) ? 0 : reader.GetDouble(1);
+                var returns = reader.IsDBNull(2) ? 0 : reader.GetDouble(2);
+                var count = reader.IsDBNull(3) ? 0 : reader.GetInt32(3);
+                results.Add((date, sales, returns, count));
+            }
+            return results;
+        }
+
+        /// <summary>
+        /// Returns top N products by revenue in a date range.
+        /// Each tuple: (ProductName, Revenue, QuantitySold)
+        /// </summary>
+        public List<(string Name, double Revenue, int Qty)> GetTopProductsSeries(DateTime from, DateTime to, int topN = 5)
+        {
+            var results = new List<(string, double, int)>();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT
+                    COALESCE(i.Description, 'Unknown') AS ProductName,
+                    SUM(bi.Quantity * bi.UnitPrice - COALESCE(bi.DiscountAmount, 0)) AS Revenue,
+                    SUM(bi.Quantity) AS TotalQty
+                FROM BillItems bi
+                INNER JOIN Bills b ON bi.BillId = b.BillId
+                LEFT  JOIN Items i ON bi.ItemId = i.ItemId
+                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
+                  AND b.Type = 'Sale' AND b.Status != 'Cancelled'
+                GROUP BY bi.ItemId, ProductName
+                ORDER BY Revenue DESC
+                LIMIT @topN;";
+            cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@topN", topN);
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                results.Add((
+                    reader.GetString(0),
+                    reader.IsDBNull(1) ? 0 : reader.GetDouble(1),
+                    reader.IsDBNull(2) ? 0 : reader.GetInt32(2)
+                ));
+            }
+            return results;
+        }
+
+        /// <summary>
+        /// Returns payment method breakdown (Cash, Online sub-types, Credit) for a date range.
+        /// </summary>
+        public Dictionary<string, double> GetPaymentMethodBreakdownForRange(DateTime from, DateTime to)
+        {
+            var result = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT
+                    CASE
+                        WHEN b.PaymentMethod = 'Online' AND b.OnlinePaymentMethod IS NOT NULL
+                             THEN b.OnlinePaymentMethod
+                        ELSE b.PaymentMethod
+                    END AS Method,
+                    SUM(
+                        (SELECT COALESCE(SUM(Quantity * UnitPrice - COALESCE(DiscountAmount,0)), 0) FROM BillItems WHERE BillId = b.BillId)
+                        + COALESCE(b.TaxAmount,0) - COALESCE(b.DiscountAmount,0)
+                    ) AS TotalRevenue
+                FROM Bills b
+                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
+                  AND b.Type = 'Sale' AND b.Status != 'Cancelled'
+                GROUP BY Method
+                ORDER BY TotalRevenue DESC;";
+            cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var method = reader.IsDBNull(0) ? "Cash" : reader.GetString(0);
+                var revenue = reader.IsDBNull(1) ? 0 : reader.GetDouble(1);
+                result[method] = revenue;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Returns cashier-level performance: bill count and total revenue in a date range.
+        /// </summary>
+        public List<(string CashierName, int BillCount, double Revenue)> GetCashierPerformance(DateTime from, DateTime to)
+        {
+            var results = new List<(string, int, double)>();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT
+                    COALESCE(u.FullName, u.Username, 'Unknown') AS Cashier,
+                    COUNT(b.BillId) AS BillCount,
+                    SUM(
+                        (SELECT COALESCE(SUM(Quantity * UnitPrice - COALESCE(DiscountAmount,0)), 0) FROM BillItems WHERE BillId = b.BillId)
+                        + COALESCE(b.TaxAmount,0) - COALESCE(b.DiscountAmount,0)
+                    ) AS Revenue
+                FROM Bills b
+                LEFT JOIN Users u ON b.UserId = u.Id
+                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
+                  AND b.Type = 'Sale' AND b.Status != 'Cancelled'
+                GROUP BY b.UserId
+                ORDER BY Revenue DESC;";
+            cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                results.Add((
+                    reader.GetString(0),
+                    reader.IsDBNull(1) ? 0 : reader.GetInt32(1),
+                    reader.IsDBNull(2) ? 0 : reader.GetDouble(2)
+                ));
+            }
+            return results;
         }
     }
 }

@@ -41,8 +41,12 @@ namespace GroceryPOS.Models
 
         // ── Calculated Properties ──
         public int BillCount { get; set; }
+        public string BillCountDisplay => BillCount == 1 ? "1 bill" : $"{BillCount} bills";
         public double TotalAmount { get; set; }
         public DateTime? LastVisitDate { get; set; }
+        
+        /// <summary>Dynamic serial number for UI display.</summary>
+        public int SerialNumber { get; set; }
 
         /// <summary>
         /// Total outstanding credit (sum of RemainingAmount on unpaid bills).

@@ -98,7 +98,7 @@
                     <Style TargetType="DataGridCell" BasedOn="{StaticResource ModernDataGridCell}"/>
                 </DataGrid.CellStyle>
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="ID" Binding="{Binding CustomerId}" Width="60"/>
+                    <DataGridTextColumn Header="S.No" Binding="{Binding SerialNumber}" Width="60"/>
                     <DataGridTextColumn Header="Name" Binding="{Binding FullName}" Width="*" MinWidth="180"/>
                     <DataGridTextColumn Header="Phone" Binding="{Binding PrimaryPhone}" Width="120"/>
                     <DataGridTextColumn Header="Phone 2" Binding="{Binding SecondaryPhone}" Width="120"/>
@@ -125,13 +125,13 @@
                     </DataGridTemplateColumn>
 
                     <!-- Status badge -->
-                    <DataGridTemplateColumn Header="Status" Width="100">
+                    <DataGridTemplateColumn Header="Status" Width="85">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <Border CornerRadius="12" Padding="10,4" HorizontalAlignment="Left" Margin="8,0">
+                                <Border CornerRadius="12" Padding="8,4" HorizontalAlignment="Center" Margin="0">
                                     <Border.Style>
                                         <Style TargetType="Border">
-                                            <Setter Property="Background" Value="{DynamicResource SuccessBrush}"/>
+                                            <Setter Property="Background" Value="#16A34A"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsActive}" Value="False">
                                                     <Setter Property="Background" Value="#94A3B8"/>
@@ -139,35 +139,106 @@
                                             </Style.Triggers>
                                         </Style>
                                     </Border.Style>
-                                    <TextBlock Text="{Binding StatusLabel}" FontSize="12" FontWeight="SemiBold" Foreground="White"/>
+                                    <TextBlock Text="{Binding StatusLabel}" FontSize="12" FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center"/>
                                 </Border>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
                     <!-- Action Buttons -->
-                    <DataGridTemplateColumn Header="Actions" Width="280">
+                    <DataGridTemplateColumn Header="Actions" Width="320">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="8,0">
-                                    <Button Content="✏ Edit" Cursor="Hand" Margin="0,0,12,0"
+                                    <!-- Edit Button -->
+                                    <Button Cursor="Hand" Margin="0,0,16,0"
                                             Command="{Binding DataContext.EditCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                            CommandParameter="{Binding}"
-                                            Foreground="{DynamicResource PrimaryBrush}" Background="Transparent" BorderThickness="0" FontSize="13" FontWeight="SemiBold"/>
-                                    <Button Content="📒 Ledger" Cursor="Hand" Margin="0,0,12,0"
+                                            CommandParameter="{Binding}" Background="Transparent" BorderThickness="0">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" Padding="6,4" CornerRadius="4">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" 
+                                                              Fill="#0D9488" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="Edit" Foreground="#0D9488" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#CCFBF1"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+
+                                    <!-- Ledger Button -->
+                                    <Button Cursor="Hand" Margin="0,0,16,0"
                                             Command="{Binding DataContext.ViewLedgerCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                            CommandParameter="{Binding}"
-                                            Foreground="{DynamicResource AccentBrush}" Background="Transparent" BorderThickness="0" FontSize="13" FontWeight="SemiBold"/>
-                                    <Button Content="❌ Deactivate" Cursor="Hand"
+                                            CommandParameter="{Binding}" Background="Transparent" BorderThickness="0">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" Padding="6,4" CornerRadius="4">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z" 
+                                                              Fill="#F59E0B" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="Ledger" Foreground="#F59E0B" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#FEF3C7"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+
+                                    <!-- Deactivate Button -->
+                                    <Button Cursor="Hand"
                                             Command="{Binding DataContext.DeactivateCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                            CommandParameter="{Binding}"
-                                            Foreground="{DynamicResource DangerBrush}" Background="Transparent" BorderThickness="0" FontSize="13" FontWeight="SemiBold"
-                                            Visibility="{Binding IsActive, Converter={StaticResource WpfBoolToVis}}"/>
-                                    <Button Content="✅ Reactivate" Cursor="Hand"
+                                            CommandParameter="{Binding}" Background="Transparent" BorderThickness="0"
+                                            Visibility="{Binding IsActive, Converter={StaticResource WpfBoolToVis}}">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" Padding="6,4" CornerRadius="4">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" 
+                                                              Fill="#DC2626" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="Deactivate" Foreground="#DC2626" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#FEE2E2"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+
+                                    <!-- Reactivate Button -->
+                                    <Button Cursor="Hand"
                                             Command="{Binding DataContext.ReactivateCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                            CommandParameter="{Binding}"
-                                            Foreground="{DynamicResource SuccessBrush}" Background="Transparent" BorderThickness="0" FontSize="13" FontWeight="SemiBold"
-                                            Visibility="{Binding IsActive, Converter={StaticResource InverseBoolToVis}}"/>
+                                            CommandParameter="{Binding}" Background="Transparent" BorderThickness="0"
+                                            Visibility="{Binding IsActive, Converter={StaticResource InverseBoolToVis}}">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" Padding="6,4" CornerRadius="4">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Path Data="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" 
+                                                              Fill="#16A34A" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="Reactivate" Foreground="#16A34A" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#DCFCE7"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
                                 </StackPanel>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>

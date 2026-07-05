@@ -4,6 +4,7 @@
         xmlns:helpers="clr-namespace:GroceryPOS.Helpers"
         Title="GroceryPOS — Login" Height="550" Width="420"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        Icon="/Assets/logo.png"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         FocusManager.FocusedElement="{Binding ElementName=UsernameTextBox}">
 

@@ -761,8 +761,18 @@ namespace GroceryPOS.Services
 
             if (!isReturn)
             {
+                string paymentMethodText = _billToPrint.PaymentMethod ?? "Cash";
+                if (paymentMethodText.Equals("Online", StringComparison.OrdinalIgnoreCase))
+                {
+                    string accountDetails = _billToPrint.Account?.AccountTitle ?? _billToPrint.OnlinePaymentMethod ?? string.Empty;
+                    if (!string.IsNullOrEmpty(accountDetails))
+                    {
+                        paymentMethodText = $"Online ({accountDetails})";
+                    }
+                }
+
                 g.DrawString("Payment:", normalFont, Brushes.Black, margin, y);
-                g.DrawString(_billToPrint.PaymentMethod ?? "Cash", normalFont, Brushes.Black, pageWidth, y, sfRight);
+                g.DrawString(paymentMethodText, normalFont, Brushes.Black, pageWidth, y, sfRight);
                 y += 14;
 
                 if (_billToPrint.CashReceived > 0)

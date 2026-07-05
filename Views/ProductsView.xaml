@@ -84,9 +84,9 @@
 
             <!-- Product Form -->
             <Border Grid.Column="1" Style="{DynamicResource CardBorder}" Padding="0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="18,18,12,18">
+                <ScrollViewer VerticalScrollBarVisibility="Hidden" Padding="14,12,12,12">
                     <StackPanel>
-                        <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,18">
+                        <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,12">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Text" Value="➕ Add Product"/>
@@ -100,22 +100,22 @@
                         </TextBlock>
 
                         <!-- Name -->
-                        <TextBlock Text="📌 Product Name *" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="📌 Product Name *" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,2"/>
                         <TextBox Style="{DynamicResource ModernTextBox}" 
                                  Text="{Binding FormName, UpdateSourceTrigger=PropertyChanged}" 
                                  helpers:FocusHelper.SelectAllOnFocus="True"
-                                 Margin="0,0,0,8"/>
+                                 Margin="0,0,0,6"/>
 
                         <!-- Barcode -->
-                        <TextBlock Text="🏷️ Barcode" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="🏷️ Barcode" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,2"/>
                         <TextBox Style="{DynamicResource ModernTextBox}" 
                                  Text="{Binding FormBarcode, UpdateSourceTrigger=PropertyChanged}" 
                                  helpers:FocusHelper.NumericOnly="True"
                                  helpers:FocusHelper.SelectAllOnFocus="True"
-                                 Margin="0,0,0,8"/>
+                                 Margin="0,0,0,6"/>
 
                         <!-- Category -->
-                        <TextBlock Text="📂 Category *" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="📂 Category *" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,2"/>
                         <ComboBox Style="{DynamicResource ModernComboBox}"
                                   ItemsSource="{Binding Categories}"
                                   IsEditable="True"
@@ -123,24 +123,24 @@
                                   helpers:FocusHelper.LettersOnly="True"
                                   helpers:FocusHelper.SelectAllOnFocus="True"
                                   Text="{Binding FormCategory, UpdateSourceTrigger=PropertyChanged}"
-                                  Margin="0,0,0,8"/>
+                                  Margin="0,0,0,6"/>
 
                         <!-- Prices -->
-                        <Grid Margin="0,0,0,12">
+                        <Grid Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="8"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
-                                <TextBlock Text="💰 Cost (Rs.)" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
+                                <TextBlock Text="💰 Cost (Rs.)" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,2"/>
                                 <TextBox Style="{DynamicResource ModernTextBox}" 
                                          helpers:FocusHelper.DecimalOnly="True"
                                          helpers:FocusHelper.SelectAllOnFocus="True"
                                          Text="{Binding FormCostPrice, UpdateSourceTrigger=PropertyChanged}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="💵 Sale (Rs.)" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
+                                <TextBlock Text="💵 Sale (Rs.)" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,2"/>
                                 <TextBox Style="{DynamicResource ModernTextBox}" 
                                          helpers:FocusHelper.DecimalOnly="True"
                                          helpers:FocusHelper.SelectAllOnFocus="True"
@@ -149,15 +149,15 @@
                         </Grid>
 
                         <!-- Stock Info -->
-                        <TextBlock Text="📊 Inventory Status" FontSize="13" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold" Margin="0,8,0,10"/>
-                        <Grid Margin="0,0,0,12">
+                        <TextBlock Text="📊 Inventory Status" FontSize="13" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold" Margin="0,6,0,6"/>
+                        <Grid Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="8"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
-                                <TextBlock Text="📦 Quantity" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
+                                <TextBlock Text="📦 Quantity" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,2"/>
                                 <TextBox Text="{Binding FormStockQuantity, UpdateSourceTrigger=PropertyChanged}"
                                           IsReadOnly="{Binding IsEditing}"
                                           helpers:FocusHelper.DecimalOnly="True"
@@ -179,7 +179,7 @@
                                 </TextBox>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="⚠️ Min. Threshold" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,4"/>
+                                <TextBlock Text="⚠️ Min. Threshold" FontSize="12" Foreground="{DynamicResource SubTextBrush}" Margin="0,0,0,2"/>
                                 <TextBox Style="{DynamicResource ModernTextBox}" 
                                           helpers:FocusHelper.DecimalOnly="True"
                                           Text="{Binding FormMinStockThreshold, UpdateSourceTrigger=PropertyChanged}"
@@ -190,7 +190,7 @@
 
 
                         <!-- Status Message -->
-                        <TextBlock Text="{Binding StatusMessage}" FontSize="12" Margin="0,0,0,14" TextWrapping="Wrap"
+                        <TextBlock Text="{Binding StatusMessage}" FontSize="11" Margin="0,0,0,6" TextWrapping="Wrap"
                                    Foreground="{DynamicResource AccentBrush}"/>
 
                         <!-- Buttons -->
@@ -202,9 +202,6 @@
                                 Command="{Binding UpdateCommand}" Margin="0,0,0,8"
                                 Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"/>
 
-                        <Button Content="🗑️  Delete Product" Style="{DynamicResource DangerButton}"
-                                Command="{Binding DeleteCommand}" Margin="0,0,0,8"
-                                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"/>
 
                         <Button Content="🔄  Clear Form" Style="{DynamicResource PrimaryButton}"
                                 Command="{Binding ClearFormCommand}" Background="#607D8B"/>

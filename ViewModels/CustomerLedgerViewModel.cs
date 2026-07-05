@@ -528,8 +528,8 @@ namespace GroceryPOS.ViewModels
         private void BuildBillAuditTimeline(Bill bill)
         {
             BillAuditTimeline.Clear();
-            // Start from original bill total, then apply each timeline event in sequence.
-            // This keeps row-1 (sale creation) balance accurate before returns.
+            // runningPending tracks how much the customer still owes.
+            // We start at GrandTotal and subtract each payment in chronological order.
             double runningPending = Math.Max(0, bill.GrandTotal);
 
             foreach (var payment in bill.PaymentLogs)
@@ -537,19 +537,23 @@ namespace GroceryPOS.ViewModels
                 bool isRefund = string.Equals(payment.TransactionType, "Refund", StringComparison.OrdinalIgnoreCase);
                 if (isRefund)
                 {
-                    // Refund is now represented inside the RETURN row note to avoid duplicate rows.
+                    // Refund is represented inside the RETURN row note to avoid duplicate rows.
                     continue;
                 }
+
+                bool isSale = string.Equals(payment.TransactionType, "Sale", StringComparison.OrdinalIgnoreCase);
+
                 BillAuditTimeline.Add(new BillAuditTimelineEntry
                 {
                     Date = payment.PaidAt,
-                    Type = string.Equals(payment.TransactionType, "Sale", StringComparison.OrdinalIgnoreCase) ? "Sale Created" : "Payment",
+                    Type = isSale ? "Sale Created" : "Payment",
                     Method = string.IsNullOrWhiteSpace(payment.PaymentMethod) ? "Cash" : payment.PaymentMethod,
                     Amount = Math.Abs(payment.AmountPaid),
                     Note = BuildPaymentNote(payment, bill),
-                    IsReturn = false, // keep refund as cash detail row
-                    IsRefund = isRefund,
-                    SortOrder = isRefund ? 2 : 3,
+                    IsReturn = false,
+                    IsRefund = false,
+                    // Sale Created MUST sort first (SortOrder=0); regular payments sort after returns (SortOrder=3)
+                    SortOrder = isSale ? 0 : 3,
                     SourceOrderId = payment.PaymentId,
                     ReturnGroup = null,
                     BalanceImpact = Math.Abs(payment.AmountPaid)
@@ -575,13 +579,20 @@ namespace GroceryPOS.ViewModels
                 });
             }
 
+            // Sale Created = SortOrder 0 → ALWAYS first, regardless of timestamp
+            // Returns      = SortOrder 1 → before same-timestamp refund detail
+            // Payments     = SortOrder 3 → after returns within same timestamp
             var ordered = BillAuditTimeline
-                .OrderBy(x => x.Date)
-                .ThenBy(x => x.SortOrder)
-                .ThenBy(x => x.SourceOrderId)
+                .OrderBy(x => x.SortOrder)       // primary: Sale Created (0) always first
+                .ThenBy(x => x.Date)             // secondary: chronological within same tier
+                .ThenBy(x => x.SourceOrderId)    // tertiary: insertion order tiebreak
                 .ToList();
 
             // Build "remaining after this row" in strict chronological order.
+            // The Sale Created row's BalanceImpact = initial payment at the time of sale.
+            // After Sale row  → remaining = GrandTotal - InitialPayment (opening credit)
+            // After Payment   → remaining = previous remaining - payment amount
+            // After Return    → remaining = previous remaining - credit adjusted
             int stepNo = 1;
             foreach (var row in ordered)
             {
@@ -602,6 +613,9 @@ namespace GroceryPOS.ViewModels
                 }
                 else
                 {
+                    // Subtract this payment's contribution from the running balance.
+                    // For Sale Created: BalanceImpact = InitialPayment → remaining becomes GrandTotal - InitialPayment
+                    // For Payment:      BalanceImpact = payment amount  → remaining decreases further
                     var paymentApplied = Math.Min(runningPending, Math.Max(0, row.BalanceImpact));
                     runningPending = Math.Max(0, runningPending - paymentApplied);
                 }

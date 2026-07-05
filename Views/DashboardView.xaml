@@ -130,7 +130,7 @@
                 </Border>
 
                 <!-- Online Payments -->
-                <Border Style="{DynamicResource CardBorder}" Margin="0,0,0,8">
+                <Border Style="{DynamicResource CardBorder}" Margin="0,0,8,8">
                     <StackPanel>
                         <TextBlock Text="&#x1F310;" FontSize="22" Margin="0,0,0,4"/>
                         <TextBlock Text="Online Payments" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
@@ -139,7 +139,37 @@
                                 <Binding Path="TodayOnlinePayments" StringFormat="Rs.{0:N0}"/>
                             </TextBlock.Text>
                         </TextBlock>
-                        <TextBlock Text="online payments today" Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,0"/>
+                        <TextBlock Text="online payments today" Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,8"/>
+                        
+                        <!-- Breakdown of Online Payments -->
+                        <ItemsControl ItemsSource="{Binding OnlinePaymentBreakdown}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Method}" FontSize="10" Foreground="{DynamicResource SubTextBrush}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Amount, StringFormat='Rs.{0:N0}'}" FontSize="10" FontWeight="SemiBold" Foreground="#0EA5E9" Margin="5,0,0,0"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Cash in Hand -->
+                <Border Style="{DynamicResource CardBorder}" Margin="0,0,0,8">
+                    <StackPanel>
+                        <TextBlock Text="&#x1F4B5;" FontSize="22" Margin="0,0,0,4"/>
+                        <TextBlock Text="Cash in Hand" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource SubTextBrush}"/>
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="#10B981" Margin="0,2,0,0">
+                            <TextBlock.Text>
+                                <Binding Path="TodayCashInHand" StringFormat="Rs.{0:N0}"/>
+                            </TextBlock.Text>
+                        </TextBlock>
+                        <TextBlock Text="drawer + online payments" Foreground="{DynamicResource SubTextBrush}" FontSize="10" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
 
@@ -160,34 +190,70 @@
 
                         <DataGrid ItemsSource="{Binding RecentSales}" Style="{DynamicResource ModernDataGrid}"
                                   ColumnHeaderStyle="{DynamicResource ModernDataGridColumnHeader}"
-                                  RowStyle="{DynamicResource ModernDataGridRow}"
                                   CellStyle="{DynamicResource ModernDataGridCell}"
-                                  MaxHeight="300">
+                                  MaxHeight="300"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <DataGrid.InputBindings>
+                                <MouseBinding Gesture="LeftDoubleClick" Command="{Binding OpenBillDetailCommand}" 
+                                              CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=DataGrid}, Path=SelectedItem}" />
+                            </DataGrid.InputBindings>
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow" BasedOn="{StaticResource ModernDataGridRow}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasPendingCredit}" Value="True">
+                                            <Setter Property="Background" Value="#FEF9C3"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.RowStyle>
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Invoice" Binding="{Binding InvoiceNumber}" Width="70"/>
-                                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*">
-                                    <DataGridTextColumn.ElementStyle>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Padding" Value="10,0"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Status}" Value="*** RETURN BILL ***">
-                                                    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
-                                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </DataGridTextColumn.ElementStyle>
-                                </DataGridTextColumn>
-                                <DataGridTemplateColumn Header="Total" Width="Auto">
+                                <DataGridTextColumn Header="Customer" Binding="{Binding Customer.FullName, FallbackValue='Walk-in'}" Width="*"/>
+                                <DataGridTemplateColumn Header="Status" Width="78">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding GrandTotal, StringFormat='Rs.{0:N0}'}"
-                                                       VerticalAlignment="Center" Padding="10,0">
+                                            <Border CornerRadius="8" Padding="6,2" HorizontalAlignment="Left"
+                                                    Margin="4,0">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="#DCFCE7"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding PaymentStatus}" Value="PartialPaid">
+                                                                <Setter Property="Background" Value="#FEF3C7"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock FontSize="10" FontWeight="SemiBold">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="Paid"/>
+                                                            <Setter Property="Foreground" Value="#16A34A"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding PaymentStatus}" Value="PartialPaid">
+                                                                    <Setter Property="Text" Value="Credit"/>
+                                                                    <Setter Property="Foreground" Value="#D97706"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Total" Binding="{Binding GrandTotal, StringFormat='Rs.{0:N0}'}" Width="Auto"/>
+                                <DataGridTemplateColumn Header="Due" Width="Auto">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock VerticalAlignment="Center" Padding="4,0"
+                                                       Text="{Binding RemainingAmount, StringFormat='Rs.{0:N0}'}">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource SubTextBrush}"/>
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding Status}" Value="*** RETURN BILL ***">
-                                                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                                            <DataTrigger Binding="{Binding HasPendingCredit}" Value="True">
+                                                                <Setter Property="Foreground" Value="#DC2626"/>
                                                                 <Setter Property="FontWeight" Value="Bold"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
@@ -197,7 +263,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="Time" Binding="{Binding SaleDate, StringFormat='dd/MM HH:mm'}" Width="Auto"/>
+                                <DataGridTextColumn Header="Time" Binding="{Binding SaleDate, StringFormat='HH:mm'}" Width="52"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </StackPanel>

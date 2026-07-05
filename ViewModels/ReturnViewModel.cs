@@ -67,7 +67,13 @@ namespace GroceryPOS.ViewModels
         public Bill? OriginalBill
         {
             get => _originalBill;
-            set => SetProperty(ref _originalBill, value);
+            set
+            {
+                if (SetProperty(ref _originalBill, value))
+                {
+                    NotifyBillDisplayProperties();
+                }
+            }
         }
 
         public ObservableCollection<ReturnItemViewModel> Items { get; } = new();
@@ -120,6 +126,63 @@ namespace GroceryPOS.ViewModels
         public bool ShowCashRefundRow    => ReturnResultCashRefund > 0;
         public bool ShowCreditAdjustRow  => ReturnResultCreditAdjusted > 0;
 
+        // ── Bill Details Banner Display Helpers ──
+        public bool HasOriginalBill => OriginalBill != null;
+        public string DisplayCustomerName => OriginalBill?.Customer?.FullName ?? "Walk-in Customer";
+        public string DisplayCustomerPhone => string.IsNullOrWhiteSpace(OriginalBill?.Customer?.Phone) ? "—" : OriginalBill!.Customer!.Phone;
+        public string DisplayCustomerAddress => string.IsNullOrWhiteSpace(OriginalBill?.Customer?.Address) 
+            ? (string.IsNullOrWhiteSpace(OriginalBill?.BillingAddress) ? "No address recorded" : OriginalBill.BillingAddress!) 
+            : OriginalBill!.Customer!.Address!;
+        public string DisplayInvoiceNumber => OriginalBill?.InvoiceNumber != null ? $"Bill #{OriginalBill.InvoiceNumber}" : "—";
+        public string DisplayBillDate => OriginalBill?.CreatedAt.ToString("dd MMM yyyy, hh:mm tt") ?? "—";
+        public string DisplayPaymentMethod => OriginalBill?.OnlinePaymentMethod != null ? $"{OriginalBill.PaymentMethod} ({OriginalBill.OnlinePaymentMethod})" : (OriginalBill?.PaymentMethod ?? "Cash");
+
+        // Always static — the original bill total never changes
+        public double DisplayOriginalTotal => OriginalBill?.GrandTotal ?? 0;
+
+        // All returns: already returned (from DB) + what is currently being entered live
+        public double DisplayReturnedAmount => OriginalBill == null ? 0 :
+            Math.Round(OriginalBill.ReturnedAmount + (double)CurrentReturnGrandTotal, 2);
+
+        // Net total after all returns (including live)
+        private double NetAfterAllReturns => OriginalBill == null ? 0 :
+            Math.Max(0, Math.Round(OriginalBill.GrandTotal - DisplayReturnedAmount, 2));
+
+        // Paid amount = capped at what goods are still worth after all returns.
+        // If goods value is 0 (all returned), paid effectively becomes 0.
+        public double DisplayPaidAmount => OriginalBill == null ? 0 :
+            Math.Round(Math.Min(OriginalBill.PaidAmount, NetAfterAllReturns), 2);
+
+        // Remaining = what's still owed against remaining goods (after paid)
+        public double DisplayRemainingDue => OriginalBill == null ? 0 :
+            Math.Max(0, Math.Round(NetAfterAllReturns - DisplayPaidAmount, 2));
+
+        // ── Live Return Cart Summary Helpers ──
+        public double LiveCreditRecovery => OriginalBill == null ? 0 : Math.Min(OriginalBill.RemainingAmount, (double)CurrentReturnGrandTotal);
+        public double LiveCashRefund => OriginalBill == null ? 0 : Math.Max(0, Math.Round((double)CurrentReturnGrandTotal - LiveCreditRecovery, 2));
+        public bool ShowLiveCreditRecovery => LiveCreditRecovery > 0;
+        public bool ShowLiveCashRefund => LiveCashRefund > 0;
+        public bool HasLiveReturn => CurrentReturnGrandTotal > 0;
+
+        private void NotifyBillDisplayProperties()
+        {
+            OnPropertyChanged(nameof(DisplayCustomerName));
+            OnPropertyChanged(nameof(DisplayCustomerPhone));
+            OnPropertyChanged(nameof(DisplayCustomerAddress));
+            OnPropertyChanged(nameof(DisplayInvoiceNumber));
+            OnPropertyChanged(nameof(DisplayBillDate));
+            OnPropertyChanged(nameof(DisplayPaymentMethod));
+            OnPropertyChanged(nameof(DisplayOriginalTotal));
+            OnPropertyChanged(nameof(DisplayPaidAmount));
+            OnPropertyChanged(nameof(DisplayRemainingDue));
+            OnPropertyChanged(nameof(HasOriginalBill));
+            OnPropertyChanged(nameof(LiveCreditRecovery));
+            OnPropertyChanged(nameof(LiveCashRefund));
+            OnPropertyChanged(nameof(ShowLiveCreditRecovery));
+            OnPropertyChanged(nameof(ShowLiveCashRefund));
+            OnPropertyChanged(nameof(HasLiveReturn));
+        }
+
         public string StoreName => "GROCERY MART";
         public string StoreAddress => "123 Main Street, City Name";
         public string StorePhone => "0300-1234567";
@@ -139,8 +202,7 @@ namespace GroceryPOS.ViewModels
             get
             {
                 if (OriginalBill == null) return 0;
-                double previousReturnsTotal = ReturnHistory.Sum(r => r.ReturnQuantity * r.UnitPrice);
-                return OriginalBill.GrandTotal - previousReturnsTotal - (double)CurrentReturnGrandTotal;
+                return Math.Max(0, Math.Round(OriginalBill.RemainingAmount - (double)CurrentReturnGrandTotal, 2));
             }
         }
 
@@ -155,6 +217,15 @@ namespace GroceryPOS.ViewModels
             }
             OnPropertyChanged(nameof(CurrentReturnGrandTotal));
             OnPropertyChanged(nameof(PreviewRemainingDue));
+            OnPropertyChanged(nameof(LiveCreditRecovery));
+            OnPropertyChanged(nameof(LiveCashRefund));
+            OnPropertyChanged(nameof(ShowLiveCreditRecovery));
+            OnPropertyChanged(nameof(ShowLiveCashRefund));
+            OnPropertyChanged(nameof(HasLiveReturn));
+            OnPropertyChanged(nameof(DisplayOriginalTotal));
+            OnPropertyChanged(nameof(DisplayReturnedAmount));
+            OnPropertyChanged(nameof(DisplayPaidAmount));
+            OnPropertyChanged(nameof(DisplayRemainingDue));
         }
 
         public ReturnViewModel(IReturnService returnService, CustomerService customerService, BillService billService, AuthService authService, PrintService printService)
@@ -182,6 +253,7 @@ namespace GroceryPOS.ViewModels
                 return;
             }
 
+            CustomerPhoneInput = string.Empty; // Clear phone when searching by Bill ID
             await LoadBillById(billId);
         }
 
@@ -218,7 +290,8 @@ namespace GroceryPOS.ViewModels
                             AlreadyReturned = alreadyReturned,
                             RemainingQuantity = item.Quantity - alreadyReturned,
                             ReturnQuantity = 0,
-                            UnitPrice = (decimal)item.UnitPrice
+                            UnitPrice = (decimal)item.UnitPrice,
+                            OnQuantityChanged = () => RefreshPreview()
                         };
                         Items.Add(vm);
                     }
@@ -265,6 +338,7 @@ namespace GroceryPOS.ViewModels
                 return;
             }
 
+            BillIdInput = string.Empty; // Clear Bill ID when searching by phone
             var normalizedPhone = _customerService.NormalizePhone(CustomerPhoneInput);
 
             try
@@ -413,6 +487,7 @@ namespace GroceryPOS.ViewModels
             OriginalBill = null;
             Dispatch(() => Items.Clear());
             Dispatch(() => ReturnHistory.Clear());
+            RefreshPreview();
             Dispatch(() => CustomerBills.Clear());
             _isPopulatingCustomerBills = false;
             SelectedCustomerBill = null;
@@ -431,6 +506,7 @@ namespace GroceryPOS.ViewModels
         public double OriginalQuantity { get; set; }
         public double AlreadyReturned { get; set; }
         public double RemainingQuantity { get; set; }
+        public Action? OnQuantityChanged { get; set; }
 
         private double _returnQuantity;
         public double ReturnQuantity
@@ -438,12 +514,37 @@ namespace GroceryPOS.ViewModels
             get => _returnQuantity;
             set
             {
-                if (value > RemainingQuantity) value = RemainingQuantity;
-                if (value < 0) value = 0;
-                if (SetProperty(ref _returnQuantity, value))
+                double clamped = value;
+                if (clamped > RemainingQuantity) clamped = RemainingQuantity;
+                if (clamped < 0) clamped = 0;
+
+                bool changed = (_returnQuantity != clamped);
+                bool wasClamped = (value != clamped);
+
+                _returnQuantity = clamped;
+
+                if (changed)
                 {
+                    OnPropertyChanged(nameof(ReturnQuantity));
                     OnPropertyChanged(nameof(TotalPrice));
-                    if (Application.Current.MainWindow.DataContext is MainViewModel mainVM && 
+                }
+
+                if (wasClamped)
+                {
+                    // In WPF Two-Way binding with UpdateSourceTrigger=PropertyChanged,
+                    // synchronous PropertyChanged notifications are ignored by the active TextBox while typing.
+                    // Schedule an asynchronous update on the UI thread so the TextBox immediately reflects the clamped value.
+                    Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+                    {
+                        OnPropertyChanged(nameof(ReturnQuantity));
+                        OnPropertyChanged(nameof(TotalPrice));
+                    }), System.Windows.Threading.DispatcherPriority.Input);
+                }
+
+                if (changed || wasClamped)
+                {
+                    OnQuantityChanged?.Invoke();
+                    if (Application.Current?.MainWindow?.DataContext is MainViewModel mainVM && 
                         mainVM.CurrentView is ReturnViewModel returnVM)
                     {
                         returnVM.RefreshPreview();

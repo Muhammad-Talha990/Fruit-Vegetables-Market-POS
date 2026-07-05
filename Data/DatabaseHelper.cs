@@ -16,10 +16,20 @@ namespace GroceryPOS.Data
 
         static DatabaseHelper()
         {
-            // Use the application's base directory (portable mode)
-            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            // Use LocalAppData for production deployment to ensure write permissions
+            var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var appFolder = Path.Combine(appDataPath, "GroceryPOS");
             
-            DbPath = Path.Combine(baseDir, "GroceryPOS.db");
+            if (!Directory.Exists(appFolder))
+            {
+                Directory.CreateDirectory(appFolder);
+            }
+            
+            DbPath = Path.Combine(appFolder, "GroceryPOS.db");
+            
+            // Removed fallback copy logic. SQLite automatically creates the DB file on connection open.
+
+
             ConnectionString = $"Data Source={DbPath}";
         }
 

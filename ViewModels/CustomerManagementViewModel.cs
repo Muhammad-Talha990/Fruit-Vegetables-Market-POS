@@ -85,7 +85,7 @@ namespace GroceryPOS.ViewModels
             }
         }
 
-        public bool IsPhoneValid => !string.IsNullOrWhiteSpace(EditPhone) && 
+        public bool IsPhoneValid => string.IsNullOrWhiteSpace(EditPhone) || 
                                     System.Text.RegularExpressions.Regex.IsMatch(EditPhone, "^0[0-9]{10}$");
 
         private string _editPhone2 = string.Empty;
@@ -205,15 +205,19 @@ namespace GroceryPOS.ViewModels
             string q = SearchQuery.Trim().ToLowerInvariant();
             FilteredCustomers.Clear();
 
-            foreach (var c in AllCustomers)
+            var sorted = AllCustomers
+                .Where(c => string.IsNullOrEmpty(q)
+                            || c.FullName.ToLowerInvariant().Contains(q)
+                            || c.PrimaryPhone.Contains(q)
+                            || (c.SecondaryPhone?.Contains(q) ?? false))
+                .OrderBy(c => c.FullName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            int serial = 1;
+            foreach (var c in sorted)
             {
-                if (string.IsNullOrEmpty(q)
-                    || c.FullName.ToLowerInvariant().Contains(q)
-                    || c.PrimaryPhone.Contains(q)
-                    || (c.SecondaryPhone?.Contains(q) ?? false))
-                {
-                    FilteredCustomers.Add(c);
-                }
+                c.SerialNumber = serial++;
+                FilteredCustomers.Add(c);
             }
         }
 
@@ -279,6 +283,13 @@ namespace GroceryPOS.ViewModels
                     return;
                 }
 
+                if (!IsPhoneValid)
+                {
+                    EditError = "⚠ Primary Phone format is invalid.";
+                    ShowPopupError("Primary Phone format is invalid.");
+                    return;
+                }
+
                 var customer = new Customer
                 {
                     CustomerId     = _editingCustomerId,
@@ -292,6 +303,19 @@ namespace GroceryPOS.ViewModels
 
                 if (_editingCustomerId == 0)
                 {
+                    var existing = _customerService.GetCustomerByPhone(primaryPhone);
+                    if (existing != null && existing.FullName.Equals("Walk-in Customer", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var confirmResult = MessageBox.Show(
+                            $"A Walk-in Customer with the phone number '{primaryPhone}' already exists.\n\nDo you want to convert this record to a registered customer? This will preserve all previous bills and purchase history.",
+                            "Convert Walk-in Customer",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Question);
+
+                        if (confirmResult != MessageBoxResult.Yes)
+                            return;
+                    }
+
                     _customerService.RegisterCustomer(customer);
                     SetStatus($"✓ Customer '{customer.FullName}' registered successfully.");
                 }
@@ -320,11 +344,28 @@ namespace GroceryPOS.ViewModels
         {
             if (customer == null) return;
 
+            // ── Step 1: Check for pending credits ──────────────────────────────
+            if (customer.PendingCredit > 0)
+            {
+                var creditWarning = MessageBox.Show(
+                    $"⚠️  WARNING: Pending Credits Detected!\n\n" +
+                    $"Customer '{customer.FullName}' has an outstanding balance of  Rs. {customer.PendingCredit:N0}.\n\n" +
+                    $"Deactivating this customer will remove them from billing search,\n" +
+                    $"but their UNPAID DUES will still remain in the system.\n\n" +
+                    $"Are you absolutely sure you want to deactivate this customer\nwithout clearing their pending dues first?",
+                    "⚠️  Pending Credits — Confirm Deactivation",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (creditWarning != MessageBoxResult.Yes) return;
+            }
+
+            // ── Step 2: Final confirmation ─────────────────────────────────────
             var result = MessageBox.Show(
                 $"Deactivate customer '{customer.FullName}'?\n\nThey will no longer appear in the billing search but their records will be preserved.",
                 "Confirm Deactivation",
                 MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
+                MessageBoxImage.Question);
 
             if (result != MessageBoxResult.Yes) return;
 
@@ -347,6 +388,7 @@ namespace GroceryPOS.ViewModels
                 ShowPopupError($"Error: {ex.Message}");
             }
         }
+
 
         private void ReactivateCustomer(Customer? customer)
         {
