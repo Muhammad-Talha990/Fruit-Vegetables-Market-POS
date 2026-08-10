@@ -326,6 +326,55 @@ namespace FruitVegetableMarketPOS.ViewModels
 
         public bool HasDailyTypePriceRows => DailyTypePriceRows.Count > 0;
 
+        // ── Update menu item dialog (separate from Add form) ──
+        private bool _isUpdateMenuItemOpen;
+        public bool IsUpdateMenuItemOpen
+        {
+            get => _isUpdateMenuItemOpen;
+            set => SetProperty(ref _isUpdateMenuItemOpen, value);
+        }
+
+        private Item? _updateMenuItem;
+        public string UpdateMenuItemTitle => _updateMenuItem == null
+            ? string.Empty
+            : $"{_updateMenuItem.Description}  ·  #{_updateMenuItem.PosCode}";
+
+        public string UpdateMenuItemUrdu => _updateMenuItem?.NameUrdu ?? string.Empty;
+
+        public ObservableCollection<DailyTypePriceRow> UpdateTypePriceRows { get; } = new();
+
+        private bool _syncingUpdateDialog;
+        private TypeCountOption? _selectedUpdateTypeCountOption;
+        public TypeCountOption? SelectedUpdateTypeCountOption
+        {
+            get => _selectedUpdateTypeCountOption;
+            set
+            {
+                if (!SetProperty(ref _selectedUpdateTypeCountOption, value)) return;
+                if (!_syncingUpdateDialog)
+                    RebuildUpdateTypePriceRows(preserveTypedPrices: true);
+            }
+        }
+
+        private void RebuildUpdateTypePriceRows(bool preserveTypedPrices)
+        {
+            var count = Math.Clamp(_selectedUpdateTypeCountOption?.Count ?? 1, 1, 10);
+            var previous = preserveTypedPrices
+                ? UpdateTypePriceRows.Select(r => r.PriceText ?? string.Empty).ToList()
+                : new List<string>();
+
+            UpdateTypePriceRows.Clear();
+            for (int i = 1; i <= count; i++)
+            {
+                UpdateTypePriceRows.Add(new DailyTypePriceRow
+                {
+                    Index = i,
+                    PriceText = i - 1 < previous.Count ? previous[i - 1] ?? string.Empty : string.Empty
+                });
+            }
+            OnPropertyChanged(nameof(UpdateTypePriceRows));
+        }
+
         private void SyncTypeCountOptionFromText(string? text)
         {
             TypeCountOption? match = null;
@@ -727,6 +776,8 @@ namespace FruitVegetableMarketPOS.ViewModels
         public ICommand SelectProductCommand { get; }
         public ICommand ToggleTodayAvailabilityCommand { get; }
         public ICommand UpdateTodayProductCommand { get; }
+        public ICommand SaveUpdateMenuItemCommand { get; }
+        public ICommand CloseUpdateMenuItemCommand { get; }
         public ICommand ConfirmTypeCommand { get; }
         public ICommand ConfirmQuantityAndAddCommand { get; }
         public ICommand IncrementQuantityCommand { get; }
@@ -833,6 +884,8 @@ namespace FruitVegetableMarketPOS.ViewModels
             SelectProductCommand = new RelayCommand(SelectProduct);
             ToggleTodayAvailabilityCommand = new RelayCommand(ToggleTodayAvailability);
             UpdateTodayProductCommand = new RelayCommand(UpdateTodayProduct);
+            SaveUpdateMenuItemCommand = new RelayCommand(_ => SaveUpdateMenuItem());
+            CloseUpdateMenuItemCommand = new RelayCommand(_ => CloseUpdateMenuItem());
             ConfirmTypeCommand = new RelayCommand(_ => ConfirmTypeQuantitiesAndAdd());
             ConfirmQuantityAndAddCommand = new RelayCommand(_ => ConfirmQuantityAndAdd());
             IncrementQuantityCommand = new RelayCommand(_ => AdjustPickerQuantity(1));
@@ -1366,7 +1419,7 @@ namespace FruitVegetableMarketPOS.ViewModels
             }
         }
 
-        /// <summary>Load this card into the Add/Update form with current type prices for editing.</summary>
+        /// <summary>Open Update dialog for an item already on today's menu.</summary>
         private void UpdateTodayProduct(object? param)
         {
             if (param is not PosProductCard card) return;
@@ -1375,39 +1428,112 @@ namespace FruitVegetableMarketPOS.ViewModels
                        ?? _itemService.GetItemById(card.ItemId);
             if (item == null)
             {
-                ShowPopupError("Item not found.");
+                ShowPopupError("Item not found.\nآئٹم نہیں ملا۔");
                 return;
             }
 
             var types = _itemTypeService.GetActiveByItemId(item.Id).OrderBy(t => t.SortOrder).ToList();
             var typeCount = Math.Clamp(types.Count > 0 ? types.Count : 1, 1, 10);
 
-            _syncingDailySetup = true;
+            _updateMenuItem = item;
+            _syncingUpdateDialog = true;
             try
             {
-                _dailySetupSelectedItem = AllMasterItems.FirstOrDefault(i => i.Id == item.Id) ?? item;
-                _dailySetupItemIdText = item.PosCode;
-                OnPropertyChanged(nameof(DailySetupSelectedItem));
-                OnPropertyChanged(nameof(DailySetupItemIdText));
-                SetDailyTypeCount(typeCount, rebuild: false);
+                _selectedUpdateTypeCountOption = DailyTypeCountOptions.FirstOrDefault(o => o.Count == typeCount);
+                OnPropertyChanged(nameof(SelectedUpdateTypeCountOption));
             }
             finally
             {
-                _syncingDailySetup = false;
+                _syncingUpdateDialog = false;
             }
 
-            DailyTypePriceRows.Clear();
+            UpdateTypePriceRows.Clear();
             for (int i = 1; i <= typeCount; i++)
             {
                 var price = i - 1 < types.Count ? types[i - 1].Price : 0;
-                DailyTypePriceRows.Add(new DailyTypePriceRow
+                UpdateTypePriceRows.Add(new DailyTypePriceRow
                 {
                     Index = i,
                     PriceText = price > 0 ? price.ToString("0.##") : string.Empty
                 });
             }
-            OnPropertyChanged(nameof(HasDailyTypePriceRows));
-            ShowPopupSuccess($"Update '{card.Name}' — edit types/prices above, then tap Add.");
+
+            OnPropertyChanged(nameof(UpdateMenuItemTitle));
+            OnPropertyChanged(nameof(UpdateMenuItemUrdu));
+            IsUpdateMenuItemOpen = true;
+        }
+
+        private void CloseUpdateMenuItem()
+        {
+            IsUpdateMenuItemOpen = false;
+            _updateMenuItem = null;
+            UpdateTypePriceRows.Clear();
+            _selectedUpdateTypeCountOption = null;
+            OnPropertyChanged(nameof(SelectedUpdateTypeCountOption));
+            OnPropertyChanged(nameof(UpdateMenuItemTitle));
+            OnPropertyChanged(nameof(UpdateMenuItemUrdu));
+        }
+
+        private void SaveUpdateMenuItem()
+        {
+            if (_updateMenuItem == null)
+            {
+                ShowPopupError("No item selected to update.\nکوئی آئٹم منتخب نہیں۔");
+                return;
+            }
+
+            var typeCount = Math.Clamp(_selectedUpdateTypeCountOption?.Count ?? UpdateTypePriceRows.Count, 1, 10);
+            if (UpdateTypePriceRows.Count != typeCount)
+                RebuildUpdateTypePriceRows(preserveTypedPrices: true);
+
+            if (UpdateTypePriceRows.Count == 0)
+            {
+                ShowPopupError("Add at least one type price.\nکم از کم ایک قسم کی قیمت درج کریں۔");
+                return;
+            }
+
+            var prices = new List<double>();
+            for (int i = 0; i < UpdateTypePriceRows.Count; i++)
+            {
+                var raw = UpdateTypePriceRows[i].PriceText?.Trim();
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    ShowPopupError($"Enter a price for Type {i + 1} / قسم {i + 1}.");
+                    return;
+                }
+                if (!double.TryParse(raw, out var price) || price < 0)
+                {
+                    ShowPopupError($"Invalid price for Type {i + 1} / قسم {i + 1}.");
+                    return;
+                }
+                prices.Add(price);
+            }
+
+            if (prices.Any(p => p == 0))
+            {
+                var zeroOk = MessageBox.Show(
+                    "One or more type prices are Rs.0.\nSave anyway?\n\nایک یا زیادہ قیمتیں صفر ہیں۔ کیا محفوظ کریں؟",
+                    "Zero Price",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                if (zeroOk != MessageBoxResult.Yes) return;
+            }
+
+            try
+            {
+                var name = _updateMenuItem.Description;
+                _itemTypeService.ReplaceWithNumberedTypes(_updateMenuItem.Id, prices);
+                CloseUpdateMenuItem();
+                RefreshTodayProducts();
+                LoadAllMasterItemsForSetup();
+                CatalogEvents.NotifyChanged();
+                ShowPopupSuccess($"✓ '{name}' updated ({prices.Count} type(s)).\n✓ قیمت / اقسام اپ ڈیٹ ہو گئیں۔");
+            }
+            catch (Exception ex)
+            {
+                ShowPopupError(ex.Message);
+                AppLogger.Error("SaveUpdateMenuItem failed", ex);
+            }
         }
 
         private void AddDailyItem()
@@ -1423,7 +1549,7 @@ namespace FruitVegetableMarketPOS.ViewModels
 
             if (item == null || !item.IsActive)
             {
-                ShowPopupError("Select an item or enter a valid item ID (e.g. 1, 2, 3…).");
+                ShowPopupError("Select an item or enter a valid item ID (e.g. 1, 2, 3…).\nآئٹم منتخب کریں یا درست آئی ڈی درج کریں۔");
                 return;
             }
 
@@ -1439,6 +1565,17 @@ namespace FruitVegetableMarketPOS.ViewModels
                     OnPropertyChanged(nameof(DailySetupItemIdText));
                 }
                 finally { _syncingDailySetup = false; }
+            }
+
+            // Already on today's menu → block add (update only via Update dialog)
+            if (_dailySelection.IsOnTodayMenu(item.Id))
+            {
+                ShowPopupError(
+                    $"'{item.DisplayName}' (#{item.PosCode}) is already on today's menu.\n" +
+                    "Click Update on the item card to change price or types.\n\n" +
+                    $"'{item.DisplayName}' پہلے سے آج کی فہرست میں موجود ہے۔\n" +
+                    "قیمت یا قسم بدلنے کے لیے کارڈ پر Update دبائیں۔");
+                return;
             }
 
             if (!int.TryParse((DailyTypeCountText ?? string.Empty).Trim(), out var typeCount) || typeCount < 1 || typeCount > 10)
@@ -1484,26 +1621,10 @@ namespace FruitVegetableMarketPOS.ViewModels
                 if (zeroOk != MessageBoxResult.Yes) return;
             }
 
-            var alreadyOnMenu = _dailySelection.IsOnTodayMenu(item.Id);
-            if (alreadyOnMenu)
-            {
-                var confirm = MessageBox.Show(
-                    $"'{item.DisplayName}' (#{item.PosCode}) is already on today's selling list.\n\n" +
-                    "Do you want to update its price / types?",
-                    "Item Already Added",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-
-                if (confirm != MessageBoxResult.Yes)
-                    return; // close / cancel — leave form as-is so user can edit or Clear
-            }
-
             try
             {
                 _itemTypeService.ReplaceWithNumberedTypes(item.Id, prices);
-
-                if (!alreadyOnMenu)
-                    _dailySelection.AddItem(item.Id, _authService.CurrentUser?.Id);
+                _dailySelection.AddItem(item.Id, _authService.CurrentUser?.Id);
 
                 var name = item.Description;
                 ClearDailySetupForm();
@@ -1511,9 +1632,7 @@ namespace FruitVegetableMarketPOS.ViewModels
                 LoadAllMasterItemsForSetup();
                 CatalogEvents.NotifyChanged();
 
-                ShowPopupSuccess(alreadyOnMenu
-                    ? $"✓ '{name}' prices/types updated ({typeCount} type(s))."
-                    : $"✓ '{name}' added to today with {typeCount} type(s).");
+                ShowPopupSuccess($"✓ '{name}' added to today with {typeCount} type(s).\n✓ آج کی فہرست میں شامل کر دیا گیا۔");
             }
             catch (Exception ex)
             {

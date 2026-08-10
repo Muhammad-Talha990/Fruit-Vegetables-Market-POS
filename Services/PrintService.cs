@@ -1330,8 +1330,13 @@ namespace FruitVegetableMarketPOS.Services
             y += 6;
 
             float descWidth = colQty - colItem - 8;
+            double totalQty = 0;
+            int lineCount = 0;
             foreach (var item in bill.Items ?? Enumerable.Empty<BillDescription>())
             {
+                lineCount++;
+                totalQty += Math.Abs(item.Quantity);
+
                 var (enLine, urLine) = GetBilingualPrintLines(item);
 
                 g.DrawString(Math.Abs(item.Quantity).ToString("0.##"), metaFont, Brushes.Black, colQty, y);
@@ -1350,6 +1355,21 @@ namespace FruitVegetableMarketPOS.Services
                 g.DrawString(enLine, itemEnFont, Brushes.Black, new RectangleF(colItem, y, descWidth, enH + 4));
                 y += enH + 8;
             }
+
+            DrawFullDash();
+            y += 8;
+
+            // Tally footer — item lines + total quantity for gate check
+            using var tallyFont = new Font("Consolas", 24, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var tallyUrduFont = CreateUrduFontPixels(20, FontStyle.Bold);
+
+            g.DrawString($"Total Items: {lineCount}", tallyFont, Brushes.Black, margin, y);
+            y += 28;
+            g.DrawString($"Total Qty: {totalQty:0.##}", tallyFont, Brushes.Black, margin, y);
+            y += 28;
+            g.DrawString($"کل اشیاء: {lineCount}   ·   کل تعداد: {totalQty:0.##}",
+                tallyUrduFont, Brushes.Black, new RectangleF(margin, y, contentWidth, 28), sfCenter);
+            y += 28 + gapSection;
 
             DrawFullDash();
             y += 24;

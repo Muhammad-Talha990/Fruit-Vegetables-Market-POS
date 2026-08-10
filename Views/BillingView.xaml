@@ -323,7 +323,7 @@
                 <Border DockPanel.Dock="Top" Background="White" CornerRadius="8" Padding="6,4" Margin="0,0,0,4"
                         BorderBrush="#D8E8D8" BorderThickness="1">
                     <StackPanel>
-                        <TextBlock Text="Add item to today's selling list · آج کی فہرست یہ درج کریں"
+                        <TextBlock Text="Add item to today's selling list · آج کی فہرست میں نیا آئٹم شامل کریں"
                                    FontSize="9" FontWeight="SemiBold" Foreground="#4B6354" Margin="0,0,0,3"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -384,8 +384,8 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <Button Content="✓ Add / Update" Style="{StaticResource GreenAction}"
-                                    ToolTip="Save types/prices and add or update this item on today's menu"
+                            <Button Content="✓ Add" Style="{StaticResource GreenAction}"
+                                    ToolTip="Add this item to today's menu (once only)"
                                     Command="{Binding AddDailyItemCommand}"
                                     HorizontalAlignment="Left" Margin="0,0,0,0" Padding="10,3" FontSize="11" Height="26"/>
                         </StackPanel>
@@ -500,7 +500,7 @@
                                                         <Button Content="Update" FontSize="10" FontWeight="SemiBold"
                                                                 Padding="10,3" HorizontalAlignment="Stretch" Cursor="Hand"
                                                                 Height="24" MinHeight="24" Margin="4,0,4,0"
-                                                                ToolTip="Update types / prices for this item"
+                                                                ToolTip="Open dialog to update types / prices"
                                                                 Style="{StaticResource OrangeAction}"
                                                                 Command="{Binding DataContext.UpdateTodayProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                                 CommandParameter="{Binding}"/>
@@ -1038,6 +1038,75 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Border>
+
+        <!-- UPDATE MENU ITEM DIALOG (prices / types) -->
+        <Border Grid.RowSpan="2" Panel.ZIndex="1150" Background="#88000000"
+                Visibility="{Binding IsUpdateMenuItemOpen, Converter={StaticResource BoolToVis}}">
+            <Border Background="White" Width="460" MaxHeight="560" CornerRadius="16"
+                    VerticalAlignment="Center" HorizontalAlignment="Center" Padding="22,18">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                        <TextBlock Text="Update item · آئٹم اپ ڈیٹ" FontSize="16" FontWeight="Bold" Foreground="#1B4332"/>
+                        <TextBlock Text="{Binding UpdateMenuItemTitle}" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="#2D6A4F" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding UpdateMenuItemUrdu}" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#40916C" FlowDirection="RightToLeft" Margin="0,2,0,0"
+                                   Visibility="{Binding UpdateMenuItemUrdu, Converter={StaticResource StringToVis}}"/>
+                        <TextBlock Text="Change type count or prices, then Save."
+                                   FontSize="11" Foreground="#6B7280" Margin="0,8,0,0"/>
+                    </StackPanel>
+
+                    <Grid DockPanel.Dock="Bottom" Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="10"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="Cancel" Style="{StaticResource OrangeAction}"
+                                Command="{Binding CloseUpdateMenuItemCommand}" Height="36"/>
+                        <Button Grid.Column="2" Content="✓ Save Update" Style="{StaticResource GreenAction}"
+                                Command="{Binding SaveUpdateMenuItemCommand}" Height="36"/>
+                    </Grid>
+
+                    <StackPanel>
+                        <TextBlock Text="Types · اقسام" FontSize="11" FontWeight="SemiBold" Foreground="#4B6354" Margin="0,0,0,4"/>
+                        <ComboBox ItemsSource="{Binding DailyTypeCountOptions}"
+                                  SelectedItem="{Binding SelectedUpdateTypeCountOption, Mode=TwoWay}"
+                                  DisplayMemberPath="Label" IsEditable="False"
+                                  Style="{StaticResource CompactCombo}"
+                                  ToolTip="Select Type 1 … Type 10"
+                                  Margin="0,0,0,10"/>
+                        <TextBlock Text="Set price · قیمت مقرر کریں" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="#4B6354" Margin="0,0,0,6"/>
+                        <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding UpdateTypePriceRows}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="2"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,8,8" Padding="8,6" Background="#F8FAF8"
+                                                BorderBrush="#D8E8D8" BorderThickness="1" CornerRadius="8">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Label}" FontSize="11" FontWeight="Bold"
+                                                           Foreground="#1B4332" Margin="0,0,0,4"/>
+                                                <TextBox Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource HintTextBox}"
+                                                         Tag="Price"
+                                                         helpers:FocusHelper.NumericOnly="True"
+                                                         helpers:FocusHelper.SelectAllOnFocus="True"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
                 </DockPanel>
             </Border>
         </Border>
