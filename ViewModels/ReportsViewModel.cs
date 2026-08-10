@@ -205,6 +205,9 @@ namespace FruitVegetableMarketPOS.ViewModels
             GenerateReport();
         }
 
+        /// <summary>Reload live figures whenever Reports is opened.</summary>
+        public void OnActivated() => GenerateReport();
+
         // ── Main Report Generator ──────────────────────────────────────────────
         public void GenerateReport()
         {
@@ -466,29 +469,43 @@ namespace FruitVegetableMarketPOS.ViewModels
             ShowDailyClosingPanel = false;
             ShowDailySaleQtyGrid = false;
 
-            _currentRawBills = _reportService.GetByDateRange(start, end);
+            _currentRawBills = _reportService.GetByDateRange(start, end)
+                .Where(b => !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
-            var salesData   = _currentRawBills.Where(b => b.Type == "Sale").ToList();
-            var returnData  = _currentRawBills.Where(b => b.Type == "Return").ToList();
-
+            // Bills table is sales-only; returns are in BillReturns.
+            var salesData = _currentRawBills.ToList();
             double returnsTotal = _reportService.GetReturnsTotalByDateRange(start, end);
-            double creditTotal  = _reportService.GetOutstandingCreditTotal();
+            int returnsCount = _reportService.GetReturnsCountByDateRange(start, end);
+            double creditTotal = _reportService.GetOutstandingCreditTotal();
 
-            // Load analytics chart data
-            var dailySeries     = _reportService.GetDailySalesSeries(start, end);
-            var topProducts     = _reportService.GetTopProductsSeries(start, end, 5);
-            var paymentBreakdown = _reportService.GetPaymentMethodBreakdownForRange(start, end);
-            var cashierStats    = _reportService.GetCashierPerformance(start, end);
+            // Analytics — isolate failures so KPIs still show if one chart query fails
+            var dailySeries = SafeQuery(
+                () => _reportService.GetDailySalesSeries(start, end),
+                new List<(DateTime Date, double TotalSales, double TotalReturns, int BillCount)>(),
+                "GetDailySalesSeries");
+            var topProducts = SafeQuery(
+                () => _reportService.GetTopProductsSeries(start, end, 5),
+                new List<(string Name, double Revenue, int Qty)>(),
+                "GetTopProductsSeries");
+            var paymentBreakdown = SafeQuery(
+                () => _reportService.GetPaymentMethodBreakdownForRange(start, end),
+                new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase),
+                "GetPaymentMethodBreakdownForRange");
+            var cashierStats = SafeQuery(
+                () => _reportService.GetCashierPerformance(start, end),
+                new List<(string CashierName, int BillCount, double Revenue)>(),
+                "GetCashierPerformance");
 
             Dispatch(() =>
             {
-                TotalRevenue      = salesData.Sum(s => s.GrandTotal);
+                TotalRevenue      = Math.Round(salesData.Sum(s => s.GrandTotal), 2);
                 TotalSalesCount   = salesData.Count;
-                TotalReturns      = returnsTotal;
-                TotalReturnCount  = returnData.Count;
-                NetSales          = TotalRevenue - returnsTotal;
-                OutstandingCredit = creditTotal;
-                AvgOrderValue     = TotalSalesCount > 0 ? TotalRevenue / TotalSalesCount : 0;
+                TotalReturns      = Math.Round(returnsTotal, 2);
+                TotalReturnCount  = returnsCount;
+                NetSales          = Math.Round(TotalRevenue - returnsTotal, 2);
+                OutstandingCredit = Math.Round(creditTotal, 2);
+                AvgOrderValue     = TotalSalesCount > 0 ? Math.Round(TotalRevenue / TotalSalesCount, 2) : 0;
 
                 ApplyFilters();
 
@@ -500,7 +517,7 @@ namespace FruitVegetableMarketPOS.ViewModels
                         ? d.Date.ToString("MMM dd")
                         : type == "Weekly"
                             ? d.Date.ToString("ddd")
-                            : d.Date.ToString("HH:mm");
+                            : d.Date.ToString("dd MMM");
 
                     DailySalesChart.Add(new ChartDataPoint
                     {
@@ -510,8 +527,8 @@ namespace FruitVegetableMarketPOS.ViewModels
                     });
                 }
 
-                // If daily (single day), use hourly mock-up from existing bills
-                if (type == "Daily" && dailySeries.Count <= 1 && salesData.Count > 0)
+                // Single-day view: show hourly buckets from real bill timestamps
+                if (type == "Daily" && salesData.Count > 0)
                 {
                     DailySalesChart.Clear();
                     var hourlyGroups = salesData
@@ -522,7 +539,7 @@ namespace FruitVegetableMarketPOS.ViewModels
                         DailySalesChart.Add(new ChartDataPoint
                         {
                             Label = $"{grp.Key:00}:00",
-                            Value = grp.Sum(b => b.GrandTotal)
+                            Value = Math.Round(grp.Sum(b => b.GrandTotal), 2)
                         });
                     }
                 }
@@ -540,11 +557,10 @@ namespace FruitVegetableMarketPOS.ViewModels
                 int colorIdx = 0;
                 foreach (var p in topProducts)
                 {
-                    // Truncate long product names
-                    string name = p.Name.Length > 14 ? p.Name.Substring(0, 12) + "…" : p.Name;
+                    // Keep full product name — chart wraps labels instead of truncating
                     TopProductsChart.Add(new ChartDataPoint
                     {
-                        Label    = name,
+                        Label    = p.Name,
                         Value    = p.Revenue,
                         BarColor = productColors[colorIdx % productColors.Length]
                     });
@@ -578,6 +594,16 @@ namespace FruitVegetableMarketPOS.ViewModels
             });
         }
 
+        private static T SafeQuery<T>(Func<T> query, T fallback, string name)
+        {
+            try { return query(); }
+            catch (Exception ex)
+            {
+                AppLogger.Error($"Reports analytics query failed: {name}", ex);
+                return fallback;
+            }
+        }
+
         private void ApplyFilters()
         {
             if (_currentRawBills == null) return;
@@ -586,10 +612,10 @@ namespace FruitVegetableMarketPOS.ViewModels
 
             filtered = SelectedBillFilter switch
             {
-                "Sales Only"   => filtered.Where(b => b.Type == "Sale"),
-                "Returns Only" => filtered.Where(b => b.Type == "Return"),
-                "Credit Bills" => filtered.Where(b => b.Type == "Sale" && b.RemainingAmount > 0),
-                "Paid Bills"   => filtered.Where(b => b.Type == "Sale" && b.RemainingAmount <= 0),
+                "Sales Only"   => filtered,
+                "Returns Only" => filtered.Where(_ => false), // returns are not bill rows
+                "Credit Bills" => filtered.Where(b => b.RemainingAmount > 0),
+                "Paid Bills"   => filtered.Where(b => b.RemainingAmount <= 0),
                 _              => filtered
             };
 

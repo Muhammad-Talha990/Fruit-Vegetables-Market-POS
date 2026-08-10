@@ -1,11 +1,10 @@
 <UserControl x:Class="FruitVegetableMarketPOS.Views.Controls.BarChartControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid>
-        <Canvas x:Name="ChartCanvas" ClipToBounds="True"/>
-        <!-- Empty state -->
+    <Grid ClipToBounds="False">
+        <Canvas x:Name="ChartCanvas" ClipToBounds="False"/>
         <TextBlock x:Name="EmptyLabel" Text="No data for selected period"
                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                   FontSize="13" Foreground="#94A3B8" Visibility="Collapsed"/>
+                   FontSize="13" FontWeight="SemiBold" Foreground="#94A3B8" Visibility="Collapsed"/>
     </Grid>
 </UserControl>

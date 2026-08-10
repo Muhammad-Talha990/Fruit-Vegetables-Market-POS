@@ -18,13 +18,11 @@ namespace FruitVegetableMarketPOS.Views.Controls
 {
     /// <summary>
     /// Pure WPF Canvas bar chart — no third-party libraries.
-    /// Binds to IEnumerable&lt;ChartDataPoint&gt; via the DataSource dependency property.
+    /// Value labels sit above bars (not rotated inside) so amounts stay fully visible.
     /// </summary>
     [SupportedOSPlatform("windows")]
     public partial class BarChartControl : UserControl
     {
-        // ── Dependency Properties ──────────────────────────────────────────────
-
         public static readonly DependencyProperty DataSourceProperty =
             DependencyProperty.Register(nameof(DataSource), typeof(IEnumerable), typeof(BarChartControl),
                 new PropertyMetadata(null, OnDataSourceChanged));
@@ -35,7 +33,7 @@ namespace FruitVegetableMarketPOS.Views.Controls
 
         public static readonly DependencyProperty BarColorProperty =
             DependencyProperty.Register(nameof(BarColor), typeof(Color), typeof(BarChartControl),
-                new PropertyMetadata(Color.FromRgb(20, 184, 166))); // teal
+                new PropertyMetadata(Color.FromRgb(20, 184, 166)));
 
         public static readonly DependencyProperty ShowSecondaryBarProperty =
             DependencyProperty.Register(nameof(ShowSecondaryBar), typeof(bool), typeof(BarChartControl),
@@ -65,15 +63,11 @@ namespace FruitVegetableMarketPOS.Views.Controls
             set => SetValue(ShowSecondaryBarProperty, value);
         }
 
-        // ── Constructor ────────────────────────────────────────────────────────
-
         public BarChartControl()
         {
             InitializeComponent();
             SizeChanged += (_, _) => Render();
         }
-
-        // ── Change Handlers ────────────────────────────────────────────────────
 
         private static void OnDataSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
@@ -89,8 +83,6 @@ namespace FruitVegetableMarketPOS.Views.Controls
         }
 
         private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => Render();
-
-        // ── Rendering ─────────────────────────────────────────────────────────
 
         private void Render()
         {
@@ -109,52 +101,55 @@ namespace FruitVegetableMarketPOS.Views.Controls
             double canvasW = Math.Max(ChartCanvas.ActualWidth, 200);
             double canvasH = Math.Max(ChartCanvas.ActualHeight, 120);
 
-            const double paddingLeft   = 52;
-            const double paddingRight  = 12;
-            const double paddingTop    = 24;
-            const double paddingBottom = 36; // room for x labels
+            // Extra top room for bold value labels above bars; bottom for wrapped x labels
+            const double paddingLeft = 56;
+            const double paddingRight = 10;
+            const double paddingTop = 28;
+            const double paddingBottom = 52;
 
             double plotW = canvasW - paddingLeft - paddingRight;
             double plotH = canvasH - paddingTop - paddingBottom;
 
             double maxVal = points.Max(p => Math.Max(p.Value, p.SecondaryValue));
             if (maxVal <= 0) maxVal = 1;
+            // Leave headroom so tallest bar never covers its own label
+            maxVal *= 1.18;
 
-            // ── Y-Axis grid lines ──────────────────────────────────────────────
             int gridLines = 4;
             for (int i = 0; i <= gridLines; i++)
             {
                 double yFrac = (double)i / gridLines;
-                double yPos  = paddingTop + plotH - yFrac * plotH;
-                double yVal  = yFrac * maxVal;
+                double yPos = paddingTop + plotH - yFrac * plotH;
+                double yVal = yFrac * (maxVal / 1.18);
 
                 var line = new Line
                 {
-                    X1 = paddingLeft, X2 = canvasW - paddingRight,
-                    Y1 = yPos, Y2 = yPos,
+                    X1 = paddingLeft,
+                    X2 = canvasW - paddingRight,
+                    Y1 = yPos,
+                    Y2 = yPos,
                     Stroke = new SolidColorBrush(Color.FromArgb(50, 100, 116, 139)),
                     StrokeThickness = i == 0 ? 1.5 : 0.8,
                     StrokeDashArray = i == 0 ? null : new DoubleCollection { 4, 4 }
                 };
                 ChartCanvas.Children.Add(line);
 
-                // Y label
                 var label = new TextBlock
                 {
-                    Text = yVal >= 1000 ? $"{yVal / 1000:N0}K" : $"{yVal:N0}",
-                    FontSize = 9,
-                    Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184)),
+                    Text = FormatAxis(yVal),
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(71, 85, 105))
                 };
                 Canvas.SetLeft(label, 2);
                 Canvas.SetTop(label, yPos - 8);
                 ChartCanvas.Children.Add(label);
             }
 
-            // ── Bars ──────────────────────────────────────────────────────────
             double barGroupW = plotW / points.Count;
             bool showSecondary = ShowSecondaryBar && points.Any(p => p.SecondaryValue > 0);
-            double barW    = showSecondary ? barGroupW * 0.38 : barGroupW * 0.55;
-            double barGap  = showSecondary ? barGroupW * 0.06 : 0;
+            double barW = showSecondary ? barGroupW * 0.36 : Math.Min(barGroupW * 0.62, 72);
+            double barGap = showSecondary ? barGroupW * 0.06 : 0;
 
             var primaryBrush = new LinearGradientBrush(
                 BarColor, Color.FromArgb(180, BarColor.R, BarColor.G, BarColor.B),
@@ -164,78 +159,112 @@ namespace FruitVegetableMarketPOS.Views.Controls
                 Color.FromRgb(251, 113, 133), Color.FromArgb(160, 251, 113, 133),
                 new Point(0, 0), new Point(0, 1));
 
+            var valueBrush = new SolidColorBrush(Color.FromRgb(15, 23, 42));
+            var xLabelBrush = new SolidColorBrush(Color.FromRgb(30, 41, 59));
+
             for (int i = 0; i < points.Count; i++)
             {
                 var pt = points[i];
                 double groupX = paddingLeft + i * barGroupW;
 
-                // Primary bar
-                double barH = Math.Max(2, (pt.Value / maxVal) * plotH);
+                double barH = Math.Max(4, (pt.Value / maxVal) * plotH);
                 double barX = groupX + (barGroupW - (showSecondary ? barW * 2 + barGap : barW)) / 2;
                 double barY = paddingTop + plotH - barH;
 
                 var bar = new Rectangle
                 {
-                    Width  = barW,
+                    Width = barW,
                     Height = barH,
-                    Fill   = pt.BarColor.HasValue
+                    Fill = pt.BarColor.HasValue
                         ? new SolidColorBrush(pt.BarColor.Value)
                         : primaryBrush,
-                    RadiusX = 3, RadiusY = 3
+                    RadiusX = 4,
+                    RadiusY = 4
                 };
                 Canvas.SetLeft(bar, barX);
                 Canvas.SetTop(bar, barY);
                 ChartCanvas.Children.Add(bar);
 
-                // Primary value label
-                if (barH > 18)
+                // Value ABOVE the bar — horizontal, bold, fully visible
+                var valLabel = new TextBlock
                 {
-                    var valLabel = new TextBlock
-                    {
-                        Text = pt.DisplayValue,
-                        FontSize = 8.5,
-                        Foreground = Brushes.White,
-                        RenderTransformOrigin = new Point(0.5, 0.5),
-                        RenderTransform = new RotateTransform(-90)
-                    };
-                    Canvas.SetLeft(valLabel, barX + barW / 2 - 5);
-                    Canvas.SetTop(valLabel, barY + 4);
-                    ChartCanvas.Children.Add(valLabel);
-                }
+                    Text = FormatAmount(pt.Value),
+                    FontSize = 12,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = valueBrush,
+                    TextAlignment = TextAlignment.Center,
+                    Width = Math.Max(barGroupW - 4, 48)
+                };
+                valLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+                double valH = valLabel.DesiredSize.Height;
+                Canvas.SetLeft(valLabel, groupX + 2);
+                Canvas.SetTop(valLabel, Math.Max(2, barY - valH - 2));
+                ChartCanvas.Children.Add(valLabel);
 
-                // Secondary (returns) bar
                 if (showSecondary && pt.SecondaryValue > 0)
                 {
-                    double secH = Math.Max(2, (pt.SecondaryValue / maxVal) * plotH);
+                    double secH = Math.Max(4, (pt.SecondaryValue / maxVal) * plotH);
                     double secX = barX + barW + barGap;
                     double secY = paddingTop + plotH - secH;
 
                     var secBar = new Rectangle
                     {
-                        Width  = barW,
+                        Width = barW,
                         Height = secH,
-                        Fill   = secondaryBrush,
-                        RadiusX = 3, RadiusY = 3
+                        Fill = secondaryBrush,
+                        RadiusX = 4,
+                        RadiusY = 4
                     };
                     Canvas.SetLeft(secBar, secX);
                     Canvas.SetTop(secBar, secY);
                     ChartCanvas.Children.Add(secBar);
+
+                    var secLabel = new TextBlock
+                    {
+                        Text = FormatAmount(pt.SecondaryValue),
+                        FontSize = 11,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = new SolidColorBrush(Color.FromRgb(190, 24, 93)),
+                        TextAlignment = TextAlignment.Center,
+                        Width = barW + 8
+                    };
+                    secLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+                    Canvas.SetLeft(secLabel, secX - 4);
+                    Canvas.SetTop(secLabel, Math.Max(2, secY - secLabel.DesiredSize.Height - 2));
+                    ChartCanvas.Children.Add(secLabel);
                 }
 
-                // X-axis label
+                // Full x-axis label — wrap instead of clipping with ellipsis
                 var xLabel = new TextBlock
                 {
-                    Text = pt.Label,
-                    FontSize = 9.5,
-                    Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139)),
+                    Text = pt.Label ?? string.Empty,
+                    FontSize = 11,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = xLabelBrush,
                     TextAlignment = TextAlignment.Center,
-                    Width = barGroupW,
-                    TextTrimming = TextTrimming.CharacterEllipsis
+                    TextWrapping = TextWrapping.Wrap,
+                    Width = Math.Max(barGroupW - 2, 40),
+                    LineHeight = 13,
+                    MaxHeight = 44
                 };
-                Canvas.SetLeft(xLabel, groupX);
+                Canvas.SetLeft(xLabel, groupX + 1);
                 Canvas.SetTop(xLabel, paddingTop + plotH + 6);
                 ChartCanvas.Children.Add(xLabel);
             }
+        }
+
+        private static string FormatAmount(double value)
+        {
+            if (value >= 100_000)
+                return $"Rs.{value / 1000:N0}K";
+            return $"Rs.{value:N0}";
+        }
+
+        private static string FormatAxis(double value)
+        {
+            if (value >= 1000)
+                return $"{value / 1000:N0}K";
+            return $"{value:N0}";
         }
     }
 }

@@ -129,13 +129,20 @@ namespace FruitVegetableMarketPOS.ViewModels
                 "Dashboard"    => ActivateDashboard(),
                 "Products"     => ActivateProducts(),
                 "Billing"      => ActivateBilling(),
-                "Reports"      => _serviceProvider.GetRequiredService<ReportsViewModel>(),
+                "Reports"      => ActivateReports(),
                 "Returns"      => RefreshReturnVM(),
                 "Customers"    => CreateCustomerManagementVM(),
                 "CustomerLedger" => CreateCustomerLedgerVM(PendingLedgerCustomerId),
 
                 _ => ActivateDashboard()
             };
+        }
+
+        private ReportsViewModel ActivateReports()
+        {
+            var vm = _serviceProvider.GetRequiredService<ReportsViewModel>();
+            vm.OnActivated();
+            return vm;
         }
 
         private CustomerManagementViewModel CreateCustomerManagementVM()

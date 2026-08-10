@@ -88,7 +88,7 @@ namespace FruitVegetableMarketPOS.Services
                 FROM BillItems bd
                 INNER JOIN Bills b ON bd.BillId = b.BillId
                 LEFT  JOIN Items i ON bd.ItemId = i.ItemId
-                WHERE datetime(b.CreatedAt, 'localtime') >= @from AND datetime(b.CreatedAt, 'localtime') < @to
+                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
                   AND b.Status != 'Cancelled'
                 GROUP BY bd.ItemId, ItemDesc
                 ORDER BY TotalRevenue DESC;
@@ -127,7 +127,7 @@ namespace FruitVegetableMarketPOS.Services
                 FROM BillItems bd
                 INNER JOIN Bills b ON bd.BillId = b.BillId
                 LEFT  JOIN Items i ON bd.ItemId = i.ItemId
-                WHERE datetime(b.CreatedAt, 'localtime') >= @from AND datetime(b.CreatedAt, 'localtime') < @to
+                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
                   AND b.Status != 'Cancelled'
                 GROUP BY bd.ItemId, ItemDesc, TypeName
                 ORDER BY TotalRevenue DESC;
@@ -175,8 +175,8 @@ namespace FruitVegetableMarketPOS.Services
                 FROM BillItems bd
                 INNER JOIN Bills b ON bd.BillId = b.BillId
                 LEFT  JOIN Items i ON bd.ItemId = i.ItemId
-                WHERE datetime(b.CreatedAt, 'localtime') >= @from
-                  AND datetime(b.CreatedAt, 'localtime') < @to
+                WHERE b.CreatedAt >= @from
+                  AND b.CreatedAt < @to
                   AND b.Status != 'Cancelled'
                 GROUP BY ItemCode, ItemDesc, TypeName, bd.UnitPrice
                 ORDER BY ItemDesc COLLATE NOCASE, TypeName, bd.UnitPrice;
@@ -218,7 +218,7 @@ namespace FruitVegetableMarketPOS.Services
                 INNER JOIN Bills b ON bd.BillId = b.BillId
                 LEFT  JOIN Items i ON bd.ItemId = i.ItemId
                 LEFT  JOIN Categories c ON i.CategoryId = c.CategoryId
-                WHERE datetime(b.CreatedAt, 'localtime') >= @from AND datetime(b.CreatedAt, 'localtime') < @to
+                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
                   AND b.Status != 'Cancelled'
                 GROUP BY CategoryName
                 ORDER BY TotalRevenue DESC;
@@ -250,7 +250,8 @@ namespace FruitVegetableMarketPOS.Services
                 SELECT COALESCE(SUM(SubTotal), 0) FROM (
                     SELECT (SELECT SUM(Quantity * UnitPrice - DiscountAmount) FROM BillItems WHERE BillId = b.BillId) as SubTotal
                     FROM Bills b
-                    WHERE datetime(CreatedAt, 'localtime') >= @from AND datetime(CreatedAt, 'localtime') < @to
+                    WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
+                      AND b.Status != 'Cancelled'
                 );
             ";
             cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -265,7 +266,8 @@ namespace FruitVegetableMarketPOS.Services
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 SELECT COUNT(*) FROM Bills
-                WHERE datetime(CreatedAt, 'localtime') >= @from AND datetime(CreatedAt, 'localtime') < @to;
+                WHERE CreatedAt >= @from AND CreatedAt < @to
+                  AND Status != 'Cancelled';
             ";
             cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
             cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -279,6 +281,9 @@ namespace FruitVegetableMarketPOS.Services
 
         /// <summary>Gets the total value of all returns in a date range.</summary>
         public double GetReturnsTotalByDateRange(DateTime from, DateTime to) => _billRepo.GetReturnsTotalByDateRange(from, to);
+
+        /// <summary>Gets the count of return transactions in a date range.</summary>
+        public int GetReturnsCountByDateRange(DateTime from, DateTime to) => _billRepo.GetReturnsCountByDateRange(from, to);
 
         /// <summary>Gets total outstanding customer credit (all-time).</summary>
         public double GetOutstandingCreditTotal() => _billRepo.GetOutstandingCreditTotal();

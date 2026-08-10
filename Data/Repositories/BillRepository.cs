@@ -525,11 +525,26 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                 SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0)
                 FROM BillReturnItems bri
                 JOIN BillReturns br ON br.ReturnId = bri.ReturnId
-                WHERE datetime(br.ReturnedAt, 'localtime') >= @from
-                  AND datetime(br.ReturnedAt, 'localtime') < @to;";
+                WHERE br.ReturnedAt >= @from
+                  AND br.ReturnedAt < @to;";
             cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
             cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
             return Convert.ToDouble(cmd.ExecuteScalar());
+        }
+
+        /// <summary>Count of return transactions (BillReturns rows) in a date range.</summary>
+        public int GetReturnsCountByDateRange(DateTime from, DateTime to)
+        {
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT COUNT(*)
+                FROM BillReturns br
+                WHERE br.ReturnedAt >= @from
+                  AND br.ReturnedAt < @to;";
+            cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
+            return Convert.ToInt32(cmd.ExecuteScalar());
         }
 
         /// <summary>Gets sale bills only (no returns) for a date range.</summary>
@@ -1210,6 +1225,7 @@ namespace FruitVegetableMarketPOS.Data.Repositories
         /// <summary>
         /// Returns per-day aggregated sales and return totals for a date range.
         /// Each tuple: (Date, TotalSales, TotalReturns, BillCount)
+        /// Bills table = sales only; returns live in BillReturns.
         /// </summary>
         public List<(DateTime Date, double TotalSales, double TotalReturns, int BillCount)> GetDailySalesSeries(DateTime from, DateTime to)
         {
@@ -1217,21 +1233,45 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
+                WITH Days AS (
+                    SELECT date(b.CreatedAt) AS SaleDate
+                    FROM Bills b
+                    WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
+                      AND b.Status != 'Cancelled'
+                    UNION
+                    SELECT date(br.ReturnedAt) AS SaleDate
+                    FROM BillReturns br
+                    WHERE br.ReturnedAt >= @from AND br.ReturnedAt < @to
+                )
                 SELECT
-                    date(b.CreatedAt) AS SaleDate,
-                    COALESCE(SUM(CASE WHEN b.Type = 'Sale' THEN
-                        (SELECT COALESCE(SUM(Quantity * UnitPrice - COALESCE(DiscountAmount,0)), 0) FROM BillItems WHERE BillId = b.BillId)
-                        + COALESCE(b.TaxAmount,0) - COALESCE(b.DiscountAmount,0)
-                    ELSE 0 END), 0) AS DaySales,
-                    COALESCE(SUM(CASE WHEN b.Type = 'Return' THEN
-                        ABS((SELECT COALESCE(SUM(bri.Quantity * bri.UnitPrice), 0) FROM BillReturnItems bri JOIN BillReturns br ON bri.ReturnId = br.ReturnId WHERE br.BillId = b.BillId))
-                    ELSE 0 END), 0) AS DayReturns,
-                    COUNT(CASE WHEN b.Type = 'Sale' THEN 1 END) AS BillCount
-                FROM Bills b
-                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
-                  AND b.Status != 'Cancelled'
-                GROUP BY date(b.CreatedAt)
-                ORDER BY SaleDate ASC;";
+                    d.SaleDate,
+                    COALESCE((
+                        SELECT SUM(
+                            (SELECT COALESCE(SUM(Quantity * UnitPrice - COALESCE(DiscountAmount,0)), 0)
+                             FROM BillItems WHERE BillId = b.BillId)
+                            + COALESCE(b.TaxAmount,0) - COALESCE(b.DiscountAmount,0)
+                        )
+                        FROM Bills b
+                        WHERE date(b.CreatedAt) = d.SaleDate
+                          AND b.CreatedAt >= @from AND b.CreatedAt < @to
+                          AND b.Status != 'Cancelled'
+                    ), 0) AS DaySales,
+                    COALESCE((
+                        SELECT SUM(bri.Quantity * bri.UnitPrice)
+                        FROM BillReturnItems bri
+                        JOIN BillReturns br ON bri.ReturnId = br.ReturnId
+                        WHERE date(br.ReturnedAt) = d.SaleDate
+                          AND br.ReturnedAt >= @from AND br.ReturnedAt < @to
+                    ), 0) AS DayReturns,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM Bills b
+                        WHERE date(b.CreatedAt) = d.SaleDate
+                          AND b.CreatedAt >= @from AND b.CreatedAt < @to
+                          AND b.Status != 'Cancelled'
+                    ), 0) AS BillCount
+                FROM Days d
+                ORDER BY d.SaleDate ASC;";
             cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
             cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
 
@@ -1241,7 +1281,7 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                 var date = DateTime.Parse(reader.GetString(0));
                 var sales = reader.IsDBNull(1) ? 0 : reader.GetDouble(1);
                 var returns = reader.IsDBNull(2) ? 0 : reader.GetDouble(2);
-                var count = reader.IsDBNull(3) ? 0 : reader.GetInt32(3);
+                var count = reader.IsDBNull(3) ? 0 : Convert.ToInt32(reader.GetValue(3));
                 results.Add((date, sales, returns, count));
             }
             return results;
@@ -1300,9 +1340,11 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             cmd.CommandText = @"
                 SELECT
                     CASE
-                        WHEN b.PaymentMethod = 'Online' AND b.OnlinePaymentMethod IS NOT NULL
+                        WHEN b.BillPaymentMethod = 'Online' AND IFNULL(TRIM(b.OnlinePaymentMethod), '') != ''
                              THEN b.OnlinePaymentMethod
-                        ELSE b.PaymentMethod
+                        WHEN b.BillPaymentMethod = 'Online'
+                             THEN 'Online'
+                        ELSE COALESCE(NULLIF(TRIM(b.BillPaymentMethod), ''), 'Cash')
                     END AS Method,
                     SUM(
                         (SELECT COALESCE(SUM(Quantity * UnitPrice - COALESCE(DiscountAmount,0)), 0) FROM BillItems WHERE BillId = b.BillId)
@@ -1310,7 +1352,7 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                     ) AS TotalRevenue
                 FROM Bills b
                 WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
-                  AND b.Type = 'Sale' AND b.Status != 'Cancelled'
+                  AND b.Status != 'Cancelled'
                 GROUP BY Method
                 ORDER BY TotalRevenue DESC;";
             cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -1345,7 +1387,7 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                 FROM Bills b
                 LEFT JOIN Users u ON b.UserId = u.Id
                 WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
-                  AND b.Type = 'Sale' AND b.Status != 'Cancelled'
+                  AND b.Status != 'Cancelled'
                 GROUP BY b.UserId
                 ORDER BY Revenue DESC;";
             cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));

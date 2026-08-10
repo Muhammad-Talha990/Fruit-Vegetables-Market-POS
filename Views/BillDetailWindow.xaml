@@ -20,7 +20,7 @@
             </Grid.RowDefinitions>
 
             <!-- Title Bar -->
-            <Border Grid.Row="0" Background="#1E293B" CornerRadius="16,16,0,0" Padding="20,14"
+            <Border Grid.Row="0" Background="#1B4332" CornerRadius="16,16,0,0" Padding="20,14"
                     MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <Grid>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -141,13 +141,13 @@
                                   ColumnHeaderHeight="36" RowHeight="32">
                             <DataGrid.ColumnHeaderStyle>
                                 <Style TargetType="DataGridColumnHeader">
-                                    <Setter Property="Background" Value="#F1F5F9"/>
-                                    <Setter Property="Foreground" Value="#475569"/>
+                                    <Setter Property="Background" Value="#1B4332"/>
+                                    <Setter Property="Foreground" Value="White"/>
                                     <Setter Property="FontWeight" Value="SemiBold"/>
                                     <Setter Property="FontSize" Value="11"/>
                                     <Setter Property="Padding" Value="10,6"/>
-                                    <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                    <Setter Property="BorderBrush" Value="#2D6A4F"/>
+                                    <Setter Property="BorderThickness" Value="0,0,1,0"/>
                                 </Style>
                             </DataGrid.ColumnHeaderStyle>
                             <DataGrid.CellStyle>

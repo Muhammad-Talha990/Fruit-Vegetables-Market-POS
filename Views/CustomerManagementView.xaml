@@ -88,7 +88,8 @@
                       Style="{DynamicResource ModernDataGrid}">
                 <DataGrid.ColumnHeaderStyle>
                     <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource ModernDataGridColumnHeader}">
-                        <Setter Property="Background" Value="{DynamicResource SidebarBgBrush}"/>
+                        <Setter Property="Background" Value="{DynamicResource PrimaryBrush}"/>
+                        <Setter Property="Foreground" Value="White"/>
                     </Style>
                 </DataGrid.ColumnHeaderStyle>
                 <DataGrid.RowStyle>
@@ -254,7 +255,7 @@
         <Border Grid.RowSpan="4"
                 Visibility="{Binding IsEditDialogOpen, Converter={StaticResource WpfBoolToVis}}"
                 Background="#80000000" IsHitTestVisible="True">
-            <Border Background="#1E293B" CornerRadius="16" Padding="28,24"
+            <Border Background="#1B4332" CornerRadius="16" Padding="28,24"
                     VerticalAlignment="Center" HorizontalAlignment="Center"
                     MinWidth="440" MaxWidth="520"
                     BorderBrush="#334155" BorderThickness="1">

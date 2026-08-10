@@ -20,8 +20,8 @@ namespace FruitVegetableMarketPOS.Models
         public System.Windows.Media.Color? BarColor { get; set; }
 
         /// <summary>Formatted display value (e.g. "Rs. 2,500")</summary>
-        public string DisplayValue => Value >= 1000
-            ? $"Rs.{Value / 1000:N1}K"
+        public string DisplayValue => Value >= 100_000
+            ? $"Rs.{Value / 1000:N0}K"
             : $"Rs.{Value:N0}";
     }
 }

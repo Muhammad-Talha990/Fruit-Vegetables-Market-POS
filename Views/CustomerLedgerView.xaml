@@ -114,8 +114,8 @@
                           Style="{DynamicResource ModernDataGrid}">
                     <DataGrid.ColumnHeaderStyle>
                         <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource ModernDataGridColumnHeader}">
-                            <Setter Property="Background" Value="{DynamicResource SidebarBgBrush}"/>
-                            <Setter Property="Foreground" Value="#94A3B8"/>
+                            <Setter Property="Background" Value="{DynamicResource PrimaryBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
                         </Style>
                     </DataGrid.ColumnHeaderStyle>
                     <DataGrid.RowStyle>
@@ -281,7 +281,7 @@
         <Border Grid.RowSpan="5" Panel.ZIndex="2100"
                 Visibility="{Binding IsPayDuesPanelOpen, Converter={StaticResource WpfBoolToVis}}"
                 Background="#80000000" IsHitTestVisible="True">
-            <Border Background="#1E293B" CornerRadius="16" Padding="28,24"
+            <Border Background="#1B4332" CornerRadius="16" Padding="28,24"
                     VerticalAlignment="Center" HorizontalAlignment="Center"
                     MinWidth="440" MaxWidth="520"
                     BorderBrush="#334155" BorderThickness="1">
@@ -424,7 +424,7 @@
         <Border Grid.RowSpan="5"
                 Visibility="{Binding IsPaymentPanelOpen, Converter={StaticResource WpfBoolToVis}}"
                 Background="#80000000" IsHitTestVisible="True">
-            <Border Background="#1E293B" CornerRadius="16" Padding="28,24"
+            <Border Background="#1B4332" CornerRadius="16" Padding="28,24"
                     VerticalAlignment="Center" HorizontalAlignment="Center"
                     MinWidth="400" MaxWidth="480"
                     BorderBrush="#334155" BorderThickness="1">
@@ -545,7 +545,7 @@
                     </Grid.RowDefinitions>
 
                     <!-- Header -->
-                    <Border Grid.Row="0" Background="#1E2F46" CornerRadius="12,12,0,0" Padding="25,20" BorderBrush="#2F425B" BorderThickness="0,0,0,1">
+                    <Border Grid.Row="0" Background="#1B4332" CornerRadius="12,12,0,0" Padding="25,20" BorderBrush="#2D6A4F" BorderThickness="0,0,0,1">
                         <Grid>
                             <StackPanel>
                                 <TextBlock Text="Invoice Audit History" FontSize="20" FontWeight="Bold" Foreground="White"/>
@@ -579,11 +579,11 @@
                                               GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#F1F5F9">
                                         <DataGrid.ColumnHeaderStyle>
                                             <Style TargetType="DataGridColumnHeader">
-                                                <Setter Property="Background" Value="#1E2F46"/>
+                                                <Setter Property="Background" Value="#1B4332"/>
                                                 <Setter Property="Foreground" Value="White"/>
                                                 <Setter Property="FontWeight" Value="SemiBold"/>
                                                 <Setter Property="Padding" Value="8,6"/>
-                                                <Setter Property="BorderBrush" Value="#2F425B"/>
+                                                <Setter Property="BorderBrush" Value="#2D6A4F"/>
                                                 <Setter Property="BorderThickness" Value="0,0,1,0"/>
                                             </Style>
                                         </DataGrid.ColumnHeaderStyle>
@@ -614,11 +614,11 @@
                                               SelectionMode="Single" SelectionUnit="FullRow">
                                         <DataGrid.ColumnHeaderStyle>
                                             <Style TargetType="DataGridColumnHeader">
-                                                <Setter Property="Background" Value="#1E2F46"/>
+                                                <Setter Property="Background" Value="#1B4332"/>
                                                 <Setter Property="Foreground" Value="White"/>
                                                 <Setter Property="FontWeight" Value="SemiBold"/>
                                                 <Setter Property="Padding" Value="8,6"/>
-                                                <Setter Property="BorderBrush" Value="#2F425B"/>
+                                                <Setter Property="BorderBrush" Value="#2D6A4F"/>
                                                 <Setter Property="BorderThickness" Value="0,0,1,0"/>
                                             </Style>
                                         </DataGrid.ColumnHeaderStyle>
@@ -776,7 +776,7 @@
                     </ScrollViewer>
 
                     <!-- Financial Summary Section -->
-                    <Border Grid.Row="2" Background="#1E2F46" BorderBrush="#2F425B" BorderThickness="0,1,0,0" Padding="25,15">
+                    <Border Grid.Row="2" Background="#1B4332" BorderBrush="#2D6A4F" BorderThickness="0,1,0,0" Padding="25,15">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>

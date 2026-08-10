@@ -301,14 +301,14 @@
     </Style>
 
     <Style x:Key="ModernDataGridColumnHeader" TargetType="DataGridColumnHeader">
-        <Setter Property="Background" Value="#1E293B"/>
+        <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
         <Setter Property="Foreground" Value="White"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="Padding" Value="14,11"/>
         <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
         <Setter Property="BorderThickness" Value="0,0,1,0"/>
-        <Setter Property="BorderBrush" Value="#334155"/>
+        <Setter Property="BorderBrush" Value="{StaticResource PrimaryLightBrush}"/>
     </Style>
 
     <Style x:Key="ModernDataGridRow" TargetType="DataGridRow">
@@ -316,10 +316,10 @@
         <Setter Property="BorderThickness" Value="0"/>
         <Style.Triggers>
             <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="#E0F2FE"/>
+                <Setter Property="Background" Value="#D8F3DC"/>
             </Trigger>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="#F1F5F9"/>
+                <Setter Property="Background" Value="#F0FDF4"/>
             </Trigger>
         </Style.Triggers>
     </Style>
