@@ -1,6 +1,6 @@
 using System.Windows.Media;
 
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     /// <summary>
     /// A single data point for chart rendering (bar chart, line chart, etc.)

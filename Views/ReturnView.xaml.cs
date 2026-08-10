@@ -1,7 +1,7 @@
 using System.Windows.Controls;
-using GroceryPOS.ViewModels;
+using FruitVegetableMarketPOS.ViewModels;
 
-namespace GroceryPOS.Views
+namespace FruitVegetableMarketPOS.Views
 {
     public partial class ReturnView : UserControl
     {

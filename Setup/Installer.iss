@@ -1,13 +1,13 @@
 ; ==========================================
-; Grocery POS Installer
+; Fruit & Vegetable Market POS Installer
 ; Created for: .NET 8 (Win-x64)
 ; ==========================================
 
-#define MyAppName "GroceryPOS"
+#define MyAppName "Fruit & Vegetable Market POS"
 #define MyAppVersion "1.1.0"
 #define MyAppPublisher "Weblynx Hive"
 #define MyAppURL "https://weblynx-hive.onrender.com/"
-#define MyAppExeName "GroceryPOS.exe"
+#define MyAppExeName "FruitVegetableMarketPOS.exe"
 #define PublishDir "..\bin\Release\net8.0-windows\win-x64\publish"
 
 [Setup]
@@ -35,7 +35,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 OutputDir=.\Releases
-OutputBaseFilename=GroceryPOS_Setup_v{#MyAppVersion}
+OutputBaseFilename=FruitVegetableMarketPOS_Setup_v{#MyAppVersion}
 
 SetupIconFile=..\Assets\logo.ico
 
@@ -53,7 +53,7 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
-VersionInfoDescription=Grocery POS System
+VersionInfoDescription=Fruit & Vegetable Market POS
 VersionInfoCopyright=© Weblynx Hive
 
 DisableDirPage=no

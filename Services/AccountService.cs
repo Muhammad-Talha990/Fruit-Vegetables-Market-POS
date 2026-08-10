@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using GroceryPOS.Data.Repositories;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Data.Repositories;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Services
+namespace FruitVegetableMarketPOS.Services
 {
     /// <summary>
     /// Service for managing payment accounts.

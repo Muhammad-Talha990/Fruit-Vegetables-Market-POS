@@ -1,7 +1,7 @@
 using System.Windows;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     /// <summary>
     /// Simple ViewModel for the BillDetailWindow popup.

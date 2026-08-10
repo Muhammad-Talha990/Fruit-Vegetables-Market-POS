@@ -1,4 +1,4 @@
-GroceryPOS - Installation Guide
+Fruit & Vegetable Market POS - Installation Guide
 ===============================
 
 Prerequisites:
@@ -6,7 +6,7 @@ Prerequisites:
 - No additional software is required. This is a fully self-contained package.
 
 Installation Steps:
-1. Double-click "GroceryPOS_Setup_v1.0.0.exe" to begin the installation.
+1. Double-click "FruitVegetableMarketPOS_Setup_v1.1.0.exe" to begin the installation.
 2. If prompted by User Account Control (UAC), click "Yes" to allow the installer to make changes.
 3. Follow the on-screen wizard. Click "Next" to proceed through the license and folder selection.
 4. Click "Install" to begin copying files.

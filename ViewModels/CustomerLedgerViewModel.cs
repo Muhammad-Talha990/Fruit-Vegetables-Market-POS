@@ -4,12 +4,12 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
-using GroceryPOS.Services;
-using GroceryPOS.Data.Repositories;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
+using FruitVegetableMarketPOS.Services;
+using FruitVegetableMarketPOS.Data.Repositories;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     /// <summary>
     /// ViewModel for the Customer Ledger screen.
@@ -43,7 +43,6 @@ namespace GroceryPOS.ViewModels
         private readonly CustomerService _customerService;
         private readonly PrintService _printService;
         private readonly AuthService _authService;
-        private readonly IStockService _stockService;
         private readonly IReturnService _returnService;
         private readonly AccountService _accountService;
         private readonly CustomerLedgerRepository _ledgerRepo = new();
@@ -81,6 +80,69 @@ namespace GroceryPOS.ViewModels
             get => _totalPending;
             private set => SetProperty(ref _totalPending, value);
         }
+
+        /// <summary>True when customer has any unpaid dues.</summary>
+        public bool HasPendingDues => TotalPending > 0.01;
+
+        // ── Pay Dues (FIFO multi-bill) panel ──
+        private bool _isPayDuesPanelOpen;
+        public bool IsPayDuesPanelOpen
+        {
+            get => _isPayDuesPanelOpen;
+            set
+            {
+                if (SetProperty(ref _isPayDuesPanelOpen, value))
+                    RecalcDuesPreview();
+            }
+        }
+
+        private string _duesCashText = string.Empty;
+        public string DuesCashText
+        {
+            get => _duesCashText;
+            set
+            {
+                if (SetProperty(ref _duesCashText, value))
+                    RecalcDuesPreview();
+            }
+        }
+
+        private string _duesNote = string.Empty;
+        public string DuesNote
+        {
+            get => _duesNote;
+            set => SetProperty(ref _duesNote, value);
+        }
+
+        private string _duesError = string.Empty;
+        public string DuesError
+        {
+            get => _duesError;
+            set => SetProperty(ref _duesError, value);
+        }
+
+        private double _duesPreviewApplied;
+        public double DuesPreviewApplied
+        {
+            get => _duesPreviewApplied;
+            private set => SetProperty(ref _duesPreviewApplied, value);
+        }
+
+        private double _duesPreviewChange;
+        public double DuesPreviewChange
+        {
+            get => _duesPreviewChange;
+            private set => SetProperty(ref _duesPreviewChange, value);
+        }
+
+        private double _duesPreviewRemaining;
+        public double DuesPreviewRemaining
+        {
+            get => _duesPreviewRemaining;
+            private set => SetProperty(ref _duesPreviewRemaining, value);
+        }
+
+        public bool DuesPreviewHasChange => DuesPreviewChange > 0.01;
 
         // ── Record Payment panel ──
         private bool _isPaymentPanelOpen;
@@ -161,6 +223,8 @@ namespace GroceryPOS.ViewModels
                 {
                     OnPropertyChanged(nameof(IsCashPayment));
                     OnPropertyChanged(nameof(IsOnlinePayment));
+                    if (IsPayDuesPanelOpen)
+                        RecalcDuesPreview();
                 }
             }
         }
@@ -205,6 +269,10 @@ namespace GroceryPOS.ViewModels
         public ICommand ClosePaymentPanelCommand { get; }
         public ICommand RecordPaymentCommand { get; }
         public ICommand PayFullRemainingCommand { get; }
+        public ICommand OpenPayDuesPanelCommand { get; }
+        public ICommand ClosePayDuesPanelCommand { get; }
+        public ICommand RecordDuesPaymentCommand { get; }
+        public ICommand FillDuesFullPendingCommand { get; }
         public ICommand ViewBillCommand { get; }
         public ICommand PrintBillCommand { get; }
         public ICommand PrintLedgerCommand { get; }
@@ -217,24 +285,24 @@ namespace GroceryPOS.ViewModels
         public event Action? GoBackRequested;
         public ICommand GoBackCommand { get; }
 
-        public CustomerLedgerViewModel(CreditService creditService, CustomerService customerService, PrintService printService, AuthService authService, IStockService stockService, IReturnService returnService, AccountService accountService)
+        public CustomerLedgerViewModel(CreditService creditService, CustomerService customerService, PrintService printService, AuthService authService, IReturnService returnService, AccountService accountService)
         {
             _creditService  = creditService;
             _customerService = customerService;
             _printService = printService;
             _authService = authService;
-            _stockService = stockService;
             _returnService = returnService;
             _accountService = accountService;
-
-            // Real-time refresh whenever stock/billing events occur
-            _stockService.StockChanged += OnDataChanged;
 
             RefreshCommand          = new RelayCommand(_ => Refresh());
             OpenPaymentPanelCommand = new RelayCommand(obj => OpenPaymentPanel(obj as Bill));
             ClosePaymentPanelCommand= new RelayCommand(_ => ClosePaymentPanel());
             RecordPaymentCommand    = new RelayCommand(_ => RecordPayment());
             PayFullRemainingCommand = new RelayCommand(_ => PayFullRemaining());
+            OpenPayDuesPanelCommand = new RelayCommand(_ => OpenPayDuesPanel(), _ => HasPendingDues);
+            ClosePayDuesPanelCommand = new RelayCommand(_ => ClosePayDuesPanel());
+            RecordDuesPaymentCommand = new RelayCommand(_ => RecordDuesPayment());
+            FillDuesFullPendingCommand = new RelayCommand(_ => FillDuesFullPending());
             ViewBillCommand         = new RelayCommand(obj => ViewBill(obj as Bill));
             PrintBillCommand        = new RelayCommand(obj => PrintBill(obj as Bill));
             PrintLedgerCommand      = new RelayCommand(_ => PrintLedger());
@@ -273,6 +341,7 @@ namespace GroceryPOS.ViewModels
                 // Reset UI state from any previous customer
                 SelectedBill = null;
                 IsPaymentPanelOpen = false;
+                IsPayDuesPanelOpen = false;
                 IsBillDetailOpen = false;
                 StatusMessage = string.Empty;
                 Customer = _customerService.GetCustomerById(customerId);
@@ -303,17 +372,19 @@ namespace GroceryPOS.ViewModels
                 foreach (var bill in bills)
                     LedgerEntries.Add(bill);
 
-                // Summary calculations for CREDIT ledger (not gross sales):
-                TotalCredit = Math.Round(LedgerEntries.Sum(e => Math.Max(0, e.NetTotal - e.InitialPayment)), 2);
+                // Summary: Purchased = all bill amounts, Paid = all paid, Pending = remaining dues
+                TotalCredit = Math.Round(LedgerEntries.Sum(e => e.GrandTotal), 2);
+                TotalPaid = Math.Round(LedgerEntries.Sum(e => e.PaidAmount), 2);
                 TotalPending = Math.Round(LedgerEntries.Sum(e => e.RemainingAmount), 2);
-                TotalPaid = Math.Round(Math.Max(0, TotalCredit - TotalPending), 2);
 
                 // Refresh the customer's pending credit too
                 Customer.PendingCredit = TotalPending;
                 OnPropertyChanged(nameof(TotalPending));
                 OnPropertyChanged(nameof(TotalPaid));
                 OnPropertyChanged(nameof(TotalCredit));
+                OnPropertyChanged(nameof(HasPendingDues));
                 OnPropertyChanged(nameof(Customer));
+                (OpenPayDuesPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
                 var snapshot = _ledgerRepo.GetIntegritySnapshot(Customer.CustomerId);
                 if (Math.Abs(snapshot.Drift) > 0.01)
@@ -325,15 +396,17 @@ namespace GroceryPOS.ViewModels
                     foreach (var bill in refreshedBills)
                         LedgerEntries.Add(bill);
 
-                    TotalCredit = Math.Round(LedgerEntries.Sum(e => Math.Max(0, e.NetTotal - e.InitialPayment)), 2);
+                    TotalCredit = Math.Round(LedgerEntries.Sum(e => e.GrandTotal), 2);
+                    TotalPaid = Math.Round(LedgerEntries.Sum(e => e.PaidAmount), 2);
                     TotalPending = Math.Round(LedgerEntries.Sum(e => e.RemainingAmount), 2);
-                    TotalPaid = Math.Round(Math.Max(0, TotalCredit - TotalPending), 2);
                     Customer.PendingCredit = TotalPending;
 
                     OnPropertyChanged(nameof(TotalPending));
                     OnPropertyChanged(nameof(TotalPaid));
                     OnPropertyChanged(nameof(TotalCredit));
+                    OnPropertyChanged(nameof(HasPendingDues));
                     OnPropertyChanged(nameof(Customer));
+                    (OpenPayDuesPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     StatusMessage = "Ledger audit recalculated successfully.";
                 }
             }
@@ -348,6 +421,7 @@ namespace GroceryPOS.ViewModels
         private void Refresh()
         {
             ClosePaymentPanel();
+            ClosePayDuesPanel();
             LoadLedger();
             StatusMessage = string.Empty;
         }
@@ -359,6 +433,7 @@ namespace GroceryPOS.ViewModels
         private void OpenPaymentPanel(Bill? bill)
         {
             if (bill == null || !bill.HasPendingCredit) return;
+            ClosePayDuesPanel();
             // Re-fetch from DB to get latest PaidAmount/RemainingAmount
             var fresh = _creditService.GetBillById(bill.BillId);
             if (fresh != null)
@@ -388,6 +463,152 @@ namespace GroceryPOS.ViewModels
         {
             if (SelectedBill != null)
                 PaymentAmountText = SelectedBill.RemainingAmount.ToString("F2");
+        }
+
+        // ────────────────────────────────────────────
+        //  PAY DUES (FIFO multi-bill)
+        // ────────────────────────────────────────────
+
+        private void OpenPayDuesPanel()
+        {
+            if (Customer == null || !HasPendingDues) return;
+            ClosePaymentPanel();
+            LoadLedger(); // ensure pending is fresh
+            DuesCashText = string.Empty;
+            DuesNote = string.Empty;
+            DuesError = string.Empty;
+            SelectedPaymentMethod = "Cash";
+            SelectedAccount = ActiveAccounts.FirstOrDefault();
+            IsPayDuesPanelOpen = true;
+            RecalcDuesPreview();
+        }
+
+        private void ClosePayDuesPanel()
+        {
+            IsPayDuesPanelOpen = false;
+            DuesCashText = string.Empty;
+            DuesNote = string.Empty;
+            DuesError = string.Empty;
+            SelectedPaymentMethod = "Cash";
+            SelectedAccount = ActiveAccounts.FirstOrDefault();
+            RecalcDuesPreview();
+        }
+
+        private void FillDuesFullPending()
+        {
+            DuesCashText = TotalPending.ToString("F2");
+        }
+
+        private void RecalcDuesPreview()
+        {
+            double.TryParse(DuesCashText, out var cash);
+            cash = Math.Max(0, Math.Round(cash, 2));
+            DuesPreviewApplied = Math.Min(cash, TotalPending);
+
+            // Online: no overpay / change — amount must be ≤ pending
+            if (IsOnlinePayment)
+            {
+                DuesPreviewChange = 0;
+                DuesPreviewRemaining = Math.Max(0, Math.Round(TotalPending - Math.Min(cash, TotalPending), 2));
+                if (cash > TotalPending + 0.001)
+                {
+                    DuesError = $"Online amount (Rs. {cash:N0}) cannot exceed total pending (Rs. {TotalPending:N0}).\nآن لائن رقم کل واجب الادا سے زیادہ نہیں ہو سکتی۔";
+                }
+                else if (!string.IsNullOrEmpty(DuesError) && DuesError.Contains("cannot exceed total pending", StringComparison.OrdinalIgnoreCase))
+                {
+                    DuesError = string.Empty;
+                }
+            }
+            else
+            {
+                DuesPreviewChange = Math.Max(0, Math.Round(cash - TotalPending, 2));
+                DuesPreviewRemaining = Math.Max(0, Math.Round(TotalPending - cash, 2));
+                if (!string.IsNullOrEmpty(DuesError) && DuesError.Contains("cannot exceed total pending", StringComparison.OrdinalIgnoreCase))
+                    DuesError = string.Empty;
+            }
+
+            OnPropertyChanged(nameof(DuesPreviewHasChange));
+        }
+
+        private void RecordDuesPayment()
+        {
+            try
+            {
+                DuesError = string.Empty;
+
+                if (Customer == null)
+                {
+                    DuesError = "No customer loaded.";
+                    return;
+                }
+
+                if (!double.TryParse(DuesCashText, out double cash) || cash <= 0)
+                {
+                    DuesError = "Please enter a valid amount greater than zero.\nبراہ کرم درست رقم درج کریں۔";
+                    return;
+                }
+
+                if (IsOnlinePayment && SelectedAccount == null)
+                {
+                    DuesError = "Please select a payment account for online payment.\nآن لائن ادائیگی کے لیے اکاؤنٹ منتخب کریں۔";
+                    return;
+                }
+
+                if (TotalPending <= 0.01)
+                {
+                    DuesError = "This customer has no pending dues.\nاس گاہک کی کوئی واجب الادا رقم نہیں۔";
+                    return;
+                }
+
+                // Online payments cannot exceed pending (no change for online)
+                if (IsOnlinePayment && cash > TotalPending + 0.001)
+                {
+                    DuesError = $"Online amount (Rs. {cash:N0}) cannot exceed total pending (Rs. {TotalPending:N0}).\nآن لائن رقم کل واجب الادا سے زیادہ نہیں ہو سکتی۔";
+                    return;
+                }
+
+                var result = _creditService.RecordDuesPayment(
+                    Customer.CustomerId,
+                    cash,
+                    DuesNote,
+                    SelectedPaymentMethod);
+
+                string methodDisplay = IsOnlinePayment
+                    ? $"{SelectedPaymentMethod} ({SelectedAccount?.DisplayName})"
+                    : SelectedPaymentMethod;
+
+                // Pay Dues does NOT print — payment slips are only for individual bill Pay Due
+                LoadLedger();
+
+                var lines = new System.Text.StringBuilder();
+                lines.AppendLine($"Cash received: Rs. {result.CashReceived:N2} ({methodDisplay})");
+                lines.AppendLine($"Applied to dues: Rs. {result.AppliedAmount:N2}");
+                foreach (var a in result.Allocations)
+                    lines.AppendLine($"  • Bill #{a.InvoiceNumber}: Rs. {a.AmountPaid:N2}");
+
+                if (result.ChangeGiven > 0.01)
+                    lines.AppendLine($"Change given: Rs. {result.ChangeGiven:N2}");
+
+                if (result.IsFullyCleared)
+                    lines.AppendLine("All pending dues cleared. Status: Paid.");
+                else
+                    lines.AppendLine($"Remaining pending: Rs. {result.RemainingPending:N2}");
+
+                StatusMessage = result.IsFullyCleared
+                    ? $"✓ Dues cleared. Applied Rs. {result.AppliedAmount:N2}." +
+                      (result.ChangeGiven > 0.01 ? $" Change Rs. {result.ChangeGiven:N2}." : "")
+                    : $"✓ Applied Rs. {result.AppliedAmount:N2}. Remaining pending Rs. {result.RemainingPending:N2}.";
+
+                MessageBox.Show(lines.ToString(), "Pay Dues Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                OnPropertyChanged(nameof(StatusMessage));
+                ClosePayDuesPanel();
+                return;
+            }
+            catch (Exception ex)
+            {
+                DuesError = ex.Message;
+                AppLogger.Error("CustomerLedgerViewModel.RecordDuesPayment failed", ex);
+            }
         }
 
         private void RecordPayment()
@@ -672,19 +893,6 @@ namespace GroceryPOS.ViewModels
         {
             if (row?.IsReturn != true || row.ReturnGroup == null) return;
             SelectedReturnDetail = row.ReturnGroup;
-        }
-
-        private void OnDataChanged()
-        {
-            if (Customer != null)
-                Dispatch(() => LoadLedger());
-        }
-
-        public override void Dispose()
-        {
-            if (_stockService != null)
-                _stockService.StockChanged -= OnDataChanged;
-            base.Dispose();
         }
     }
 }

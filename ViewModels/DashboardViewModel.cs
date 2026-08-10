@@ -3,13 +3,12 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
-using GroceryPOS.Data.Repositories;
-using GroceryPOS.Models;
-using GroceryPOS.Services;
-using GroceryPOS.Helpers;
-using GroceryPOS.Views;
+using FruitVegetableMarketPOS.Models;
+using FruitVegetableMarketPOS.Services;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Views;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     /// <summary>
     /// ViewModel for the Dashboard screen.
@@ -19,9 +18,7 @@ namespace GroceryPOS.ViewModels
     {
         private readonly ItemService _itemService;
         private readonly BillService _billService;
-        private readonly IStockService _stockService;
         private readonly AuthService _authService;
-        private readonly StockPurchaseRepository _purchaseRepo;
         private double _todaySales;
         public double TodaySales { get => _todaySales; set => SetProperty(ref _todaySales, value); }
 
@@ -55,27 +52,16 @@ namespace GroceryPOS.ViewModels
         private double _todayCashInDrawer;
         public double TodayCashInDrawer { get => _todayCashInDrawer; set => SetProperty(ref _todayCashInDrawer, value); }
 
-        /// <summary>
-        /// Total amount spent on stock purchases today.
-        /// This is what gets deducted from Cash in Drawer.
-        /// </summary>
-        private double _todayStockPurchases;
-        public double TodayStockPurchases { get => _todayStockPurchases; set => SetProperty(ref _todayStockPurchases, value); }
-
         private double _todayOnlinePayments;
         public double TodayOnlinePayments { get => _todayOnlinePayments; set => SetProperty(ref _todayOnlinePayments, value); }
 
         private int _totalProducts;
         public int TotalProducts { get => _totalProducts; set => SetProperty(ref _totalProducts, value); }
 
-        private int _lowStockCount;
-        public int LowStockCount { get => _lowStockCount; set => SetProperty(ref _lowStockCount, value); }
-
         private string _greeting = string.Empty;
         public string Greeting { get => _greeting; set => SetProperty(ref _greeting, value); }
 
         public ObservableCollection<Bill> RecentSales { get; set; } = new();
-        public ObservableCollection<Item> LowStockItems { get; set; } = new();
         public ObservableCollection<OnlinePaymentBreakdownItem> OnlinePaymentBreakdown { get; set; } = new();
 
         public ICommand RefreshCommand { get; }
@@ -85,13 +71,11 @@ namespace GroceryPOS.ViewModels
         private DateTime _activeDashboardDate;
         public string CurrentTime => DateTime.Now.ToString("hh:mm:ss tt");
 
-        public DashboardViewModel(AuthService authService, ItemService itemService, BillService billService, IStockService stockService, StockPurchaseRepository purchaseRepo)
+        public DashboardViewModel(AuthService authService, ItemService itemService, BillService billService)
         {
             _authService  = authService;
             _itemService  = itemService;
             _billService  = billService;
-            _stockService = stockService;
-            _purchaseRepo = purchaseRepo;
 
             var hour = DateTime.Now.Hour;
             var timeGreeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
@@ -101,7 +85,6 @@ namespace GroceryPOS.ViewModels
             RefreshCommand = new RelayCommand(LoadData);
             OpenBillDetailCommand = new RelayCommand<Bill>(OpenBillDetail);
 
-            // Live clock
             _clockTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _clockTimer.Tick += (s, e) =>
             {
@@ -110,11 +93,17 @@ namespace GroceryPOS.ViewModels
             };
             _clockTimer.Start();
 
-            // Real-time updates
-            _stockService.StockChanged += LoadData;
-
+            SalesEvents.SalesChanged += OnSalesChanged;
             LoadData();
         }
+
+        private void OnSalesChanged()
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(LoadData);
+        }
+
+        /// <summary>Called when Dashboard nav is opened — always refresh live totals.</summary>
+        public void OnActivated() => LoadData();
 
         private void RefreshForNewDayIfNeeded()
         {
@@ -130,58 +119,44 @@ namespace GroceryPOS.ViewModels
         {
             try
             {
-                // Refresh greeting to ensure it matches current user after login
                 RefreshGreeting();
 
-            TodaySales = _billService.GetTodayTotal();
-            TodaySaleCount = _billService.GetTodayBillCount();
-            TodayCredit = _billService.GetTodayTotalCredit();
-            TodaySalesCash = _billService.GetTodayTotalCash();
-            TodayRecoveredCredit = _billService.GetTodayRecoveredCredit();
-            TodayCashRefunds = _billService.GetTodayCashRefunded();
-            // Cash in drawer already includes direct sales cash + recovered credit cash - cash refunds.
-            TodayCashInDrawer = _billService.GetTodayCashInDrawer();
-            TodayOnlinePayments = _billService.GetTodayOnlinePayments();
-            // Cash in Hand is the sum of cash in drawer and online payments
-            TodayCashInHand = TodayCashInDrawer + TodayOnlinePayments;
+                TodaySales = _billService.GetTodayTotal();
+                TodaySaleCount = _billService.GetTodayBillCount();
+                TodayCredit = _billService.GetTodayTotalCredit();
+                TodaySalesCash = _billService.GetTodayTotalCash();
+                TodayRecoveredCredit = _billService.GetTodayRecoveredCredit();
+                TodayCashRefunds = _billService.GetTodayCashRefunded();
+                TodayCashInDrawer = _billService.GetTodayCashInDrawer();
+                TodayOnlinePayments = _billService.GetTodayOnlinePayments();
+                TodayCashInHand = TodayCashInDrawer + TodayOnlinePayments;
 
-            // Populate online payment breakdown
-            Dispatch(() =>
-            {
-                OnlinePaymentBreakdown.Clear();
-                var from = DateTime.Today;
-                var to = from.AddDays(1);
-                foreach (var kvp in _billService.GetOnlinePaymentBreakdown(from, to))
+                Dispatch(() =>
                 {
-                    OnlinePaymentBreakdown.Add(new OnlinePaymentBreakdownItem { Method = kvp.Key, Amount = kvp.Value });
-                }
-            });
+                    OnlinePaymentBreakdown.Clear();
+                    var from = DateTime.Today;
+                    var to = from.AddDays(1);
+                    foreach (var kvp in _billService.GetOnlinePaymentBreakdown(from, to))
+                    {
+                        OnlinePaymentBreakdown.Add(new OnlinePaymentBreakdownItem { Method = kvp.Key, Amount = kvp.Value });
+                    }
+                });
 
-            // Stock purchases for the day (cash leaves the drawer)
-            try { TodayStockPurchases = _purchaseRepo.GetTodayPurchasesTotal(); }
-            catch { TodayStockPurchases = 0; }  // guard: table may not exist on v17 upgrade yet
+                TodayReturns = _billService.GetTodayReturnsTotal();
+                TodayNetSales = _billService.GetTodayNetSales();
+                TodayCash = TodayCashInHand;
+                TotalProducts = _itemService.GetTotalItemCount();
 
-            TodayReturns = _billService.GetTodayReturnsTotal();
-            TodayNetSales = _billService.GetTodayNetSales();
-            TodayCash = TodayCashInHand;
-            TotalProducts = _itemService.GetTotalItemCount();
-            LowStockCount = _stockService.GetLowStockCount();
-
-            Dispatch(() =>
-            {
-                RecentSales.Clear();
-                foreach (var bill in _billService.GetTodayBills().Take(10))
-                    RecentSales.Add(bill);
-
-                LowStockItems.Clear();
-                foreach (var item in _stockService.GetLowStockItems().Take(10))
-                    LowStockItems.Add(item);
-            });
+                Dispatch(() =>
+                {
+                    RecentSales.Clear();
+                    foreach (var bill in _billService.GetTodayBills().Take(10))
+                        RecentSales.Add(bill);
+                });
             }
             catch (Exception ex)
             {
                 AppLogger.Error("Dashboard failed to load data", ex);
-                // Fail gracefully: UI will show empty lists and zeroed counters
             }
         }
 
@@ -191,12 +166,12 @@ namespace GroceryPOS.ViewModels
             var timeGreeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
             Greeting = $"{timeGreeting}, {_authService.CurrentUser?.FullName ?? "User"}!";
         }
+
         private void OpenBillDetail(Bill? bill)
         {
             if (bill == null) return;
             try
             {
-                // Load fresh bill data with full audit logs
                 var freshBill = _billService.GetBillById(bill.BillId);
                 if (freshBill == null)
                 {
@@ -222,8 +197,6 @@ namespace GroceryPOS.ViewModels
         public override void Dispose()
         {
             _clockTimer.Stop();
-            if (_stockService != null)
-                _stockService.StockChanged -= LoadData;
             base.Dispose();
         }
     }

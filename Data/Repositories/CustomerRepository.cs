@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Data.Repositories
+namespace FruitVegetableMarketPOS.Data.Repositories
 {
     /// <summary>
     /// Data access for the Customers table.
@@ -170,7 +170,8 @@ namespace GroceryPOS.Data.Repositories
         }
 
         /// <summary>
-        /// Searches active customers by name or phone (used in billing dropdown).
+        /// Searches customers by name or phone (billing dropdown).
+        /// Includes inactive customers so cashiers see the inactive lock message.
         /// </summary>
         public List<Customer> Search(string query)
         {
@@ -179,7 +180,7 @@ namespace GroceryPOS.Data.Repositories
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
 
-            cmd.CommandText = CustomerSelectSql + " WHERE c.IsActive = 1 AND c.FullName != 'Walk-in Customer'";
+            cmd.CommandText = CustomerSelectSql + " WHERE c.FullName != 'Walk-in Customer'";
 
             if (!string.IsNullOrEmpty(normalized))
             {
@@ -192,7 +193,7 @@ namespace GroceryPOS.Data.Repositories
                 cmd.CommandText += " AND c.FullName LIKE @nameQuery";
             }
 
-            cmd.CommandText += " ORDER BY c.FullName ASC LIMIT 10;";
+            cmd.CommandText += " ORDER BY c.IsActive DESC, c.FullName ASC LIMIT 10;";
             cmd.Parameters.AddWithValue("@nameQuery", "%" + query + "%");
 
             using var reader = cmd.ExecuteReader();

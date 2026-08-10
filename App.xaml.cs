@@ -5,14 +5,14 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
-using GroceryPOS.Data;
-using GroceryPOS.Data.Repositories;
-using GroceryPOS.Helpers;
-using GroceryPOS.Services;
-using GroceryPOS.ViewModels;
-using GroceryPOS.Views;
+using FruitVegetableMarketPOS.Data;
+using FruitVegetableMarketPOS.Data.Repositories;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Services;
+using FruitVegetableMarketPOS.ViewModels;
+using FruitVegetableMarketPOS.Views;
 
-namespace GroceryPOS;
+namespace FruitVegetableMarketPOS;
 
 /// <summary>
 /// Application entry point.
@@ -110,21 +110,25 @@ public partial class App : Application
 
         // --- Data Layer (Repositories) ---
         services.AddSingleton<ItemRepository>();
+        services.AddSingleton<ItemTypeRepository>();
+        services.AddSingleton<CategoryRepository>();
+        services.AddSingleton<DailyItemSelectionRepository>();
+        services.AddSingleton<DailyClosingRepository>();
         services.AddSingleton<UserRepository>();
         services.AddSingleton<BillRepository>();
         services.AddSingleton<BillReturnRepository>();
         services.AddSingleton<CustomerRepository>();
         services.AddSingleton<CreditPaymentRepository>();
         services.AddSingleton<AccountRepository>();
-        services.AddSingleton<StockPurchaseRepository>();  // Cart-based stock purchases
-        services.AddSingleton<SupplierRepository>();
-
 
         // --- Service Layer ---
         services.AddSingleton<DataCacheService>(); // Cache must be singleton for consistency
         services.AddSingleton<AuthService>();
-        services.AddSingleton<IStockService, StockService>();
         services.AddSingleton<ItemService>();
+        services.AddSingleton<ItemTypeService>();
+        services.AddSingleton<CategoryService>();
+        services.AddSingleton<DailyItemSelectionService>();
+        services.AddSingleton<DailyClosingService>();
         services.AddSingleton<BillService>();
         services.AddSingleton<CustomerService>();
         services.AddSingleton<CreditService>();
@@ -132,12 +136,8 @@ public partial class App : Application
         services.AddSingleton<PrintService>();
         services.AddSingleton<ReportService>();
         services.AddSingleton<IReturnService, ReturnService>();
-        services.AddSingleton<SupplierService>();
 
-
-        // --- Supplier Bill Management ---
         services.AddSingleton<IImageStorageService, ImageStorageService>();
-        services.AddSingleton<UniqueIdGenerator>();
 
         // --- ViewModels ---
         services.AddSingleton<LoginViewModel>();
@@ -146,12 +146,9 @@ public partial class App : Application
         services.AddSingleton<ProductsViewModel>();
         services.AddSingleton<BillingViewModel>();
         services.AddSingleton<ReportsViewModel>();
-        services.AddSingleton<SupplierBillsViewModel>();
         services.AddSingleton<ReturnViewModel>();
         services.AddSingleton<CustomerManagementViewModel>();
         services.AddSingleton<CustomerLedgerViewModel>();
-        services.AddTransient<SupplierManagementViewModel>();
-
 
         _serviceProvider = services.BuildServiceProvider();
     }
@@ -198,6 +195,9 @@ public partial class App : Application
         Application.Current.MainWindow = mainWindow;
         mainWindow.Show();
         oldWindow?.Close();
+
+        // Prefetch Billing while user is on Dashboard so first Billing click is fast.
+        mainVM.PrefetchBilling();
     }
 
     private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)

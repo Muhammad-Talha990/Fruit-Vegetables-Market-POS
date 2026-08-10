@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Data.Repositories
+namespace FruitVegetableMarketPOS.Data.Repositories
 {
     /// <summary>
     /// Data access for the BILL_RETURNS table.
@@ -33,19 +33,14 @@ namespace GroceryPOS.Data.Repositories
         {
             using var cmd = conn.CreateCommand();
             cmd.Transaction = txn;
-            string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             cmd.CommandText = @"
                 INSERT INTO BillReturnItems (ReturnId, BillItemId, Quantity, UnitPrice)
-                VALUES (@retId, @biId, @qty, @price);
-                
-                INSERT INTO InventoryLogs (ItemId, QuantityChange, ChangeType, ReferenceId, ReferenceType, LogDate)
-                SELECT ItemId, @qty, 'Return', @retId, 'Return', @now FROM BillItems WHERE BillItemId = @biId;";
+                VALUES (@retId, @biId, @qty, @price);";
             
             cmd.Parameters.AddWithValue("@retId", returnId);
             cmd.Parameters.AddWithValue("@biId", billItemId);
             cmd.Parameters.AddWithValue("@qty", quantity);
             cmd.Parameters.AddWithValue("@price", unitPrice);
-            cmd.Parameters.AddWithValue("@now", now);
             cmd.ExecuteNonQuery();
         }
 
@@ -76,9 +71,10 @@ namespace GroceryPOS.Data.Repositories
             var returns = new List<BillReturn>();
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
+            // Barcode is optional on Items — never read it without IsDBNull.
             cmd.CommandText = @"
                 SELECT br.ReturnId, br.BillId, br.RefundAmount, br.ReturnedAt,
-                       bri.Quantity, bri.UnitPrice, i.Barcode, i.Description
+                       bri.Quantity, bri.UnitPrice, i.Barcode, i.Description, bi.ItemId
                 FROM BillReturns br
                 JOIN BillReturnItems bri ON br.ReturnId = bri.ReturnId
                 JOIN BillItems bi ON bri.BillItemId = bi.BillItemId
@@ -90,16 +86,23 @@ namespace GroceryPOS.Data.Repositories
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
-                returns.Add(new GroceryPOS.Models.BillReturn
+                var barcode = reader.IsDBNull(6) ? null : reader.GetString(6);
+                var itemId = reader.IsDBNull(8) ? 0 : reader.GetInt32(8);
+
+                returns.Add(new BillReturn
                 {
                     Id = reader.GetInt32(0),
                     BillId = reader.GetInt32(1),
-                    RefundAmount = reader.GetDouble(2),
-                    ReturnDate = reader.GetString(3),
-                    ReturnQuantity = reader.GetInt32(4),
-                    UnitPrice = reader.GetDouble(5),
-                    ProductId = reader.GetString(6),
-                    ProductDescription = reader.GetString(7)
+                    RefundAmount = reader.IsDBNull(2) ? 0 : reader.GetDouble(2),
+                    ReturnDate = reader.IsDBNull(3)
+                        ? DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                        : reader.GetString(3),
+                    ReturnQuantity = reader.IsDBNull(4)
+                        ? 0
+                        : Convert.ToInt32(Math.Round(reader.GetDouble(4))),
+                    UnitPrice = reader.IsDBNull(5) ? 0 : reader.GetDouble(5),
+                    ProductId = !string.IsNullOrWhiteSpace(barcode) ? barcode : itemId.ToString(),
+                    ProductDescription = reader.IsDBNull(7) ? string.Empty : reader.GetString(7)
                 });
             }
             return returns;

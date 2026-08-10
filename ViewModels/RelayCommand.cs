@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Input;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     public class RelayCommand : ICommand
     {

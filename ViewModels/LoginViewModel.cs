@@ -1,11 +1,11 @@
 using System;
 using System.Windows;
 using System.Windows.Input;
-using GroceryPOS.Data;
-using GroceryPOS.Helpers;
-using GroceryPOS.Services;
+using FruitVegetableMarketPOS.Data;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Services;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     public class LoginViewModel : BaseViewModel
     {

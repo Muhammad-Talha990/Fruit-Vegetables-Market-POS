@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     /// <summary>
     /// Represents a completed sale/bill transaction.

@@ -4,25 +4,26 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
-using GroceryPOS.Models;
-using GroceryPOS.Services;
-using GroceryPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
+using FruitVegetableMarketPOS.Services;
+using FruitVegetableMarketPOS.Helpers;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     /// <summary>
     /// ViewModel for the Reports screen.
-    /// Supports Daily, Weekly, Monthly, Custom, Product-wise, and Low-Stock reports.
+    /// Supports Daily, Weekly, Monthly, Custom, and Product-wise reports.
     /// Also powers the Analytics Dashboard with chart data.
     /// </summary>
     [SupportedOSPlatform("windows")]
     public class ReportsViewModel : BaseViewModel
     {
         private readonly ReportService _reportService;
-        private readonly IStockService _stockService;
         private readonly PrintService _printService;
         private readonly AuthService _authService;
         private readonly IReturnService _returnService;
+        private readonly DailyClosingService _dailyClosingService;
+        private readonly DailyItemSelectionService _dailyItemSelectionService;
 
         // ── Tab state ──────────────────────────────────────────────────────────
         private int _selectedTabIndex = 0;
@@ -35,11 +36,30 @@ namespace GroceryPOS.ViewModels
         // ── Collections ────────────────────────────────────────────────────────
         public ObservableCollection<Bill>           SalesReport         { get; } = new();
         public ObservableCollection<ReportItem>     ProductReport       { get; } = new();
-        public ObservableCollection<Item>           LowStockReport      { get; } = new();
+        public ObservableCollection<DailyItemSetRow> DailyItemHistory { get; } = new();
         public ObservableCollection<ChartDataPoint> DailySalesChart     { get; } = new();
         public ObservableCollection<ChartDataPoint> TopProductsChart    { get; } = new();
         public ObservableCollection<CashierStat>    CashierPerformance  { get; } = new();
         public ObservableCollection<PaymentMethodStat> PaymentMethodStats { get; } = new();
+
+        private DailyClosing? _dailyClosingPreview;
+        public DailyClosing? DailyClosingPreview
+        {
+            get => _dailyClosingPreview;
+            set => SetProperty(ref _dailyClosingPreview, value);
+        }
+
+        private bool _showDailyItemGrid;
+        public bool ShowDailyItemGrid { get => _showDailyItemGrid; set => SetProperty(ref _showDailyItemGrid, value); }
+
+        private bool _showDailyClosingPanel;
+        public bool ShowDailyClosingPanel { get => _showDailyClosingPanel; set => SetProperty(ref _showDailyClosingPanel, value); }
+
+        private bool _showDailySaleQtyGrid;
+        public bool ShowDailySaleQtyGrid { get => _showDailySaleQtyGrid; set => SetProperty(ref _showDailySaleQtyGrid, value); }
+
+        private string _dailyClosingStatus = "";
+        public string DailyClosingStatus { get => _dailyClosingStatus; set => SetProperty(ref _dailyClosingStatus, value); }
 
         private List<Bill> _currentRawBills = new();
 
@@ -126,9 +146,6 @@ namespace GroceryPOS.ViewModels
         private bool _showProductGrid;
         public bool ShowProductGrid { get => _showProductGrid; set => SetProperty(ref _showProductGrid, value); }
 
-        private bool _showLowStockGrid;
-        public bool ShowLowStockGrid { get => _showLowStockGrid; set => SetProperty(ref _showLowStockGrid, value); }
-
         private bool _isToDateVisible;
         public bool IsToDateVisible { get => _isToDateVisible; set => SetProperty(ref _isToDateVisible, value); }
 
@@ -162,33 +179,30 @@ namespace GroceryPOS.ViewModels
         public ICommand PrintBillCommand        { get; }
         public ICommand CloseBillDetailCommand  { get; }
         public ICommand RefreshCommand          { get; }
+        public ICommand CloseDayCommand         { get; }
 
         // ── Constructor ────────────────────────────────────────────────────────
-        public ReportsViewModel(ReportService reportService, IStockService stockService,
+        public ReportsViewModel(ReportService reportService,
                                 PrintService printService, AuthService authService,
-                                IReturnService returnService)
+                                IReturnService returnService,
+                                DailyClosingService dailyClosingService,
+                                DailyItemSelectionService dailyItemSelectionService)
         {
             _reportService  = reportService;
-            _stockService   = stockService;
             _printService   = printService;
             _authService    = authService;
             _returnService  = returnService;
+            _dailyClosingService = dailyClosingService;
+            _dailyItemSelectionService = dailyItemSelectionService;
 
             ExportReportCommand    = new RelayCommand(ExportReport);
             ViewBillCommand        = new RelayCommand(obj => ViewBill(obj as Bill));
             PrintBillCommand       = new RelayCommand(obj => PrintBill(obj as Bill));
             CloseBillDetailCommand = new RelayCommand(_ => CloseBillDetail());
             RefreshCommand         = new RelayCommand(_ => GenerateReport());
+            CloseDayCommand        = new RelayCommand(_ => ExecuteCloseDay(), _ => _authService.IsAdmin && !(DailyClosingPreview?.IsClosed ?? false));
 
-            _stockService.StockChanged += GenerateReport;
             GenerateReport();
-        }
-
-        public override void Dispose()
-        {
-            if (_stockService != null)
-                _stockService.StockChanged -= GenerateReport;
-            base.Dispose();
         }
 
         // ── Main Report Generator ──────────────────────────────────────────────
@@ -202,8 +216,16 @@ namespace GroceryPOS.ViewModels
 
                 if (string.Equals(type, "Product-wise", StringComparison.OrdinalIgnoreCase))
                     LoadProductReport(start, end);
-                else if (string.Equals(type, "Low Stock", StringComparison.OrdinalIgnoreCase))
-                    LoadLowStockReport();
+                else if (string.Equals(type, "Type-wise", StringComparison.OrdinalIgnoreCase))
+                    LoadTypeReport(start, end);
+                else if (string.Equals(type, "Category-wise", StringComparison.OrdinalIgnoreCase))
+                    LoadCategoryReport(start, end);
+                else if (string.Equals(type, "Daily Sale Qty", StringComparison.OrdinalIgnoreCase))
+                    LoadDailySaleQtyReport();
+                else if (string.Equals(type, "Daily Items", StringComparison.OrdinalIgnoreCase))
+                    LoadDailyItemsReport();
+                else if (string.Equals(type, "Daily Closing", StringComparison.OrdinalIgnoreCase))
+                    LoadDailyClosingReport();
                 else
                     LoadSalesReport(type, start, end);
             }
@@ -215,18 +237,26 @@ namespace GroceryPOS.ViewModels
 
         private void ConfigureUIState(string type)
         {
-            if (type == "Custom Range" || type == "Product-wise")
+            ShowDailyItemGrid = false;
+            ShowDailyClosingPanel = false;
+            ShowDailySaleQtyGrid = false;
+
+            if (type is "Custom Range" or "Product-wise" or "Type-wise" or "Category-wise")
             {
                 IsFromDateVisible = true;
                 IsToDateVisible   = true;
                 FromDateLabel     = type == "Custom Range" ? "From Date" : "Start Date";
                 IsRevenueVisible  = true;
             }
-            else if (type == "Low Stock")
+            else if (type is "Daily Items" or "Daily Closing" or "Daily Sale Qty")
             {
-                IsFromDateVisible = false;
+                IsFromDateVisible = true;
                 IsToDateVisible   = false;
-                IsRevenueVisible  = false;
+                FromDateLabel     = "Business Date";
+                IsRevenueVisible  = type is "Daily Closing" or "Daily Sale Qty";
+                ShowDailyItemGrid = type == "Daily Items";
+                ShowDailyClosingPanel = type == "Daily Closing";
+                ShowDailySaleQtyGrid = type == "Daily Sale Qty";
             }
             else
             {
@@ -273,37 +303,168 @@ namespace GroceryPOS.ViewModels
         {
             ShowSalesGrid    = false;
             ShowProductGrid  = true;
-            ShowLowStockGrid = false;
+            ShowDailyItemGrid = false;
+            ShowDailyClosingPanel = false;
+            ShowDailySaleQtyGrid = false;
             var data = _reportService.GetProductWiseReport(start, end);
             Dispatch(() =>
             {
                 ProductReport.Clear();
                 foreach (var r in data) ProductReport.Add(r);
                 TotalRevenue    = data.Sum(r => r.TotalRevenue);
-                TotalSalesCount = data.Sum(r => r.QuantitySold);
+                TotalSalesCount = data.Count;
             });
         }
 
-        private void LoadLowStockReport()
+        private void LoadTypeReport(DateTime start, DateTime end)
         {
-            ShowSalesGrid    = false;
-            ShowProductGrid  = false;
-            ShowLowStockGrid = true;
-            var data = _stockService.GetLowStockItems();
+            ShowSalesGrid = false;
+            ShowProductGrid = true;
+            ShowDailyItemGrid = false;
+            ShowDailyClosingPanel = false;
+            ShowDailySaleQtyGrid = false;
+            var data = _reportService.GetTypeWiseReport(start, end);
             Dispatch(() =>
             {
-                LowStockReport.Clear();
-                foreach (var i in data) LowStockReport.Add(i);
-                TotalRevenue    = 0;
+                ProductReport.Clear();
+                foreach (var r in data) ProductReport.Add(r);
+                TotalRevenue = data.Sum(r => r.TotalRevenue);
                 TotalSalesCount = data.Count;
             });
+        }
+
+        private void LoadCategoryReport(DateTime start, DateTime end)
+        {
+            ShowSalesGrid = false;
+            ShowProductGrid = true;
+            ShowDailyItemGrid = false;
+            ShowDailyClosingPanel = false;
+            ShowDailySaleQtyGrid = false;
+            var data = _reportService.GetCategoryWiseReport(start, end);
+            Dispatch(() =>
+            {
+                ProductReport.Clear();
+                foreach (var r in data) ProductReport.Add(r);
+                TotalRevenue = data.Sum(r => r.TotalRevenue);
+                TotalSalesCount = data.Count;
+            });
+        }
+
+        private void LoadDailyItemsReport()
+        {
+            ShowSalesGrid = false;
+            ShowProductGrid = false;
+            ShowDailyItemGrid = true;
+            ShowDailyClosingPanel = false;
+            ShowDailySaleQtyGrid = false;
+            var businessDate = DateTimeHelper.GetBusinessDate(FromDate);
+            var rows = _dailyItemSelectionService.GetDailyItemSetForDate(businessDate);
+            Dispatch(() =>
+            {
+                DailyItemHistory.Clear();
+                foreach (var row in rows) DailyItemHistory.Add(row);
+                TotalSalesCount = rows.Count;
+                TotalRevenue = rows.Sum(r => r.Sale);
+            });
+        }
+
+        /// <summary>
+        /// Per-item sale qty for the selected business date (temp daily column).
+        /// Columns: Item ID · Description · Type · Unit Price · Sale.
+        /// </summary>
+        private void LoadDailySaleQtyReport()
+        {
+            ShowSalesGrid = false;
+            ShowProductGrid = false;
+            ShowDailyItemGrid = false;
+            ShowDailyClosingPanel = false;
+            ShowDailySaleQtyGrid = true;
+
+            var data = _reportService.GetDailySaleQtyReport(FromDate.Date);
+            Dispatch(() =>
+            {
+                ProductReport.Clear();
+                foreach (var r in data) ProductReport.Add(r);
+                TotalSalesCount = data.Count;
+                TotalRevenue = data.Sum(r => r.Amount);
+                NetSales = TotalRevenue;
+            });
+        }
+
+        private void LoadDailyClosingReport()
+        {
+            ShowSalesGrid = false;
+            ShowProductGrid = false;
+            ShowDailyItemGrid = false;
+            ShowDailyClosingPanel = true;
+            ShowDailySaleQtyGrid = false;
+            var businessDate = DateTimeHelper.GetBusinessDate(FromDate);
+            var preview = _dailyClosingService.GetByDate(businessDate) ?? _dailyClosingService.ComputeForDate(businessDate);
+            Dispatch(() =>
+            {
+                DailyClosingPreview = preview;
+                DailyClosingStatus = preview.IsClosed
+                    ? $"Closed at {preview.ClosedAt:dd-MMM-yyyy HH:mm}"
+                    : "Day is still OPEN — review totals then close.";
+                TotalRevenue = preview.TotalSales;
+                TotalSalesCount = preview.TotalBills;
+                TotalReturns = preview.Refunds;
+                NetSales = preview.NetSales;
+                (CloseDayCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            });
+        }
+
+        private void ExecuteCloseDay()
+        {
+            try
+            {
+                if (!_authService.IsAdmin)
+                {
+                    System.Windows.MessageBox.Show("Only Admin can close the business day.", "Permission",
+                        System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                    return;
+                }
+
+                var businessDate = DateTimeHelper.GetBusinessDate(FromDate);
+                if (_dailyClosingService.IsClosed(businessDate))
+                {
+                    System.Windows.MessageBox.Show("This day is already closed.", "Daily Closing",
+                        System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    return;
+                }
+
+                var confirm = System.Windows.MessageBox.Show(
+                    $"Close business day {businessDate}?\n\nThis stores today's sales summary. Historical bills remain available.",
+                    "Confirm Daily Closing",
+                    System.Windows.MessageBoxButton.YesNo,
+                    System.Windows.MessageBoxImage.Question);
+                if (confirm != System.Windows.MessageBoxResult.Yes) return;
+
+                var closed = _dailyClosingService.CloseDay(businessDate, _authService.CurrentUser?.Id);
+                DailyClosingPreview = closed;
+                DailyClosingStatus = $"Closed at {closed.ClosedAt:dd-MMM-yyyy HH:mm}";
+                (CloseDayCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                System.Windows.MessageBox.Show(
+                    $"Day closed.\n\nBills: {closed.TotalBills}\nGross: Rs.{closed.TotalSales:N0}\nNet: Rs.{closed.NetSales:N0}",
+                    "Daily Closing",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Daily closing failed", ex);
+                System.Windows.MessageBox.Show(ex.Message, "Daily Closing Error",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
         }
 
         private void LoadSalesReport(string type, DateTime start, DateTime end)
         {
             ShowSalesGrid    = true;
             ShowProductGrid  = false;
-            ShowLowStockGrid = false;
+            ShowDailyItemGrid = false;
+            ShowDailyClosingPanel = false;
+            ShowDailySaleQtyGrid = false;
 
             _currentRawBills = _reportService.GetByDateRange(start, end);
 
@@ -457,7 +618,7 @@ namespace GroceryPOS.ViewModels
             {
                 if (ShowSalesGrid    && SalesReport.Count    == 0) return;
                 if (ShowProductGrid  && ProductReport.Count  == 0) return;
-                if (ShowLowStockGrid && LowStockReport.Count == 0) return;
+                if (ShowDailySaleQtyGrid && ProductReport.Count == 0) return;
 
                 var sfd = new Microsoft.Win32.SaveFileDialog
                 {
@@ -478,19 +639,19 @@ namespace GroceryPOS.ViewModels
                         }
                         csv.AppendLine($"TOTAL,,,,,,{SalesReport.Sum(b => b.GrandTotal)},{SalesReport.Sum(b => b.PaidAmount)},{SalesReport.Sum(b => b.RemainingAmount)},,");
                     }
+                    else if (ShowDailySaleQtyGrid)
+                    {
+                        csv.AppendLine("Item ID,Item Description,Type,Unit Price,Sale,Amount");
+                        foreach (var p in ProductReport)
+                            csv.AppendLine($"{p.ItemId},\"{p.ItemDescription}\",\"{p.TypeName}\",{p.UnitPrice},{p.Sale},{p.Amount}");
+                        csv.AppendLine($",,,,{ProductReport.Sum(p => p.Sale)},{ProductReport.Sum(p => p.Amount)}");
+                    }
                     else if (ShowProductGrid)
                     {
                         csv.AppendLine("Product Name,Quantity Sold,Total Revenue");
                         foreach (var p in ProductReport)
                             csv.AppendLine($"\"{p.ItemDescription}\",{p.QuantitySold},{p.TotalRevenue}");
                         csv.AppendLine($"TOTAL,{ProductReport.Sum(p => p.QuantitySold)},{ProductReport.Sum(p => p.TotalRevenue)}");
-                    }
-                    else if (ShowLowStockGrid)
-                    {
-                        csv.AppendLine("Barcode,Product Name,Category,Current Stock,Threshold");
-                        foreach (var i in LowStockReport)
-                            csv.AppendLine($"{i.Barcode},\"{i.Description}\",\"{i.ItemCategory}\",{i.StockQuantity},{i.MinStockThreshold}");
-                        csv.AppendLine($"TOTAL ITEMS,{LowStockReport.Count},,,,");
                     }
 
                     System.IO.File.WriteAllText(sfd.FileName, csv.ToString());

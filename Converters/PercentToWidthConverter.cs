@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using System.Windows.Data;
 
-namespace GroceryPOS.Converters
+namespace FruitVegetableMarketPOS.Converters
 {
     public class PercentToWidthConverter : IMultiValueConverter
     {

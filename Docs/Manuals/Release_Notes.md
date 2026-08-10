@@ -1,4 +1,4 @@
-Release Notes - GroceryPOS v1.0.0
+Release Notes - FruitVegetableMarketPOS v1.0.0
 =================================
 
 Version 1.0.0 (Initial Commercial Release)

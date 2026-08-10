@@ -1,34 +1,33 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Helpers;
+using FruitVegetableMarketPOS.Helpers;
 
-namespace GroceryPOS.Data
+namespace FruitVegetableMarketPOS.Data
 {
     /// <summary>
-    /// Creates and maintains the normalized (3NF) database schema for GroceryPOS.
+    /// Creates and maintains the normalized (3NF) database schema for Fruit & Vegetable Market POS.
     ///
-    /// Tables (12):
+    /// Tables (16):
     ///   1.  Users               – System users (Admin / Cashier)
-    ///   2.  Categories          – Product categories (lookup)
+    ///   2.  Categories          – Product categories (lookup, with display order + icon)
     ///   3.  Items               – Product catalog (PK = ItemId, Barcode optional + unique)
-    ///   4.  Customers           – Registered customers with soft-delete, mandatory 11-digit phone
-    ///   5.  Bills               – Sale headers (IMMUTABLE once saved)
-    ///   6.  BillItems           – Sale line items (IMMUTABLE, surrogate PK)
-    ///   7.  bill_payment        – Payment transaction log (Sale / Credit Payment / Refund)
-    ///   8.  BillReturns         – Return headers (linked to original Bill)
-    ///   9.  BillReturnItems     – Return line items (linked to original BillItems)
-    ///  10.  InventoryLogs       – Stock movement audit trail
-    ///  11.  Accounts            – Payment accounts (Bank / Easypaisa / JazzCash)
-    ///  12.  CustomerLedger      – Double-entry audit journal per customer
-    ///  13.  StockPurchases      – Stock purchase master records (cash deducted from drawer)
-    ///  14.  StockPurchaseItems  – Stock purchase line items (links to Items)
+    ///   4.  ItemTypes           – Price/type variants per item (Type 1, Type 2, …)
+    ///   5.  DailyItemSelection  – Today's menu (BusinessDate + ItemId); Type/Sale via DailyItemSet view
+    ///   6.  DailyClosing        – End-of-day sales summary per business date
+    ///   7.  Customers           – Registered customers with soft-delete, mandatory 11-digit phone
+    ///   8.  Bills               – Sale headers (IMMUTABLE once saved)
+    ///   9.  BillItems           – Sale line items (IMMUTABLE, surrogate PK, type snapshots)
+    ///  10.  bill_payment        – Payment transaction log (Sale / Credit Payment / Refund)
+    ///  11.  BillReturns         – Return headers (linked to original Bill)
+    ///  12.  BillReturnItems     – Return line items (linked to original BillItems)
+    ///  13.  Accounts            – Payment accounts (Bank / Easypaisa / JazzCash)
+    ///  14.  CustomerLedger      – Double-entry audit journal per customer
     ///
     /// Key Business Rules:
-    ///   - Stock is CALCULATED from SUM(InventoryLogs.QuantityChange), never stored on Items.
     ///   - Bill totals are CALCULATED from BillItems, never stored on Bills.
     ///   - Customer phone is MANDATORY, exactly 11 digits, must start with '0'.
-    ///   - Stock purchases deduct from Cash in Drawer (negative balances are allowed).
     ///   - All datetime values use a single-capture variable per transaction (no multiple Now calls).
     ///
     /// Safe to call on every application startup (CREATE IF NOT EXISTS + idempotent migrations).
@@ -36,7 +35,8 @@ namespace GroceryPOS.Data
     public static class DatabaseInitializer
     {
         // Schema version — increment when adding migrations
-        private const int CurrentSchemaVersion = 22;
+        private const int CurrentSchemaVersion = 30;
+        private const int MarketCatalogVersion = 28;
 
         /// <summary>
         /// Ensures all tables, indexes, and seed data exist.
@@ -64,8 +64,8 @@ namespace GroceryPOS.Data
                     EnsureCustomerLedgerAuditColumns(conn);
                     // ── Hard guard: make bill_payment canonical even if user_version is stale ──
                     EnsureCanonicalBillPaymentShape(conn);
-                    // ── Hard guard: ensure supplier tables exist even if migration history is stale ──
-                    EnsureSupplierSchema(conn);
+                    // ── Hard guard: fruit/veg POS tables and columns (ItemTypes, Daily*, snapshots) ──
+                    EnsureFruitVegSchema(conn);
 
                     // Fix any leftover foreign-key references to a legacy Customers_v17 table
                     // that may have been left behind by interrupted migrations.
@@ -80,11 +80,16 @@ namespace GroceryPOS.Data
                     // ── Run migrations for existing databases ──
                     MigrateIfNeeded(conn);
 
+                    SeedFruitVegetableMarketCatalog(conn);
+                    ConsolidateToTwoCategories(conn);
+                    // One-time seed cleanup only — do not re-merge user catalog on every launch
+                    RunDuplicateCleanupOnce(conn);
+
                     SeedUsers(conn);
                     RepairDefaultUserPasswords(conn);
+                    SeedAccounts(conn);
                     // Commented out to prevent test data from shipping to clients
                     // SeedCategories(conn);
-                    // SeedAccounts(conn);
                     // SeedItems(conn);
                 }
 
@@ -124,23 +129,26 @@ namespace GroceryPOS.Data
             // ────────────────────────────────────────
             Execute(conn, @"
                 CREATE TABLE IF NOT EXISTS Categories (
-                    CategoryId INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Name       TEXT    NOT NULL UNIQUE
+                    CategoryId   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Name         TEXT    NOT NULL UNIQUE,
+                    IconPath     TEXT,
+                    DisplayOrder INTEGER NOT NULL DEFAULT 0,
+                    IsActive     INTEGER NOT NULL DEFAULT 1
                 );
             ");
 
             // ────────────────────────────────────────
-            //  TABLE 3: Items
+            //  TABLE 3: Items (catalog only — prices on ItemTypes)
             // ────────────────────────────────────────
             Execute(conn, @"
                 CREATE TABLE IF NOT EXISTS Items (
                     ItemId            INTEGER PRIMARY KEY AUTOINCREMENT,
                     Barcode           TEXT    UNIQUE,
                     Description       TEXT    NOT NULL,
-                    CostPrice         REAL    NOT NULL CHECK(CostPrice >= 0),
-                    SalePrice         REAL    NOT NULL CHECK(SalePrice >= 0),
+                    NameUrdu          TEXT,
                     CategoryId        INTEGER,
-                    MinStockThreshold REAL    NOT NULL DEFAULT 10,
+                    IsActive          INTEGER NOT NULL DEFAULT 1,
+                    UpdatedAt         DATETIME,
                     CreatedAt         DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (CategoryId) REFERENCES Categories(CategoryId)
                         ON DELETE SET NULL
@@ -277,26 +285,7 @@ namespace GroceryPOS.Data
             ");
 
             // ────────────────────────────────────────
-            //  TABLE 10: InventoryLogs
-            // ────────────────────────────────────────
-            Execute(conn, @"
-                CREATE TABLE IF NOT EXISTS InventoryLogs (
-                    LogId          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ItemId         INTEGER NOT NULL,
-                    QuantityChange REAL    NOT NULL,
-                    ChangeType     TEXT    NOT NULL
-                                   CHECK(ChangeType IN ('Sale', 'Return', 'Purchase', 'Adjustment')),
-                    ReferenceId    INTEGER,
-                    ReferenceType  TEXT    CHECK(ReferenceType IN ('Bill', 'Return', 'Supply') OR ReferenceType IS NULL),
-                    LogDate        DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    ImagePath      TEXT,
-                    FOREIGN KEY (ItemId) REFERENCES Items(ItemId)
-                        ON DELETE CASCADE
-                );
-            ");
-
-            // ────────────────────────────────────────
-            //  TABLE 12: CustomerLedger (Audit Journal)
+            //  TABLE 10: CustomerLedger (Audit Journal)
             // ────────────────────────────────────────
             Execute(conn, @"
                 CREATE TABLE IF NOT EXISTS CustomerLedger (
@@ -324,38 +313,6 @@ namespace GroceryPOS.Data
             ");
 
             // ────────────────────────────────────────
-            //  TABLE 13: StockPurchases (Master)
-            //  One record per purchase session (cart checkout).
-            //  TotalAmount is deducted from Cash in Drawer.
-            // ────────────────────────────────────────
-            Execute(conn, @"
-                CREATE TABLE IF NOT EXISTS StockPurchases (
-                    PurchaseId      INTEGER PRIMARY KEY AUTOINCREMENT,
-                    PurchaseAt      DATETIME NOT NULL,
-                    TotalAmount     REAL     NOT NULL CHECK(TotalAmount >= 0),
-                    CreatedByUserId INTEGER,
-                    ImagePath       TEXT,
-                    FOREIGN KEY (CreatedByUserId) REFERENCES Users(Id) ON DELETE SET NULL
-                );
-            ");
-
-            // ────────────────────────────────────────
-            //  TABLE 14: StockPurchaseItems (Detail)
-            //  Each row is one product line in a stock purchase.
-            // ────────────────────────────────────────
-            Execute(conn, @"
-                CREATE TABLE IF NOT EXISTS StockPurchaseItems (
-                    Id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    PurchaseId  INTEGER NOT NULL,
-                    ItemId      INTEGER NOT NULL,
-                    Quantity    REAL    NOT NULL CHECK(Quantity > 0),
-                    CostPrice   REAL    NOT NULL CHECK(CostPrice >= 0),
-                    FOREIGN KEY (PurchaseId) REFERENCES StockPurchases(PurchaseId) ON DELETE CASCADE,
-                    FOREIGN KEY (ItemId)     REFERENCES Items(ItemId)              ON DELETE RESTRICT
-                );
-            ");
-
-            // ────────────────────────────────────────
             //  INDEXES
             // ────────────────────────────────────────
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Items_Barcode           ON Items(Barcode) WHERE Barcode IS NOT NULL;");
@@ -371,14 +328,9 @@ namespace GroceryPOS.Data
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Returns_BillId          ON BillReturns(BillId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ReturnItems_RetId       ON BillReturnItems(ReturnId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ReturnItems_BiId        ON BillReturnItems(BillItemId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Inventory_ItemId        ON InventoryLogs(ItemId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Inventory_LogDate       ON InventoryLogs(LogDate);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Customers_Phone         ON Customers(Phone);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_Customer         ON CustomerLedger(CustomerId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_Date             ON CustomerLedger(EntryDate);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_StockPurchases_Date     ON StockPurchases(PurchaseAt);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_StockPurchItems_PurchId ON StockPurchaseItems(PurchaseId);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_StockPurchItems_ItemId  ON StockPurchaseItems(ItemId);");
             if (ColumnExists(conn, "CustomerLedger", "SequenceNo"))
             {
                 Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Ledger_CustomerDateSeq ON CustomerLedger(CustomerId, EntryDate, SequenceNo, LedgerId);");
@@ -483,35 +435,54 @@ namespace GroceryPOS.Data
         // ────────────────────────────────────────────
         private static void SeedAccounts(SqliteConnection conn)
         {
-            using var countCmd = conn.CreateCommand();
-            countCmd.CommandText = "SELECT COUNT(*) FROM Accounts;";
-            if (Convert.ToInt64(countCmd.ExecuteScalar()) > 0) return;
+            if (!TableExists(conn, "Accounts")) return;
 
+            // Fruit/veg shop payment accounts — insert only if title is missing
             var defaultAccounts = new[]
             {
-                ("Meezan - Main",   "Bank",      "Meezan Bank Ltd", "DHA Phase 4, Lahore", "0123-456789-01"),
-                ("Bank Alfalah",    "Bank",      "Bank Alfalah",    "Gulberg III Branch",  "5566-778899-02"),
-                ("Shop Easypaisa",  "Easypaisa", "Telenor Bank",    "Mobile Wallet",       "03001234567"),
-                ("Shop JazzCash",   "JazzCash",  "Mobilink Bank",   "Mobile Wallet",       "03217654321"),
-                ("HBL Business",    "Bank",      "Habib Bank Ltd",  "Main Market",         "1122-334455-03"),
-                ("SadaPay",         "Online",    "SadaPay",         "Digital",             "03119998881")
+                ("Meezan - Main",      "Bank",      "Meezan Bank Ltd",  "DHA Phase 4, Lahore", "01234567890123"),
+                ("HBL Business",       "Bank",      "Habib Bank Ltd",   "Main Market",         "12345678901234"),
+                ("UBL Shop Account",   "Bank",      "United Bank Ltd",  "Sabzi Mandi Branch",  "01021234567890"),
+                ("Bank Alfalah",       "Bank",      "Bank Alfalah",     "Gulberg III Branch",  "55667788990011"),
+                ("Shop Easypaisa",     "Easypaisa", "Telenor Microfinance Bank", "Mobile Wallet", "03001234567"),
+                ("Shop JazzCash",      "JazzCash",  "Mobilink Microfinance Bank", "Mobile Wallet", "03217654321"),
+                ("Owner Easypaisa",    "Easypaisa", "Telenor Microfinance Bank", "Mobile Wallet", "03009876543"),
+                ("SadaPay Business",   "Online",    "SadaPay",          "Digital",             "03119998881")
             };
 
+            int inserted = 0;
             foreach (var (title, type, bank, branch, number) in defaultAccounts)
             {
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
-                    INSERT INTO Accounts (AccountTitle, AccountType, BankName, BranchName, AccountNumber)
-                    VALUES (@title, @type, @bank, @branch, @num);
+                    INSERT INTO Accounts (AccountTitle, AccountType, BankName, BranchName, AccountNumber, IsActive)
+                    SELECT @title, @type, @bank, @branch, @num, 1
+                    WHERE NOT EXISTS (SELECT 1 FROM Accounts WHERE AccountTitle = @title);
                 ";
                 cmd.Parameters.AddWithValue("@title", title);
                 cmd.Parameters.AddWithValue("@type", type);
                 cmd.Parameters.AddWithValue("@bank", bank);
                 cmd.Parameters.AddWithValue("@branch", branch);
                 cmd.Parameters.AddWithValue("@num", number);
-                cmd.ExecuteNonQuery();
+                inserted += cmd.ExecuteNonQuery();
             }
-            AppLogger.Info("Default accounts seeded.");
+
+            // Re-activate any seeded titles that were soft-disabled
+            using (var activateCmd = conn.CreateCommand())
+            {
+                activateCmd.CommandText = @"
+                    UPDATE Accounts SET IsActive = 1
+                    WHERE AccountTitle IN (
+                        'Meezan - Main', 'HBL Business', 'UBL Shop Account', 'Bank Alfalah',
+                        'Shop Easypaisa', 'Shop JazzCash', 'Owner Easypaisa', 'SadaPay Business'
+                    );";
+                activateCmd.ExecuteNonQuery();
+            }
+
+            if (inserted > 0)
+                AppLogger.Info($"Seeded {inserted} payment account(s).");
+            else
+                AppLogger.Info("Payment accounts already present — seed skipped inserts.");
         }
 
         // ────────────────────────────────────────────
@@ -603,39 +574,21 @@ namespace GroceryPOS.Data
             {
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
-                    INSERT INTO Items (Barcode, Description, CostPrice, SalePrice, CategoryId)
-                    SELECT @barcode, @desc, @cost, @sale, c.CategoryId
+                    INSERT INTO Items (Barcode, Description, CategoryId)
+                    SELECT @barcode, @desc, c.CategoryId
                     FROM Categories c WHERE c.Name = @catName;
                 ";
                 cmd.Parameters.AddWithValue("@barcode", barcode);
                 cmd.Parameters.AddWithValue("@desc", desc);
-                cmd.Parameters.AddWithValue("@cost", cost);
-                cmd.Parameters.AddWithValue("@sale", sale);
                 cmd.Parameters.AddWithValue("@catName", categoryName);
                 
                 int affected = cmd.ExecuteNonQuery();
                 if (affected > 0)
-                {
                     addedCount++;
-                    // Also seed initial inventory log
-                    long lastId = 0;
-                    using (var idCmd = conn.CreateCommand())
-                    {
-                        idCmd.CommandText = "SELECT last_insert_rowid();";
-                        lastId = (long)idCmd.ExecuteScalar()!;
-                    }
-                    
-                    using (var logCmd = conn.CreateCommand())
-                    {
-                        logCmd.CommandText = "INSERT INTO InventoryLogs (ItemId, QuantityChange, ChangeType) VALUES (@itemId, 100, 'Purchase');";
-                        logCmd.Parameters.AddWithValue("@itemId", lastId);
-                        logCmd.ExecuteNonQuery();
-                    }
-                }
             }
 
             if (addedCount > 0)
-                AppLogger.Info($"SeedItems: Successfully added {addedCount} new default items and inventory logs.");
+                AppLogger.Info($"SeedItems: Successfully added {addedCount} new default items.");
         }
 
         // ════════════════════════════════════════════
@@ -1149,7 +1102,254 @@ namespace GroceryPOS.Data
                 AppLogger.Info("Migration v22: Created Suppliers and SupplierProducts tables.");
             }
 
+            // Migration v22 → v23: Drop obsolete supplier/procurement/inventory tables.
+            if (currentVersion < 23)
+            {
+                Execute(conn, "DROP TABLE IF EXISTS SupplierProducts;");
+                Execute(conn, "DROP TABLE IF EXISTS Suppliers;");
+                Execute(conn, "DROP TABLE IF EXISTS StockPurchaseItems;");
+                Execute(conn, "DROP TABLE IF EXISTS StockPurchases;");
+                Execute(conn, "DROP TABLE IF EXISTS InventoryLogs;");
+                SetSchemaVersion(conn, 23);
+                AppLogger.Info("Migration v23: Dropped obsolete supplier, stock purchase, and inventory log tables.");
+            }
+
+            // Migration v23 → v24: Fruit/veg POS schema (ItemTypes, DailyItemSelection, DailyClosing, snapshots).
+            if (currentVersion < 24)
+            {
+                ApplyFruitVegSchemaChanges(conn);
+                SetSchemaVersion(conn, 24);
+                AppLogger.Info("Migration v24: Added ItemTypes, DailyItemSelection, DailyClosing, and BillItems snapshots.");
+            }
+
+            // Migration v24 → v25: Urdu names + fruit/vegetable market catalog seed marker columns.
+            if (currentVersion < 25)
+            {
+                AddColumnIfNotExists(conn, "Items", "NameUrdu", "TEXT");
+                AddColumnIfNotExists(conn, "Categories", "NameUrdu", "TEXT");
+                SetSchemaVersion(conn, 25);
+                AppLogger.Info("Migration v25: Added NameUrdu to Items and Categories.");
+            }
+
+            // Migration v25 → v26: expanded market catalog + sequential POS item codes (1,2,3…).
+            if (currentVersion < 26)
+            {
+                SetSchemaVersion(conn, 26);
+                AppLogger.Info("Migration v26: Expanded fruit/veg catalog with sequential item codes.");
+            }
+
+            // Migration v26 → v27: daily menu available/out-of-stock flag (keep on grid when deactivated).
+            if (currentVersion < 27)
+            {
+                AddColumnIfNotExists(conn, "DailyItemSelection", "IsAvailable", "INTEGER NOT NULL DEFAULT 1");
+                SetSchemaVersion(conn, 27);
+                AppLogger.Info("Migration v27: Added IsAvailable to DailyItemSelection.");
+            }
+
+            // Migration v27 → v28: persist item stock quantity on Items (removed in v29).
+            if (currentVersion < 28)
+            {
+                AddColumnIfNotExists(conn, "Items", "StockQuantity", "REAL NOT NULL DEFAULT 0");
+                SetSchemaVersion(conn, 28);
+                AppLogger.Info("Migration v28: Added StockQuantity to Items.");
+            }
+
+            // Migration v28 → v29: catalog-only Items — drop stock, cost/sale price, unit, image path.
+            // Daily unit prices remain on ItemTypes; BillItems.UnitPrice keeps sale snapshots.
+            if (currentVersion < 29)
+            {
+                MigrateItemsToCatalogOnly(conn);
+                SetSchemaVersion(conn, 29);
+                AppLogger.Info("Migration v29: Items catalog-only (removed CostPrice, SalePrice, Stock, Unit, ImagePath).");
+            }
+
+            // Migration v29 → v30: slim DailyItemSelection + DailyItemSet view (ItemId, Description, Type, Sale).
+            if (currentVersion < 30)
+            {
+                MigrateDailyItemSelectionToV30(conn);
+                SetSchemaVersion(conn, 30);
+                AppLogger.Info("Migration v30: DailyItemSelection catalog menu only; DailyItemSet view for Type/Sale.");
+            }
+
             AppLogger.Info($"Database migrated successfully to v{CurrentSchemaVersion}.");
+        }
+
+        /// <summary>
+        /// Rebuilds DailyItemSelection without audit/order/visibility columns.
+        /// Keeps one row per (BusinessDate, ItemId). Sale/Type come from DailyItemSet view.
+        /// </summary>
+        private static void MigrateDailyItemSelectionToV30(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "DailyItemSelection"))
+            {
+                EnsureDailyItemSelectionV30(conn);
+                return;
+            }
+
+            // Already slim?
+            if (!ColumnExists(conn, "DailyItemSelection", "AddedAt")
+                && !ColumnExists(conn, "DailyItemSelection", "RemovedAt")
+                && !ColumnExists(conn, "DailyItemSelection", "IsVisible")
+                && !ColumnExists(conn, "DailyItemSelection", "DisplayOrder")
+                && !ColumnExists(conn, "DailyItemSelection", "AddedByUserId")
+                && !ColumnExists(conn, "DailyItemSelection", "RemovedByUserId"))
+            {
+                EnsureDailyItemSetView(conn);
+                return;
+            }
+
+            Execute(conn, "PRAGMA foreign_keys = OFF;");
+            try
+            {
+                Execute(conn, "DROP VIEW IF EXISTS DailyItemSet;");
+
+                Execute(conn, @"
+                    CREATE TABLE DailyItemSelection_v30 (
+                        DailySelectionId INTEGER PRIMARY KEY AUTOINCREMENT,
+                        BusinessDate     TEXT    NOT NULL,
+                        ItemId           INTEGER NOT NULL,
+                        IsAvailable      INTEGER NOT NULL DEFAULT 1,
+                        UNIQUE (BusinessDate, ItemId),
+                        FOREIGN KEY (ItemId) REFERENCES Items(ItemId) ON DELETE RESTRICT
+                    );
+                ");
+
+                var hasAvail = ColumnExists(conn, "DailyItemSelection", "IsAvailable");
+                var hasVisible = ColumnExists(conn, "DailyItemSelection", "IsVisible");
+                var availSel = hasAvail ? "MAX(IsAvailable)" : "1";
+                var visibleFilter = hasVisible ? "WHERE IsVisible = 1" : "";
+
+                Execute(conn, $@"
+                    INSERT INTO DailyItemSelection_v30 (BusinessDate, ItemId, IsAvailable)
+                    SELECT BusinessDate, ItemId, {availSel}
+                    FROM DailyItemSelection
+                    {visibleFilter}
+                    GROUP BY BusinessDate, ItemId;
+                ");
+
+                Execute(conn, "DROP TABLE DailyItemSelection;");
+                Execute(conn, "ALTER TABLE DailyItemSelection_v30 RENAME TO DailyItemSelection;");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_DailyItemSel_Date ON DailyItemSelection(BusinessDate);");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_DailyItemSel_DateItem ON DailyItemSelection(BusinessDate, ItemId);");
+            }
+            finally
+            {
+                Execute(conn, "PRAGMA foreign_keys = ON;");
+            }
+
+            EnsureDailyItemSetView(conn);
+        }
+
+        private static void EnsureDailyItemSelectionV30(SqliteConnection conn)
+        {
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS DailyItemSelection (
+                    DailySelectionId INTEGER PRIMARY KEY AUTOINCREMENT,
+                    BusinessDate     TEXT    NOT NULL,
+                    ItemId           INTEGER NOT NULL,
+                    IsAvailable      INTEGER NOT NULL DEFAULT 1,
+                    UNIQUE (BusinessDate, ItemId),
+                    FOREIGN KEY (ItemId) REFERENCES Items(ItemId) ON DELETE RESTRICT
+                );
+            ");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_DailyItemSel_Date ON DailyItemSelection(BusinessDate);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_DailyItemSel_DateItem ON DailyItemSelection(BusinessDate, ItemId);");
+            EnsureDailyItemSetView(conn);
+        }
+
+        /// <summary>
+        /// Read-model view: ItemId · Description · Type · Sale (live SUM from BillItems).
+        /// Keeps DailyItemSelection normalized (no denormalized description/type/sale columns).
+        /// </summary>
+        private static void EnsureDailyItemSetView(SqliteConnection conn)
+        {
+            Execute(conn, "DROP VIEW IF EXISTS DailyItemSet;");
+            Execute(conn, @"
+                CREATE VIEW DailyItemSet AS
+                SELECT
+                    d.BusinessDate,
+                    d.ItemId,
+                    i.Description AS ItemDescription,
+                    t.TypeName AS Type,
+                    COALESCE((
+                        SELECT SUM(bi.Quantity)
+                        FROM BillItems bi
+                        INNER JOIN Bills b ON b.BillId = bi.BillId
+                        WHERE bi.ItemId = d.ItemId
+                          AND (
+                                bi.TypeId = t.TypeId
+                                OR (bi.TypeId IS NULL AND t.SortOrder = 1)
+                              )
+                          AND IFNULL(b.Status, '') != 'Cancelled'
+                          AND date(datetime(b.CreatedAt, 'localtime')) = d.BusinessDate
+                    ), 0) AS Sale
+                FROM DailyItemSelection d
+                JOIN Items i ON i.ItemId = d.ItemId
+                JOIN ItemTypes t ON t.ItemId = d.ItemId AND t.IsActive = 1;
+            ");
+        }
+
+        /// <summary>
+        /// Rebuilds Items without inventory/pricing columns. Prices live on ItemTypes.
+        /// </summary>
+        private static void MigrateItemsToCatalogOnly(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "Items")) return;
+
+            // Already migrated (fresh DB created with new CREATE TABLE).
+            if (!ColumnExists(conn, "Items", "CostPrice")
+                && !ColumnExists(conn, "Items", "SalePrice")
+                && !ColumnExists(conn, "Items", "StockQuantity")
+                && !ColumnExists(conn, "Items", "Unit")
+                && !ColumnExists(conn, "Items", "ImagePath")
+                && !ColumnExists(conn, "Items", "MinStockThreshold"))
+            {
+                return;
+            }
+
+            Execute(conn, "PRAGMA foreign_keys = OFF;");
+            try
+            {
+                Execute(conn, @"
+                    CREATE TABLE Items_v29 (
+                        ItemId            INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Barcode           TEXT    UNIQUE,
+                        Description       TEXT    NOT NULL,
+                        NameUrdu          TEXT,
+                        CategoryId        INTEGER,
+                        IsActive          INTEGER NOT NULL DEFAULT 1,
+                        UpdatedAt         DATETIME,
+                        CreatedAt         DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (CategoryId) REFERENCES Categories(CategoryId)
+                            ON DELETE SET NULL
+                    );
+                ");
+
+                var hasNameUrdu = ColumnExists(conn, "Items", "NameUrdu");
+                var hasCreatedAt = ColumnExists(conn, "Items", "CreatedAt");
+                var hasUpdatedAt = ColumnExists(conn, "Items", "UpdatedAt");
+                var hasIsActive = ColumnExists(conn, "Items", "IsActive");
+
+                var nameUrduSel = hasNameUrdu ? "NameUrdu" : "NULL";
+                var createdSel = hasCreatedAt ? "CreatedAt" : "CURRENT_TIMESTAMP";
+                var updatedSel = hasUpdatedAt ? "UpdatedAt" : "NULL";
+                var activeSel = hasIsActive ? "IsActive" : "1";
+
+                Execute(conn, $@"
+                    INSERT INTO Items_v29 (ItemId, Barcode, Description, NameUrdu, CategoryId, IsActive, UpdatedAt, CreatedAt)
+                    SELECT ItemId, Barcode, Description, {nameUrduSel}, CategoryId, {activeSel}, {updatedSel}, {createdSel}
+                    FROM Items;
+                ");
+
+                Execute(conn, "DROP TABLE Items;");
+                Execute(conn, "ALTER TABLE Items_v29 RENAME TO Items;");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Items_Barcode ON Items(Barcode) WHERE Barcode IS NOT NULL;");
+                Execute(conn, "CREATE INDEX IF NOT EXISTS IX_Items_Category ON Items(CategoryId);");
+            }
+            finally
+            {
+                Execute(conn, "PRAGMA foreign_keys = ON;");
+            }
         }
 
         /// <summary>
@@ -1850,40 +2050,6 @@ namespace GroceryPOS.Data
         }
 
         /// <summary>
-        /// Ensures supplier tables exist regardless of stale migration state.
-        /// </summary>
-        private static void EnsureSupplierSchema(SqliteConnection conn)
-        {
-            Execute(conn, @"
-                CREATE TABLE IF NOT EXISTS Suppliers (
-                    PhoneNumber TEXT PRIMARY KEY,
-                    Name        TEXT NOT NULL,
-                    CompanyName TEXT,
-                    Email       TEXT UNIQUE,
-                    Address     TEXT,
-                    CreatedAt   DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-            ");
-
-            Execute(conn, @"
-                CREATE TABLE IF NOT EXISTS SupplierProducts (
-                    Id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                    SupplierPhone TEXT NOT NULL,
-                    ProductId     INTEGER NOT NULL,
-                    SupplyPrice   REAL,
-                    SupplyDate    DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    Notes         TEXT,
-                    UNIQUE(SupplierPhone, ProductId),
-                    FOREIGN KEY (SupplierPhone) REFERENCES Suppliers(PhoneNumber) ON DELETE CASCADE,
-                    FOREIGN KEY (ProductId)     REFERENCES Items(ItemId)      ON DELETE CASCADE
-                );
-            ");
-
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_SupplierProducts_Phone ON SupplierProducts(SupplierPhone);");
-            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_SupplierProducts_Item ON SupplierProducts(ProductId);");
-        }
-
-        /// <summary>
         /// Ensures Bills always contains print tracking columns used by billing flow.
         /// This is version-agnostic to self-heal stale/broken schemas.
         /// </summary>
@@ -2005,6 +2171,549 @@ namespace GroceryPOS.Data
                 upd.Parameters.AddWithValue("@bal", runningBalance);
                 upd.Parameters.AddWithValue("@id", row.LedgerId);
                 upd.ExecuteNonQuery();
+            }
+        }
+
+        /// <summary>
+        /// Hard guard: ensures fruit/veg POS tables and columns exist even when user_version is stale.
+        /// Idempotent — safe to call on every startup.
+        /// </summary>
+        private static void EnsureFruitVegSchema(SqliteConnection conn)
+        {
+            ApplyFruitVegSchemaChanges(conn);
+        }
+
+        /// <summary>
+        /// Applies all fruit/veg schema changes: column adds, new tables, indexes, backfill, category seed.
+        /// </summary>
+        private static void ApplyFruitVegSchemaChanges(SqliteConnection conn)
+        {
+            // Categories extensions
+            AddColumnIfNotExists(conn, "Categories", "IconPath", "TEXT");
+            AddColumnIfNotExists(conn, "Categories", "DisplayOrder", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfNotExists(conn, "Categories", "IsActive", "INTEGER NOT NULL DEFAULT 1");
+            AddColumnIfNotExists(conn, "Categories", "NameUrdu", "TEXT");
+
+            // Items extensions (catalog only — do not re-add legacy stock/price/unit/image columns)
+            AddColumnIfNotExists(conn, "Items", "IsActive", "INTEGER NOT NULL DEFAULT 1");
+            AddColumnIfNotExists(conn, "Items", "UpdatedAt", "DATETIME");
+            AddColumnIfNotExists(conn, "Items", "NameUrdu", "TEXT");
+
+            // BillItems snapshot columns
+            AddColumnIfNotExists(conn, "BillItems", "TypeId", "INTEGER");
+            AddColumnIfNotExists(conn, "BillItems", "ItemName", "TEXT");
+            AddColumnIfNotExists(conn, "BillItems", "TypeName", "TEXT");
+            AddColumnIfNotExists(conn, "BillItems", "Unit", "TEXT");
+
+            // ItemTypes
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS ItemTypes (
+                    TypeId    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ItemId    INTEGER NOT NULL,
+                    TypeName  TEXT    NOT NULL,
+                    Price     REAL    NOT NULL CHECK(Price >= 0),
+                    SortOrder INTEGER NOT NULL DEFAULT 1,
+                    IsActive  INTEGER NOT NULL DEFAULT 1,
+                    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (ItemId) REFERENCES Items(ItemId) ON DELETE CASCADE
+                );
+            ");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ItemTypes_ItemId ON ItemTypes(ItemId);");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ItemTypes_ItemActive ON ItemTypes(ItemId, IsActive, SortOrder);");
+
+            // DailyItemSelection — today's menu only (BusinessDate + ItemId + IsAvailable)
+            EnsureDailyItemSelectionV30(conn);
+
+            // DailyClosing
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS DailyClosing (
+                    DailyClosingId  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    BusinessDate    TEXT    NOT NULL UNIQUE,
+                    TotalBills      INTEGER NOT NULL DEFAULT 0,
+                    TotalSales      REAL    NOT NULL DEFAULT 0,
+                    CashSales       REAL    NOT NULL DEFAULT 0,
+                    CardSales       REAL    NOT NULL DEFAULT 0,
+                    OnlineSales     REAL    NOT NULL DEFAULT 0,
+                    CreditSales     REAL    NOT NULL DEFAULT 0,
+                    CreditRecovered REAL    NOT NULL DEFAULT 0,
+                    Refunds         REAL    NOT NULL DEFAULT 0,
+                    NetSales        REAL    NOT NULL DEFAULT 0,
+                    ClosedAt        DATETIME,
+                    ClosedByUserId  INTEGER,
+                    Status          TEXT    NOT NULL DEFAULT 'Open'
+                                    CHECK(Status IN ('Open','Closed')),
+                    Notes           TEXT,
+                    FOREIGN KEY (ClosedByUserId) REFERENCES Users(Id) ON DELETE SET NULL
+                );
+            ");
+            Execute(conn, "CREATE INDEX IF NOT EXISTS IX_DailyClosing_Date ON DailyClosing(BusinessDate);");
+
+            BackfillDefaultItemTypes(conn);
+            SeedFruitVegCategories(conn);
+        }
+
+        /// <summary>
+        /// For each Item without any ItemTypes row, inserts a default Type 1 at price 0.
+        /// Real unit prices are set daily via Billing → Add Today.
+        /// </summary>
+        private static void BackfillDefaultItemTypes(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "ItemTypes") || !TableExists(conn, "Items")) return;
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                INSERT INTO ItemTypes (ItemId, TypeName, Price, SortOrder, IsActive)
+                SELECT i.ItemId,
+                       'Type 1 / قسم 1',
+                       0,
+                       1,
+                       1
+                FROM Items i
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM ItemTypes it WHERE it.ItemId = i.ItemId
+                );";
+            int inserted = cmd.ExecuteNonQuery();
+            if (inserted > 0)
+                AppLogger.Info($"Backfilled {inserted} default ItemType row(s) from Items.");
+        }
+
+        /// <summary>
+        /// Seeds fruit/vegetable categories when the Categories table is empty.
+        /// Does not remove or alter existing grocery categories.
+        /// </summary>
+        private static void SeedFruitVegCategories(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "Categories")) return;
+
+            using var countCmd = conn.CreateCommand();
+            countCmd.CommandText = "SELECT COUNT(*) FROM Categories;";
+            if (Convert.ToInt64(countCmd.ExecuteScalar()) > 0) return;
+
+            var categories = new[]
+            {
+                ("Fruits", "پھل", 1),
+                ("Vegetables", "سبزی", 2)
+            };
+
+            foreach (var (name, nameUr, order) in categories)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO Categories (Name, NameUrdu, DisplayOrder, IsActive)
+                    VALUES (@name, @nameUr, @order, 1);";
+                cmd.Parameters.AddWithValue("@name", name);
+                cmd.Parameters.AddWithValue("@nameUr", nameUr);
+                cmd.Parameters.AddWithValue("@order", order);
+                cmd.ExecuteNonQuery();
+            }
+
+            AppLogger.Info("Seeded default fruit/vegetable categories.");
+        }
+
+        /// <summary>
+        /// Seeds / refreshes the fruit-veg market catalog.
+        /// Assigns simple POS codes 1, 2, 3… (stored in Barcode) for Add Today / scan.
+        /// Re-runs when MarketCatalogVersion is below the current catalog version.
+        /// </summary>
+        private static void SeedFruitVegetableMarketCatalog(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "Items") || !TableExists(conn, "Categories")) return;
+
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS AppSettings (
+                    Key   TEXT PRIMARY KEY,
+                    Value TEXT NOT NULL
+                );");
+
+            int installedCatalog = 0;
+            using (var verCmd = conn.CreateCommand())
+            {
+                verCmd.CommandText = "SELECT Value FROM AppSettings WHERE Key = 'MarketCatalogVersion' LIMIT 1;";
+                var val = verCmd.ExecuteScalar()?.ToString();
+                int.TryParse(val, out installedCatalog);
+            }
+
+            if (installedCatalog >= MarketCatalogVersion)
+            {
+                AppLogger.Info($"Market catalog v{installedCatalog} already installed — skipping.");
+                return;
+            }
+
+            AppLogger.Info($"Seeding fruit/vegetable market catalog v{MarketCatalogVersion}...");
+
+            var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            var today = DateTime.Today.ToString("yyyy-MM-dd");
+
+            // Free numeric barcodes so new POS codes 1..N can be assigned cleanly.
+            Execute(conn, "UPDATE Items SET IsActive = 0, Barcode = NULL;");
+
+            if (TableExists(conn, "DailyItemSelection"))
+            {
+                using var hideCmd = conn.CreateCommand();
+                hideCmd.CommandText = @"
+                    DELETE FROM DailyItemSelection
+                    WHERE BusinessDate = @today;";
+                hideCmd.Parameters.AddWithValue("@today", today);
+                hideCmd.ExecuteNonQuery();
+            }
+
+            // Only two selling categories for the market POS
+            var marketCategories = new (string NameEn, string NameUr, int Order)[]
+            {
+                ("Fruits", "پھل", 1),
+                ("Vegetables", "سبزی", 2)
+            };
+
+            var categoryNames = string.Join(", ", marketCategories.Select(c => $"'{c.NameEn.Replace("'", "''")}'"));
+            Execute(conn, $"UPDATE Categories SET IsActive = 0 WHERE Name NOT IN ({categoryNames});");
+
+            foreach (var (nameEn, nameUr, order) in marketCategories)
+            {
+                using var upsertCmd = conn.CreateCommand();
+                upsertCmd.CommandText = @"
+                    UPDATE Categories
+                    SET NameUrdu = @nameUr, DisplayOrder = @order, IsActive = 1
+                    WHERE Name = @nameEn;
+                    SELECT changes();";
+                upsertCmd.Parameters.AddWithValue("@nameEn", nameEn);
+                upsertCmd.Parameters.AddWithValue("@nameUr", nameUr);
+                upsertCmd.Parameters.AddWithValue("@order", order);
+                var updated = Convert.ToInt32(upsertCmd.ExecuteScalar());
+
+                if (updated == 0)
+                {
+                    using var insertCmd = conn.CreateCommand();
+                    insertCmd.CommandText = @"
+                        INSERT INTO Categories (Name, NameUrdu, DisplayOrder, IsActive)
+                        VALUES (@nameEn, @nameUr, @order, 1);";
+                    insertCmd.Parameters.AddWithValue("@nameEn", nameEn);
+                    insertCmd.Parameters.AddWithValue("@nameUr", nameUr);
+                    insertCmd.Parameters.AddWithValue("@order", order);
+                    insertCmd.ExecuteNonQuery();
+                }
+            }
+
+            // POS codes are 1..N in this exact order (shown on cards / used in Add Today).
+            // Types are always "Type N / قسم N" — only prices differ (max 10).
+            var marketItems = new (string English, string Urdu, string Category, double[] Prices)[]
+            {
+                ("Apple", "سیب", "Fruits", new[] { 450.0, 500.0, 400.0 }),
+                ("Banana", "کیلا", "Fruits", new[] { 180.0 }),
+                ("Mango", "آم", "Fruits", new[] { 350.0, 300.0, 400.0 }),
+                ("Orange", "مالٹا", "Fruits", new[] { 220.0 }),
+                ("Grapes", "انگور", "Fruits", new[] { 400.0 }),
+                ("Watermelon", "تربوز", "Fruits", new[] { 80.0 }),
+                ("Guava", "امرود", "Fruits", new[] { 200.0 }),
+                ("Pomegranate", "انار", "Fruits", new[] { 450.0 }),
+                ("Papaya", "پپیتا", "Fruits", new[] { 120.0 }),
+                ("Pineapple", "انناس", "Fruits", new[] { 250.0 }),
+                ("Peach", "آڑو", "Fruits", new[] { 300.0 }),
+                ("Pear", "ناشپاتی", "Fruits", new[] { 280.0 }),
+                ("Strawberry", "اسٹرابیری", "Fruits", new[] { 600.0 }),
+                ("Lychee", "لیچی", "Fruits", new[] { 450.0 }),
+                ("Melon", "خربوزہ", "Fruits", new[] { 100.0 }),
+                ("Coconut", "ناریل", "Fruits", new[] { 200.0 }),
+                ("Dates", "کھجور", "Fruits", new[] { 500.0 }),
+                ("Lemon", "لیموں", "Fruits", new[] { 250.0 }),
+                ("Tomato", "ٹماٹر", "Vegetables", new[] { 120.0, 180.0 }),
+                ("Potato", "آلو", "Vegetables", new[] { 80.0 }),
+                ("Onion", "پیاز", "Vegetables", new[] { 100.0 }),
+                ("Carrot", "گاجر", "Vegetables", new[] { 90.0 }),
+                ("Cucumber", "کھیرا", "Vegetables", new[] { 70.0 }),
+                ("Broccoli", "بروکلی", "Vegetables", new[] { 350.0 }),
+                ("Ginger", "ادرک", "Vegetables", new[] { 400.0 }),
+                ("Garlic", "لہسن", "Vegetables", new[] { 450.0 }),
+                ("Spinach", "پالک", "Vegetables", new[] { 60.0 }),
+                ("Coriander", "دھنیا", "Vegetables", new[] { 40.0 }),
+                ("Mint", "پودینہ", "Vegetables", new[] { 40.0 }),
+                ("Green Chili", "ہری مرچ", "Vegetables", new[] { 150.0 }),
+                ("Capsicum", "شملہ مرچ", "Vegetables", new[] { 200.0 }),
+                ("Okra", "بھنڈی", "Vegetables", new[] { 120.0 }),
+                ("Eggplant", "بینگن", "Vegetables", new[] { 90.0 }),
+                ("Cauliflower", "پھول گوبھی", "Vegetables", new[] { 110.0 }),
+                ("Cabbage", "بند گوبھی", "Vegetables", new[] { 80.0 }),
+                ("Peas", "مٹر", "Vegetables", new[] { 200.0 }),
+                ("Radish", "مولی", "Vegetables", new[] { 60.0 }),
+                ("Turnip", "شلجم", "Vegetables", new[] { 70.0 }),
+                ("Beetroot", "چقندر", "Vegetables", new[] { 100.0 }),
+                ("Bottle Gourd", "لوکی", "Vegetables", new[] { 70.0 }),
+                ("Bitter Gourd", "کریلا", "Vegetables", new[] { 100.0 }),
+                ("Pumpkin", "کدو", "Vegetables", new[] { 60.0 }),
+                ("Corn", "مکئی", "Vegetables", new[] { 90.0 }),
+                ("Sweet Potato", "شکر قندی", "Vegetables", new[] { 120.0 }),
+                ("Fenugreek", "میتھی", "Vegetables", new[] { 50.0 }),
+                ("Spring Onion", "ہرا پیاز", "Vegetables", new[] { 80.0 }),
+                ("Lettuce", "سلاد پتہ", "Vegetables", new[] { 150.0 }),
+                ("Zucchini", "توری", "Vegetables", new[] { 90.0 })
+            };
+
+            var insertedItemIds = new System.Collections.Generic.List<int>();
+            int posCode = 1;
+
+            foreach (var (english, urdu, category, prices) in marketItems)
+            {
+                var code = posCode.ToString();
+
+                int itemId;
+                using (var itemCmd = conn.CreateCommand())
+                {
+                    itemCmd.CommandText = @"
+                        INSERT INTO Items (Barcode, Description, NameUrdu, CategoryId, IsActive, UpdatedAt)
+                        VALUES (
+                            @barcode, @desc, @nameUrdu,
+                            (SELECT CategoryId FROM Categories WHERE Name = @cat LIMIT 1),
+                            1, @updatedAt
+                        );
+                        SELECT last_insert_rowid();";
+                    itemCmd.Parameters.AddWithValue("@barcode", code);
+                    itemCmd.Parameters.AddWithValue("@desc", english);
+                    itemCmd.Parameters.AddWithValue("@nameUrdu", urdu);
+                    itemCmd.Parameters.AddWithValue("@cat", category);
+                    itemCmd.Parameters.AddWithValue("@updatedAt", now);
+                    itemId = Convert.ToInt32(itemCmd.ExecuteScalar()!);
+                }
+
+                insertedItemIds.Add(itemId);
+                posCode++;
+
+                var typeCount = Math.Min(prices.Length, 10);
+                for (int i = 0; i < typeCount; i++)
+                {
+                    var typeName = $"Type {i + 1} / قسم {i + 1}";
+                    using var typeCmd = conn.CreateCommand();
+                    typeCmd.CommandText = @"
+                        INSERT INTO ItemTypes (ItemId, TypeName, Price, SortOrder, IsActive)
+                        VALUES (@itemId, @typeName, @price, @sortOrder, 1);";
+                    typeCmd.Parameters.AddWithValue("@itemId", itemId);
+                    typeCmd.Parameters.AddWithValue("@typeName", typeName);
+                    typeCmd.Parameters.AddWithValue("@price", prices[i]);
+                    typeCmd.Parameters.AddWithValue("@sortOrder", i + 1);
+                    typeCmd.ExecuteNonQuery();
+                }
+
+                if (TableExists(conn, "DailyItemSelection"))
+                {
+                    using var selCmd = conn.CreateCommand();
+                    selCmd.CommandText = @"
+                        INSERT OR IGNORE INTO DailyItemSelection (BusinessDate, ItemId, IsAvailable)
+                        VALUES (@date, @itemId, 1);";
+                    selCmd.Parameters.AddWithValue("@date", today);
+                    selCmd.Parameters.AddWithValue("@itemId", itemId);
+                    selCmd.ExecuteNonQuery();
+                }
+            }
+
+            using (var settingsCmd = conn.CreateCommand())
+            {
+                settingsCmd.CommandText = @"
+                    INSERT INTO AppSettings (Key, Value) VALUES ('MarketCatalogVersion', @ver)
+                    ON CONFLICT(Key) DO UPDATE SET Value = @ver;
+                    INSERT INTO AppSettings (Key, Value) VALUES ('MarketCatalogSeeded', '1')
+                    ON CONFLICT(Key) DO UPDATE SET Value = '1';";
+                settingsCmd.Parameters.AddWithValue("@ver", MarketCatalogVersion.ToString());
+                settingsCmd.ExecuteNonQuery();
+            }
+
+            AppLogger.Info(
+                $"Market catalog v{MarketCatalogVersion}: {marketItems.Length} items with POS codes 1–{marketItems.Length}, " +
+                $"{insertedItemIds.Count} daily selections for {today}.");
+        }
+
+        /// <summary>
+        /// Keeps only Fruits + Vegetables. Remaps Citrus→Fruits and other old groups→Vegetables.
+        /// </summary>
+        private static void ConsolidateToTwoCategories(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "Categories") || !TableExists(conn, "Items")) return;
+
+            // Ensure the two categories exist and are active
+            foreach (var (name, nameUr, order) in new[] { ("Fruits", "پھل", 1), ("Vegetables", "سبزی", 2) })
+            {
+                using var upsert = conn.CreateCommand();
+                upsert.CommandText = @"
+                    UPDATE Categories
+                    SET NameUrdu = @nameUr, DisplayOrder = @order, IsActive = 1
+                    WHERE Name = @name;
+                    SELECT changes();";
+                upsert.Parameters.AddWithValue("@name", name);
+                upsert.Parameters.AddWithValue("@nameUr", nameUr);
+                upsert.Parameters.AddWithValue("@order", order);
+                var updated = Convert.ToInt32(upsert.ExecuteScalar());
+                if (updated == 0)
+                {
+                    using var insert = conn.CreateCommand();
+                    insert.CommandText = @"
+                        INSERT INTO Categories (Name, NameUrdu, DisplayOrder, IsActive)
+                        VALUES (@name, @nameUr, @order, 1);";
+                    insert.Parameters.AddWithValue("@name", name);
+                    insert.Parameters.AddWithValue("@nameUr", nameUr);
+                    insert.Parameters.AddWithValue("@order", order);
+                    insert.ExecuteNonQuery();
+                }
+            }
+
+            // Remap old groups → Fruits / Vegetables
+            Execute(conn, @"
+                UPDATE Items
+                SET CategoryId = (SELECT CategoryId FROM Categories WHERE Name = 'Fruits' LIMIT 1)
+                WHERE CategoryId IN (
+                    SELECT CategoryId FROM Categories WHERE Name = 'Citrus'
+                );");
+
+            Execute(conn, @"
+                UPDATE Items
+                SET CategoryId = (SELECT CategoryId FROM Categories WHERE Name = 'Vegetables' LIMIT 1)
+                WHERE CategoryId IN (
+                    SELECT CategoryId FROM Categories
+                    WHERE Name IN ('Root Vegetables', 'Leafy Vegetables', 'Herbs', 'Other')
+                );");
+
+            // Deactivate every category except Fruits & Vegetables
+            Execute(conn, @"
+                UPDATE Categories
+                SET IsActive = 0
+                WHERE Name NOT IN ('Fruits', 'Vegetables');");
+
+            AppLogger.Info("Consolidated categories to Fruits + Vegetables only.");
+        }
+
+        /// <summary>
+        /// Runs CleanupDuplicateAndLegacyItems only once (seed repair). After that, catalog
+        /// uniqueness is enforced in ItemService so renaming one item never touches another.
+        /// </summary>
+        private static void RunDuplicateCleanupOnce(SqliteConnection conn)
+        {
+            Execute(conn, @"
+                CREATE TABLE IF NOT EXISTS AppSettings (
+                    Key   TEXT PRIMARY KEY,
+                    Value TEXT NOT NULL
+                );");
+
+            string? flag = null;
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT Value FROM AppSettings WHERE Key = 'DuplicateItemCleanupDone' LIMIT 1;";
+                flag = cmd.ExecuteScalar()?.ToString();
+            }
+
+            if (string.Equals(flag, "1", StringComparison.Ordinal))
+                return;
+
+            CleanupDuplicateAndLegacyItems(conn);
+
+            using var setCmd = conn.CreateCommand();
+            setCmd.CommandText = @"
+                INSERT INTO AppSettings (Key, Value) VALUES ('DuplicateItemCleanupDone', '1')
+                ON CONFLICT(Key) DO UPDATE SET Value = '1';";
+            setCmd.ExecuteNonQuery();
+            AppLogger.Info("Duplicate item cleanup marked complete (will not re-run on startup).");
+        }
+
+        /// <summary>
+        /// Removes old seed duplicates: keeps one active row per English name (POS-coded),
+        /// deactivates extras, and hard-deletes unused inactive rows (not on any bill).
+        /// Also removes leftover legacy grocery items that have no Urdu name.
+        /// </summary>
+        private static void CleanupDuplicateAndLegacyItems(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "Items")) return;
+
+            var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // 1) Deactivate legacy grocery leftovers (no Urdu name) that are still active.
+            using (var legacyCmd = conn.CreateCommand())
+            {
+                legacyCmd.CommandText = @"
+                    UPDATE Items
+                    SET IsActive = 0, Barcode = NULL, UpdatedAt = @now
+                    WHERE IsActive = 1
+                      AND (NameUrdu IS NULL OR TRIM(NameUrdu) = '');";
+                legacyCmd.Parameters.AddWithValue("@now", now);
+                var legacy = legacyCmd.ExecuteNonQuery();
+                if (legacy > 0)
+                    AppLogger.Info($"Deactivated {legacy} legacy item(s) without Urdu names.");
+            }
+
+            // 2) For each English name with multiple active rows, keep the POS-coded (Barcode) one
+            //    (or newest ItemId), deactivate the rest.
+            using (var findCmd = conn.CreateCommand())
+            {
+                findCmd.CommandText = @"
+                    SELECT Description
+                    FROM Items
+                    WHERE IsActive = 1
+                    GROUP BY LOWER(TRIM(Description))
+                    HAVING COUNT(*) > 1;";
+                var dupNames = new List<string>();
+                using (var reader = findCmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                        dupNames.Add(reader.GetString(0));
+                }
+
+                foreach (var name in dupNames)
+                {
+                    using var keepCmd = conn.CreateCommand();
+                    keepCmd.CommandText = @"
+                        SELECT ItemId FROM Items
+                        WHERE IsActive = 1 AND LOWER(TRIM(Description)) = LOWER(TRIM(@name))
+                        ORDER BY
+                            CASE WHEN Barcode IS NOT NULL AND TRIM(Barcode) != '' THEN 0 ELSE 1 END,
+                            ItemId DESC
+                        LIMIT 1;";
+                    keepCmd.Parameters.AddWithValue("@name", name);
+                    var keepId = Convert.ToInt32(keepCmd.ExecuteScalar()!);
+
+                    using var deactivateCmd = conn.CreateCommand();
+                    deactivateCmd.CommandText = @"
+                        UPDATE Items
+                        SET IsActive = 0, Barcode = NULL, UpdatedAt = @now
+                        WHERE IsActive = 1
+                          AND LOWER(TRIM(Description)) = LOWER(TRIM(@name))
+                          AND ItemId != @keepId;";
+                    deactivateCmd.Parameters.AddWithValue("@now", now);
+                    deactivateCmd.Parameters.AddWithValue("@name", name);
+                    deactivateCmd.Parameters.AddWithValue("@keepId", keepId);
+                    var removed = deactivateCmd.ExecuteNonQuery();
+                    if (removed > 0)
+                        AppLogger.Info($"Removed {removed} duplicate active row(s) for '{name}', kept ItemId={keepId}.");
+                }
+            }
+
+            // 3) Hard-delete inactive items that are not referenced by any bill line
+            //    (safe cleanup of previous seed copies).
+            if (TableExists(conn, "BillItems"))
+            {
+                if (TableExists(conn, "ItemTypes"))
+                {
+                    Execute(conn, @"
+                        DELETE FROM ItemTypes
+                        WHERE ItemId IN (
+                            SELECT i.ItemId FROM Items i
+                            WHERE i.IsActive = 0
+                              AND i.ItemId NOT IN (SELECT DISTINCT ItemId FROM BillItems)
+                        );");
+                }
+
+                if (TableExists(conn, "DailyItemSelection"))
+                {
+                    Execute(conn, @"
+                        DELETE FROM DailyItemSelection
+                        WHERE ItemId IN (
+                            SELECT i.ItemId FROM Items i
+                            WHERE i.IsActive = 0
+                              AND i.ItemId NOT IN (SELECT DISTINCT ItemId FROM BillItems)
+                        );");
+                }
+
+                using var delCmd = conn.CreateCommand();
+                delCmd.CommandText = @"
+                    DELETE FROM Items
+                    WHERE IsActive = 0
+                      AND ItemId NOT IN (SELECT DISTINCT ItemId FROM BillItems);";
+                var deleted = delCmd.ExecuteNonQuery();
+                if (deleted > 0)
+                    AppLogger.Info($"Purged {deleted} unused inactive duplicate/legacy item(s).");
             }
         }
 

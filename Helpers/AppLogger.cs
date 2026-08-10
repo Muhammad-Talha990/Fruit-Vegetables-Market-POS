@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace GroceryPOS.Helpers
+namespace FruitVegetableMarketPOS.Helpers
 {
     public static class AppLogger
     {
@@ -11,7 +11,7 @@ namespace GroceryPOS.Helpers
         static AppLogger()
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            LogDirectory = Path.Combine(appData, "GroceryPOS", "logs");
+            LogDirectory = Path.Combine(appData, "FruitVegetableMarketPOS", "logs");
             
             if (!Directory.Exists(LogDirectory))
                 Directory.CreateDirectory(LogDirectory);

@@ -2,26 +2,26 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ═══════════════════════════════════════════════════ -->
-    <!--  PROFESSIONAL GROCERY POS — LIGHT THEME            -->
-    <!--  Deep charcoal sidebar + clean white content area  -->
+    <!--  PMC POS — LIGHT THEME                              -->
+    <!--  Forest green chrome (#1B4332) matching Billing bar -->
     <!-- ═══════════════════════════════════════════════════ -->
 
-    <!-- Primary Palette -->
-    <Color x:Key="PrimaryColor">#0F766E</Color>
-    <Color x:Key="PrimaryLightColor">#14B8A6</Color>
-    <Color x:Key="PrimaryDarkColor">#0D5E58</Color>
-    <Color x:Key="AccentColor">#F59E0B</Color>
+    <!-- Primary Palette (matches Billing KPI / Total bar) -->
+    <Color x:Key="PrimaryColor">#1B4332</Color>
+    <Color x:Key="PrimaryLightColor">#2D6A4F</Color>
+    <Color x:Key="PrimaryDarkColor">#081C15</Color>
+    <Color x:Key="AccentColor">#EF6C00</Color>
     <Color x:Key="DangerColor">#DC2626</Color>
     <Color x:Key="SuccessColor">#16A34A</Color>
 
     <!-- Layout Colors -->
     <Color x:Key="BgColor">#F1F5F9</Color>
     <Color x:Key="CardBgColor">#FFFFFF</Color>
-    <Color x:Key="SidebarBgColor">#1E293B</Color>
-    <Color x:Key="TextColor">#1E293B</Color>
+    <Color x:Key="SidebarBgColor">#1B4332</Color>
+    <Color x:Key="TextColor">#1B4332</Color>
     <Color x:Key="SubTextColor">#64748B</Color>
     <Color x:Key="BorderColor">#CBD5E1</Color>
-    <Color x:Key="HoverColor">#E0F2FE</Color>
+    <Color x:Key="HoverColor">#D8F3DC</Color>
     <Color x:Key="InputBgColor">#F8FAFC</Color>
 
     <!-- Brushes -->
@@ -41,7 +41,7 @@
     <SolidColorBrush x:Key="InputBgBrush" Color="{StaticResource InputBgColor}"/>
 
     <!-- Global Font -->
-    <FontFamily x:Key="AppFont">Segoe UI</FontFamily>
+    <FontFamily x:Key="AppFont">Segoe UI, Nirmala UI</FontFamily>
 
     <!-- ─────────── Card ─────────── -->
     <Style x:Key="CardBorder" TargetType="Border">
@@ -200,11 +200,11 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="border" Property="Background" Value="#334155"/>
+                            <Setter TargetName="border" Property="Background" Value="#2D6A4F"/>
                             <Setter Property="Foreground" Value="White"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="border" Property="Background" Value="#0F766E"/>
+                            <Setter TargetName="border" Property="Background" Value="#081C15"/>
                             <Setter Property="Foreground" Value="White"/>
                         </Trigger>
                     </ControlTemplate.Triggers>

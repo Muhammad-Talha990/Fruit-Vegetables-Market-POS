@@ -1,12 +1,12 @@
 using System;
 using System.Linq;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Data;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
-using GroceryPOS.Data.Repositories; // Fixed namespace
+using FruitVegetableMarketPOS.Data;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
+using FruitVegetableMarketPOS.Data.Repositories; // Fixed namespace
 
-namespace GroceryPOS.Services
+namespace FruitVegetableMarketPOS.Services
 {
     /// <summary>
     /// Authentication service using raw SQL against the User table.

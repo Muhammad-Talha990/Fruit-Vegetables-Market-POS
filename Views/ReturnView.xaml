@@ -1,10 +1,10 @@
-<UserControl x:Class="GroceryPOS.Views.ReturnView"
+<UserControl x:Class="FruitVegetableMarketPOS.Views.ReturnView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-             xmlns:converters="clr-namespace:GroceryPOS.Converters"
-             xmlns:helpers="clr-namespace:GroceryPOS.Helpers"
+             xmlns:converters="clr-namespace:FruitVegetableMarketPOS.Converters"
+             xmlns:helpers="clr-namespace:FruitVegetableMarketPOS.Helpers"
              mc:Ignorable="d" 
              Background="{DynamicResource BgBrush}" FontFamily="{DynamicResource AppFont}">
     <UserControl.Resources>
@@ -441,7 +441,7 @@
         <!-- History Title (Row 5) -->
         <TextBlock Grid.Row="5" Text="📜 Previous Returns for this Bill" FontSize="16" FontWeight="Bold" Margin="0,15,0,8"
                    Visibility="{Binding ReturnHistory.Count, Converter={StaticResource CountToVisibilityConverter}}"
-                   xmlns:conv="clr-namespace:GroceryPOS.Converters"/>
+                   xmlns:conv="clr-namespace:FruitVegetableMarketPOS.Converters"/>
 
         <!-- Return History (Row 6) -->
         <Border Grid.Row="6" Style="{DynamicResource CardBorder}" Padding="0" Margin="0,0,0,10"

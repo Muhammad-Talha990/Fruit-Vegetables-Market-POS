@@ -1,6 +1,6 @@
 using System;
 
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     /// <summary>
     /// Represents a single entry in the Customer Ledger (Sale, Payment, or Return).

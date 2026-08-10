@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 
-namespace GroceryPOS.Views
+namespace FruitVegetableMarketPOS.Views
 {
     public partial class BillDetailWindow : Window
     {

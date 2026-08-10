@@ -1,0 +1,113 @@
+<UserControl x:Class="FruitVegetableMarketPOS.Views.SidebarNavPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:FruitVegetableMarketPOS.Converters">
+    <UserControl.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+    <StackPanel>
+        <Button Command="{Binding NavigateCommand}" CommandParameter="Dashboard">
+            <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedMenu}" Value="Dashboard">
+                            <Setter Property="Background" Value="#2D6A4F"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <StackPanel Orientation="Horizontal">
+                <Image Source="{StaticResource NavIcon_dashboard}" Width="20" Height="20" Margin="0,0,10,0"/>
+                <TextBlock Text="Dashboard" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Button>
+
+        <Button Command="{Binding NavigateCommand}" CommandParameter="Products"
+                Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+            <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedMenu}" Value="Products">
+                            <Setter Property="Background" Value="#2D6A4F"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <StackPanel Orientation="Horizontal">
+                <Image Source="{StaticResource NavIcon_items}" Width="20" Height="20" Margin="0,0,10,0"/>
+                <TextBlock Text="Items" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Button>
+
+        <Button Command="{Binding NavigateCommand}" CommandParameter="Billing">
+            <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedMenu}" Value="Billing">
+                            <Setter Property="Background" Value="#2D6A4F"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <StackPanel Orientation="Horizontal">
+                <Image Source="{StaticResource NavIcon_billing}" Width="20" Height="20" Margin="0,0,10,0"/>
+                <TextBlock Text="Billing" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Button>
+
+        <Button Command="{Binding NavigateCommand}" CommandParameter="Customers">
+            <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedMenu}" Value="Customers">
+                            <Setter Property="Background" Value="#2D6A4F"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <StackPanel Orientation="Horizontal">
+                <Image Source="{StaticResource NavIcon_customers}" Width="20" Height="20" Margin="0,0,10,0"/>
+                <TextBlock Text="Customers" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Button>
+
+        <Button Command="{Binding NavigateCommand}" CommandParameter="Reports"
+                Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}">
+            <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedMenu}" Value="Reports">
+                            <Setter Property="Background" Value="#2D6A4F"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <StackPanel Orientation="Horizontal">
+                <Image Source="{StaticResource NavIcon_reports}" Width="20" Height="20" Margin="0,0,10,0"/>
+                <TextBlock Text="Reports" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Button>
+
+        <Button Command="{Binding NavigateCommand}" CommandParameter="Returns">
+            <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource SidebarButton}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedMenu}" Value="Returns">
+                            <Setter Property="Background" Value="#2D6A4F"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <StackPanel Orientation="Horizontal">
+                <Image Source="{StaticResource NavIcon_returns}" Width="20" Height="20" Margin="0,0,10,0"/>
+                <TextBlock Text="Returns" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Button>
+    </StackPanel>
+</UserControl>

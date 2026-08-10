@@ -1,6 +1,6 @@
 using System;
 
-namespace GroceryPOS.Exceptions
+namespace FruitVegetableMarketPOS.Exceptions
 {
     /// <summary>
     /// Custom exception for business rule violations in the POS system.

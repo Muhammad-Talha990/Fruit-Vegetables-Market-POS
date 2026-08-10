@@ -2,9 +2,9 @@ using System.ComponentModel;
 using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
-using GroceryPOS.ViewModels;
+using FruitVegetableMarketPOS.ViewModels;
 
-namespace GroceryPOS.Views
+namespace FruitVegetableMarketPOS.Views
 {
     [SupportedOSPlatform("windows")]
     public partial class CustomerLedgerView : UserControl

@@ -1,6 +1,6 @@
 using System.Windows.Controls;
 
-namespace GroceryPOS.Views
+namespace FruitVegetableMarketPOS.Views
 {
     public partial class CustomerManagementView : UserControl
     {

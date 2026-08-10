@@ -3,11 +3,11 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
-using GroceryPOS.Services;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
+using FruitVegetableMarketPOS.Services;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     /// <summary>
     /// ViewModel for the Customer Management screen.
@@ -16,8 +16,6 @@ namespace GroceryPOS.ViewModels
     public class CustomerManagementViewModel : BaseViewModel
     {
         private readonly CustomerService _customerService;
-        private readonly IStockService _stockService;
-        private readonly Action _onStockChangedHandler;
 
         // ── Collections ──
         public ObservableCollection<Customer> AllCustomers { get; } = new();
@@ -151,14 +149,9 @@ namespace GroceryPOS.ViewModels
 
         public ICommand ViewLedgerCommand { get; }
 
-        public CustomerManagementViewModel(CustomerService customerService, IStockService stockService)
+        public CustomerManagementViewModel(CustomerService customerService)
         {
             _customerService = customerService;
-            _stockService = stockService;
-            _onStockChangedHandler = OnStockChanged;
-
-            // Real-time refresh when returns or payments are recorded
-            _stockService.StockChanged += _onStockChangedHandler;
 
             RefreshCommand     = new RelayCommand(_ => LoadCustomers());
             AddCommand         = new RelayCommand(_ => OpenAddDialog());
@@ -430,18 +423,6 @@ namespace GroceryPOS.ViewModels
         {
             StatusMessage = msg;
             OnPropertyChanged(nameof(StatusMessage));
-        }
-
-        private void OnStockChanged()
-        {
-            Dispatch(LoadCustomers);
-        }
-
-        public override void Dispose()
-        {
-            if (_stockService != null)
-                _stockService.StockChanged -= _onStockChangedHandler;
-            base.Dispose();
         }
     }
 }

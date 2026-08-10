@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using GroceryPOS.Data.Repositories;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Data.Repositories;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Services
+namespace FruitVegetableMarketPOS.Services
 {
     /// <summary>
     /// Business logic for customer management and credit lookup.

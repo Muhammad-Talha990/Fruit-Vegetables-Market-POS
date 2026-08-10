@@ -1,4 +1,4 @@
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     /// <summary>
     /// Represents an additional phone number for a customer.

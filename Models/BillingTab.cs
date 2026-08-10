@@ -2,9 +2,9 @@ using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using GroceryPOS.ViewModels;
+using FruitVegetableMarketPOS.ViewModels;
 
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     public class BillingTab : BaseViewModel
     {
@@ -19,8 +19,18 @@ namespace GroceryPOS.Models
         public string InvoiceNumber
         {
             get => _invoiceNumber;
-            set => SetProperty(ref _invoiceNumber, value);
+            set
+            {
+                if (SetProperty(ref _invoiceNumber, value))
+                    OnPropertyChanged(nameof(DisplayTitle));
+            }
         }
+
+        /// <summary>Tab header label, e.g. Bill #00009.</summary>
+        public string DisplayTitle => $"Bill #{InvoiceNumber}";
+
+        /// <summary>True when this open tab already has items in the cart.</summary>
+        public bool HasCartItems => CartItems.Count > 0;
 
         private int? _customerId;
         public int? CustomerId

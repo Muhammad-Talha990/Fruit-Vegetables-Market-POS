@@ -1,6 +1,6 @@
 using System;
 
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     /// <summary>
     /// Represents a return transaction for a specific product from an original bill.

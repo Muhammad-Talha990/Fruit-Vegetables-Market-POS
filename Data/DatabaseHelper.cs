@@ -1,9 +1,9 @@
 using System;
 using System.IO;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Helpers;
+using FruitVegetableMarketPOS.Helpers;
 
-namespace GroceryPOS.Data
+namespace FruitVegetableMarketPOS.Data
 {
     /// <summary>
     /// Centralized database connection helper.
@@ -11,6 +11,11 @@ namespace GroceryPOS.Data
     /// </summary>
     public static class DatabaseHelper
     {
+        private const string AppFolderName = "FruitVegetableMarketPOS";
+        private const string DbFileName = "FruitVegetableMarketPOS.db";
+        private const string LegacyAppFolderName = "GroceryPOS";
+        private const string LegacyDbFileName = "GroceryPOS.db";
+
         private static readonly string DbPath;
         private static readonly string ConnectionString;
 
@@ -18,19 +23,66 @@ namespace GroceryPOS.Data
         {
             // Use LocalAppData for production deployment to ensure write permissions
             var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var appFolder = Path.Combine(appDataPath, "GroceryPOS");
-            
+            var appFolder = Path.Combine(appDataPath, AppFolderName);
+
             if (!Directory.Exists(appFolder))
             {
                 Directory.CreateDirectory(appFolder);
             }
-            
-            DbPath = Path.Combine(appFolder, "GroceryPOS.db");
-            
-            // Removed fallback copy logic. SQLite automatically creates the DB file on connection open.
 
+            DbPath = Path.Combine(appFolder, DbFileName);
+            MigrateFromLegacyLocationIfNeeded(appDataPath, appFolder);
 
             ConnectionString = $"Data Source={DbPath}";
+        }
+
+        /// <summary>
+        /// One-time copy from the old GroceryPOS AppData location so existing shops keep their data.
+        /// </summary>
+        private static void MigrateFromLegacyLocationIfNeeded(string appDataPath, string appFolder)
+        {
+            try
+            {
+                if (File.Exists(DbPath))
+                    return;
+
+                var legacyFolder = Path.Combine(appDataPath, LegacyAppFolderName);
+                var legacyDb = Path.Combine(legacyFolder, LegacyDbFileName);
+                if (!File.Exists(legacyDb))
+                    return;
+
+                File.Copy(legacyDb, DbPath, overwrite: false);
+                foreach (var suffix in new[] { "-wal", "-shm" })
+                {
+                    var legacySide = legacyDb + suffix;
+                    var newSide = DbPath + suffix;
+                    if (File.Exists(legacySide) && !File.Exists(newSide))
+                        File.Copy(legacySide, newSide, overwrite: false);
+                }
+
+                var legacyImages = Path.Combine(legacyFolder, "Images");
+                var newImages = Path.Combine(appFolder, "Images");
+                if (Directory.Exists(legacyImages) && !Directory.Exists(newImages))
+                    CopyDirectory(legacyImages, newImages);
+
+                AppLogger.Info($"Migrated database from legacy path to: {DbPath}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Warning("Legacy database migration skipped or failed", ex);
+            }
+        }
+
+        private static void CopyDirectory(string sourceDir, string destDir)
+        {
+            Directory.CreateDirectory(destDir);
+            foreach (var file in Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(sourceDir, file);
+                var dest = Path.Combine(destDir, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(file, dest, overwrite: false);
+            }
         }
 
         /// <summary>

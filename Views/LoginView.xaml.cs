@@ -1,8 +1,8 @@
 using System.Windows;
 using System.Windows.Input;
-using GroceryPOS.ViewModels;
+using FruitVegetableMarketPOS.ViewModels;
 
-namespace GroceryPOS.Views
+namespace FruitVegetableMarketPOS.Views
 {
     public partial class LoginView : Window
     {

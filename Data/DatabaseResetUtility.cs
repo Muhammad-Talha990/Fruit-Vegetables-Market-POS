@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Helpers;
+using FruitVegetableMarketPOS.Helpers;
 
-namespace GroceryPOS.Data
+namespace FruitVegetableMarketPOS.Data
 {
     /// <summary>
     /// Utility class for resetting transactional data in SQLite database for testing purposes.
@@ -14,11 +14,11 @@ namespace GroceryPOS.Data
     ///   - bill_payment (payment transaction log)
     ///   - BillReturns (return headers)
     ///   - BillReturnItems (return items)
-    ///   - InventoryLogs (stock movement audit trail)
     ///   - CustomerLedger (customer accounting journal)
+    ///   - DailyItemSelection / DailyClosing (optional operational history)
     /// 
     /// Preserves:
-    ///   - Items (product catalog)
+    ///   - Items / ItemTypes (product catalog)
     ///   - Customers (customer registry)
     ///   - Accounts (payment methods)
     ///   - Users (system users)
@@ -46,7 +46,6 @@ namespace GroceryPOS.Data
                     summary.BillItemsBeforeDelete = GetTableCount(conn, "BillItems");
                     summary.BillPaymentBeforeDelete = GetTableCount(conn, "bill_payment");
                     summary.BillReturnsBeforeDelete = GetTableCount(conn, "BillReturns");
-                    summary.InventoryLogsBeforeDelete = GetTableCount(conn, "InventoryLogs");
                     summary.CustomerLedgerBeforeDelete = GetTableCount(conn, "CustomerLedger");
 
                     // Disable foreign key constraints temporarily
@@ -58,8 +57,11 @@ namespace GroceryPOS.Data
                     Execute(conn, "DELETE FROM bill_payment;");
                     Execute(conn, "DELETE FROM BillItems;");
                     Execute(conn, "DELETE FROM Bills;");
-                    Execute(conn, "DELETE FROM InventoryLogs;");
                     Execute(conn, "DELETE FROM CustomerLedger;");
+                    if (TableExists(conn, "DailyClosing"))
+                        Execute(conn, "DELETE FROM DailyClosing;");
+                    if (TableExists(conn, "DailyItemSelection"))
+                        Execute(conn, "DELETE FROM DailyItemSelection;");
 
                     // Optionally reset AUTOINCREMENT sequences
                     if (resetAutoIncrement)
@@ -107,7 +109,7 @@ namespace GroceryPOS.Data
                 var tables = new[]
                 {
                     "Bills", "BillItems", "bill_payment", "BillReturns",
-                    "BillReturnItems", "InventoryLogs", "CustomerLedger"
+                    "BillReturnItems", "CustomerLedger", "DailyItemSelection", "DailyClosing"
                 };
 
                 foreach (var table in tables)
@@ -130,12 +132,21 @@ namespace GroceryPOS.Data
         /// </summary>
         private static int GetTableCount(SqliteConnection conn, string tableName)
         {
+            if (!TableExists(conn, tableName)) return 0;
             using (var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = $"SELECT COUNT(*) FROM {tableName};";
                 var result = cmd.ExecuteScalar();
                 return result != null ? Convert.ToInt32(result) : 0;
             }
+        }
+
+        private static bool TableExists(SqliteConnection conn, string tableName)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@name;";
+            cmd.Parameters.AddWithValue("@name", tableName);
+            return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
         }
 
         /// <summary>
@@ -165,7 +176,6 @@ namespace GroceryPOS.Data
         public int BillItemsBeforeDelete { get; set; }
         public int BillPaymentBeforeDelete { get; set; }
         public int BillReturnsBeforeDelete { get; set; }
-        public int InventoryLogsBeforeDelete { get; set; }
         public int CustomerLedgerBeforeDelete { get; set; }
 
         // Master data preserved counts
@@ -193,7 +203,6 @@ DELETED TRANSACTIONAL DATA:
   BillItems:          {BillItemsBeforeDelete} records
   Payments:           {BillPaymentBeforeDelete} records
   Returns:            {BillReturnsBeforeDelete} records
-  Inventory Logs:     {InventoryLogsBeforeDelete} records
   Customer Ledger:    {CustomerLedgerBeforeDelete} records
 
 PRESERVED MASTER DATA:

@@ -1,53 +1,114 @@
-## Visual Studio / .NET
+# ============================================================
+# Fruit & Vegetable Market POS / PMC — .gitignore
+# ============================================================
+
+# --- Visual Studio / VS Code / Rider ---
 .vs/
+.vscode/
+.idea/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+*.DotSettings.user
+*.rsuser
+
+# --- .NET build outputs ---
 [Bb]in/
 [Oo]bj/
 [Dd]ebug/
 [Rr]elease/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-*.nupkg
-project.assets.json
-*.DotSettings.user
-
-## Build outputs
+[Aa]rtifacts/
 publish/
 dist/
-build/
+out/
 *.exe
 *.dll
 *.pdb
+*.cache
+*.ilk
+*.meta
+*.obj
+*.iobj
+*.ipdb
+*.idb
+project.assets.json
+*.nuget.props
+*.nuget.targets
+*_wpftmp.csproj
+*_wpftmp.*
 
-## Logs
+# --- NuGet ---
+*.nupkg
+*.snupkg
+packages/
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# --- Test / coverage ---
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.trx
+coverage/
+*.coverage
+*.coveragexml
+
+# --- Logs & temp ---
 *.log
 logs/
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*~
+*.swp
 
-## Database files
+# --- Local databases (runtime data — never commit) ---
 *.db
 *.db-shm
 *.db-wal
 *.sqlite
 *.sqlite3
+Data/*.db
+Data/*.db-*
 
-## OS generated
-.DS_Store
-Thumbs.db
-Desktop.ini
+# --- App runtime / local machine config ---
+printer_config.txt
+**/printer_config.txt
+App_Data/
+LocalStorage/
 
-## Secrets / environment
+# --- Installer / client deliverable binaries ---
+Setup/Releases/*
+!Setup/Releases/.gitkeep
+Client_Deliverable/
+*.msi
+*.msix
+
+# --- One-off / scratch tools (not part of the product) ---
+_dbcheck/
+tmp_query.csx
+*.csx
+
+# --- Secrets / environment ---
 .env
 .env.*
+!.env.example
 secrets.json
+**/secrets.json
 appsettings.Development.json
 appsettings.Local.json
 *.secret.json
+credentials.json
+**/credentials.json
 
-## Others
-*.tmp
-*.bak
-*.old
-*.orig
-*_wpftmp.csproj
-Setup/Releases/
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# --- Publish profiles (often machine-specific) ---
+**/Properties/PublishProfiles/*.pubxml.user

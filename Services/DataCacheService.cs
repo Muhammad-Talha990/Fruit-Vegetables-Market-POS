@@ -2,11 +2,11 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using GroceryPOS.Data.Repositories;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Data.Repositories;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Services
+namespace FruitVegetableMarketPOS.Services
 {
     /// <summary>
     /// Thread-safe in-memory cache for Items and Users.
@@ -86,14 +86,9 @@ namespace GroceryPOS.Services
 
         public void UpdateItemInCache(Item item)
         {
-            // If item exists, preserve its current stock quantity before updating
-            if (_itemCache.TryGetValue(item.Id, out var existing))
-            {
-                // Remove old barcode from index if it changed
-                if (!string.IsNullOrWhiteSpace(existing.Barcode))
-                    _barcodeIndex.TryRemove(existing.Barcode, out _);
-                item.StockQuantity = existing.StockQuantity;
-            }
+            if (_itemCache.TryGetValue(item.Id, out var existing) && !string.IsNullOrWhiteSpace(existing.Barcode))
+                _barcodeIndex.TryRemove(existing.Barcode, out _);
+
             _itemCache[item.Id] = item;
             if (!string.IsNullOrWhiteSpace(item.Barcode))
                 _barcodeIndex[item.Barcode] = item.Id;
@@ -103,14 +98,6 @@ namespace GroceryPOS.Services
         {
             if (_itemCache.TryRemove(id, out var removed) && !string.IsNullOrWhiteSpace(removed.Barcode))
                 _barcodeIndex.TryRemove(removed.Barcode, out _);
-        }
-
-        public void UpdateStockInCache(int id, double change)
-        {
-            if (_itemCache.TryGetValue(id, out var item))
-            {
-                item.StockQuantity += change;
-            }
         }
 
         // ────────────────────────────────────────────

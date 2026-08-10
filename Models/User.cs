@@ -1,6 +1,6 @@
 using System;
 
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     /// <summary>
     /// Represents a system user (admin or cashier).

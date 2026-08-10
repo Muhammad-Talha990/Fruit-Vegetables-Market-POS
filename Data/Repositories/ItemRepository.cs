@@ -1,20 +1,19 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Data.Repositories
+namespace FruitVegetableMarketPOS.Data.Repositories
 {
     /// <summary>
-    /// Data access for the Items table (Normalized 3NF).
-    /// Provides CRUD operations using raw SQL with parameterized queries.
+    /// Data access for the Items catalog table (no stock / cost / sale price columns).
+    /// Daily unit prices live on ItemTypes.
     /// </summary>
     public class ItemRepository
     {
         private const string BaseSelectSql = @"
-            SELECT i.*, c.Name as CategoryName, 
-                   COALESCE((SELECT SUM(QuantityChange) FROM InventoryLogs WHERE ItemId = i.ItemId), 0) as StockQuantity
+            SELECT i.*, c.Name as CategoryName
             FROM Items i
             LEFT JOIN Categories c ON i.CategoryId = c.CategoryId";
 
@@ -29,6 +28,21 @@ namespace GroceryPOS.Data.Repositories
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $"{BaseSelectSql} ORDER BY i.Description;";
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                items.Add(MapItem(reader));
+
+            return items;
+        }
+
+        /// <summary>Returns active items only.</summary>
+        public List<Item> GetActiveItems()
+        {
+            var items = new List<Item>();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"{BaseSelectSql} WHERE i.IsActive = 1 ORDER BY i.Description;";
 
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -69,9 +83,11 @@ namespace GroceryPOS.Data.Repositories
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"
                 {BaseSelectSql}
-                WHERE i.Description LIKE @term 
+                WHERE i.IsActive = 1
+                  AND (i.Description LIKE @term 
+                   OR i.NameUrdu     LIKE @term
                    OR i.Barcode     LIKE @term 
-                   OR c.Name        LIKE @term
+                   OR c.Name        LIKE @term)
                 ORDER BY i.Description;
             ";
             cmd.Parameters.AddWithValue("@term", $"%{searchTerm}%");
@@ -89,7 +105,7 @@ namespace GroceryPOS.Data.Repositories
             var items = new List<Item>();
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"{BaseSelectSql} WHERE c.Name = @cat ORDER BY i.Description;";
+            cmd.CommandText = $"{BaseSelectSql} WHERE c.Name = @cat AND i.IsActive = 1 ORDER BY i.Description;";
             cmd.Parameters.AddWithValue("@cat", categoryName);
 
             using var reader = cmd.ExecuteReader();
@@ -105,7 +121,7 @@ namespace GroceryPOS.Data.Repositories
             var categories = new List<string>();
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT Name FROM Categories ORDER BY Name;";
+            cmd.CommandText = "SELECT Name FROM Categories WHERE IsActive = 1 ORDER BY DisplayOrder, Name;";
 
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -119,7 +135,7 @@ namespace GroceryPOS.Data.Repositories
         {
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM Items;";
+            cmd.CommandText = "SELECT COUNT(*) FROM Items WHERE IsActive = 1;";
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
 
@@ -130,32 +146,27 @@ namespace GroceryPOS.Data.Repositories
         /// <summary>Inserts a new item. Throws if barcode already exists.</summary>
         public void Add(Item item)
         {
+            var now = DateTimeHelper.CaptureTransactionTime();
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO Items (Barcode, Description, CostPrice, SalePrice, CategoryId, MinStockThreshold)
-                VALUES (@barcode, @desc, @cost, @sale, 
-                       (SELECT CategoryId FROM Categories WHERE Name = @catName), 
-                       @threshold);
+                INSERT INTO Items (Barcode, Description, NameUrdu, CategoryId, IsActive, UpdatedAt)
+                VALUES (@barcode, @desc, @nameUrdu,
+                       (SELECT CategoryId FROM Categories WHERE Name = @catName),
+                       @active, @updatedAt);
             ";
             cmd.Parameters.AddWithValue("@barcode", string.IsNullOrWhiteSpace(item.Barcode) ? DBNull.Value : item.Barcode);
             cmd.Parameters.AddWithValue("@desc", item.Description);
-            cmd.Parameters.AddWithValue("@cost", item.CostPrice);
-            cmd.Parameters.AddWithValue("@sale", item.SalePrice);
+            cmd.Parameters.AddWithValue("@nameUrdu", string.IsNullOrWhiteSpace(item.NameUrdu) ? DBNull.Value : item.NameUrdu);
             cmd.Parameters.AddWithValue("@catName", (object?)item.CategoryName ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@threshold", item.MinStockThreshold);
+            cmd.Parameters.AddWithValue("@active", item.IsActive ? 1 : 0);
+            cmd.Parameters.AddWithValue("@updatedAt", now.ToDbString());
             cmd.ExecuteNonQuery();
 
-            // Retrieve the auto-generated ItemId
             using var idCmd = conn.CreateCommand();
             idCmd.CommandText = "SELECT last_insert_rowid();";
             item.Id = Convert.ToInt32(idCmd.ExecuteScalar()!);
-
-            // Record initial stock as a Purchase log entry
-            if (item.StockQuantity > 0)
-            {
-                RecordStockChange(item.Id, item.StockQuantity, "Purchase");
-            }
+            item.UpdatedAt = now;
 
             AppLogger.Info($"Item added: '{item.Description}' (Barcode: {item.Barcode}, Id: {item.Id})");
         }
@@ -169,28 +180,46 @@ namespace GroceryPOS.Data.Repositories
         /// <summary>Updates an item, specifically handling barcode changes if originalBarcode is provided.</summary>
         public void Update(Item item, string? originalBarcode)
         {
+            var now = DateTimeHelper.CaptureTransactionTime();
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 UPDATE Items SET 
-                    Barcode       = @barcode,
-                    Description   = @desc,
-                    CostPrice     = @cost,
-                    SalePrice     = @sale,
-                    CategoryId    = (SELECT CategoryId FROM Categories WHERE Name = @catName),
-                    MinStockThreshold = @threshold
+                    Barcode           = @barcode,
+                    Description       = @desc,
+                    NameUrdu          = @nameUrdu,
+                    CategoryId        = COALESCE(@categoryId, (SELECT CategoryId FROM Categories WHERE Name = @catName LIMIT 1)),
+                    IsActive          = @active,
+                    UpdatedAt         = @updatedAt
                 WHERE ItemId = @id;
             ";
             cmd.Parameters.AddWithValue("@id", item.Id);
             cmd.Parameters.AddWithValue("@barcode", string.IsNullOrWhiteSpace(item.Barcode) ? DBNull.Value : item.Barcode);
             cmd.Parameters.AddWithValue("@desc", item.Description);
-            cmd.Parameters.AddWithValue("@cost", item.CostPrice);
-            cmd.Parameters.AddWithValue("@sale", item.SalePrice);
+            cmd.Parameters.AddWithValue("@nameUrdu", string.IsNullOrWhiteSpace(item.NameUrdu) ? DBNull.Value : item.NameUrdu);
+            cmd.Parameters.AddWithValue("@categoryId", item.CategoryId.HasValue ? item.CategoryId.Value : DBNull.Value);
             cmd.Parameters.AddWithValue("@catName", (object?)item.CategoryName ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@threshold", item.MinStockThreshold);
+            cmd.Parameters.AddWithValue("@active", item.IsActive ? 1 : 0);
+            cmd.Parameters.AddWithValue("@updatedAt", now.ToDbString());
             cmd.ExecuteNonQuery();
 
-            AppLogger.Info($"Item updated: '{item.Description}' (Barcode: {item.Barcode})");
+            item.UpdatedAt = now;
+            AppLogger.Info($"Item updated: Id={item.Id} '{item.Description}' (Barcode: {item.Barcode})");
+        }
+
+        /// <summary>Soft-deactivates an item (IsActive = 0).</summary>
+        public void SoftDeactivate(int id)
+        {
+            var now = DateTimeHelper.CaptureTransactionTime();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE Items SET IsActive = 0, UpdatedAt = @updatedAt
+                WHERE ItemId = @id;";
+            cmd.Parameters.AddWithValue("@id", id);
+            cmd.Parameters.AddWithValue("@updatedAt", now.ToDbString());
+            cmd.ExecuteNonQuery();
+            AppLogger.Info($"Item soft-deactivated: ID {id}");
         }
 
         /// <summary>Permanently deletes an item by internal ID.</summary>
@@ -215,35 +244,6 @@ namespace GroceryPOS.Data.Repositories
             AppLogger.Info($"Item deleted: Barcode {barcode}");
         }
 
-        /// <summary>Updates stock by recording a log entry (compatibility shim).</summary>
-        public void UpdateStock(string barcode, double change)
-        {
-            var item = GetByBarcode(barcode);
-            if (item != null)
-            {
-                RecordStockChange(item.Id, change, change > 0 ? "AdjustmentIn" : "AdjustmentOut", "Manual Stock Update");
-            }
-        }
-
-        /// <summary>
-        /// Records a stock change in the InventoryLogs.
-        /// </summary>
-        public void RecordStockChange(int itemId, double change, string type, string? note = null)
-        {
-            using var conn = DatabaseHelper.GetConnection();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
-                INSERT INTO InventoryLogs (ItemId, QuantityChange, ChangeType) 
-                VALUES (@id, @change, @type);";
-            cmd.Parameters.AddWithValue("@id", itemId);
-            cmd.Parameters.AddWithValue("@change", change);
-            cmd.Parameters.AddWithValue("@type", type);
-            cmd.ExecuteNonQuery();
-
-            AppLogger.Info($"Stock LOGGED for Item ID {itemId}: {change:N2} ({type})");
-        }
-
-
         // ────────────────────────────────────────────
         //  Mapper
         // ────────────────────────────────────────────
@@ -251,17 +251,18 @@ namespace GroceryPOS.Data.Repositories
         private static Item MapItem(SqliteDataReader reader)
         {
             var barcodeOrd = reader.GetOrdinal("Barcode");
+            var nameUrduOrd = reader.GetOrdinal("NameUrdu");
+            var updatedOrd = reader.GetOrdinal("UpdatedAt");
             return new Item
             {
                 Id                = reader.GetInt32(reader.GetOrdinal("ItemId")),
                 Barcode           = reader.IsDBNull(barcodeOrd) ? null : reader.GetString(barcodeOrd),
                 Description       = reader.GetString(reader.GetOrdinal("Description")),
-                CostPrice         = reader.GetDouble(reader.GetOrdinal("CostPrice")),
-                SalePrice         = reader.GetDouble(reader.GetOrdinal("SalePrice")),
+                NameUrdu          = reader.IsDBNull(nameUrduOrd) ? null : reader.GetString(nameUrduOrd),
                 CategoryId        = reader.IsDBNull(reader.GetOrdinal("CategoryId")) ? (int?)null : reader.GetInt32(reader.GetOrdinal("CategoryId")),
                 CategoryName      = reader.IsDBNull(reader.GetOrdinal("CategoryName")) ? null : reader.GetString(reader.GetOrdinal("CategoryName")),
-                StockQuantity     = reader.GetDouble(reader.GetOrdinal("StockQuantity")),
-                MinStockThreshold = reader.GetDouble(reader.GetOrdinal("MinStockThreshold"))
+                IsActive          = reader.GetInt32(reader.GetOrdinal("IsActive")) != 0,
+                UpdatedAt         = reader.IsDBNull(updatedOrd) ? null : reader.GetDateTime(updatedOrd)
             };
         }
     }

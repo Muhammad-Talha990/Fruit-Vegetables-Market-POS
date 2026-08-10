@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>FruitVegetableMarketPOS</AssemblyName>
+    <RootNamespace>FruitVegetableMarketPOS</RootNamespace>
+    <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyTitle>PMC — Pak Madinah Commission Agents</AssemblyTitle>
+    <Product>PMC — Pak Madinah Commission Agents</Product>
+    <Company>Weblynx Hive</Company>
+    <Copyright>Copyright © 2026 Weblynx Hive</Copyright>
+    <Version>1.1.0.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Description>PMC — Pak Madinah Commission Agents</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\logo.ico" />
+    <!-- Copy all product photos next to the EXE so menu cards can load them -->
+    <Content Include="Assets\Products\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
+    <PackageReference Include="System.Management" Version="10.0.3" />
+    <Using Remove="System.Windows.Forms" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.12" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.12" />
+  </ItemGroup>
+
+  <!-- Exclude sibling projects/tools and generated obj sources from the main project's compile/embed items -->
+  <ItemGroup>
+    <Compile Remove="Scripts\**\*.cs" />
+    <None Remove="Scripts\**\*" />
+    <EmbeddedResource Remove="Scripts\**\*" />
+    <Compile Remove="Setup\**\*" />
+    <None Remove="Setup\**\*" />
+    <EmbeddedResource Remove="Setup\**\*" />
+    <Page Remove="Setup\**\*" />
+    <ApplicationDefinition Remove="Setup\**\*" />
+    <Compile Remove="_dbcheck\**\*" />
+    <None Remove="_dbcheck\**\*" />
+    <EmbeddedResource Remove="_dbcheck\**\*" />
+    <Page Remove="_dbcheck\**\*" />
+    <Compile Remove="**\obj\**\*.cs" />
+    <None Remove="**\obj\**\*" />
+    <EmbeddedResource Remove="**\obj\**\*" />
+  </ItemGroup>
+
+</Project>

@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 
-namespace GroceryPOS.Helpers
+namespace FruitVegetableMarketPOS.Helpers
 {
     /// <summary>
     /// Attached property to enable PasswordBox binding in MVVM.

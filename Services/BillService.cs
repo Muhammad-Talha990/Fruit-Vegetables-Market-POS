@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using GroceryPOS.Data.Repositories;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Data.Repositories;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Services
+namespace FruitVegetableMarketPOS.Services
 {
     /// <summary>
     /// Business logic for billing operations.
@@ -21,14 +21,12 @@ namespace GroceryPOS.Services
     {
         private readonly BillRepository _billRepo;
         private readonly DataCacheService _cache;
-        private readonly IStockService _stockService;
         private readonly CustomerRepository _customerRepo;
 
-        public BillService(BillRepository billRepo, DataCacheService cache, IStockService stockService, CustomerRepository customerRepo)
+        public BillService(BillRepository billRepo, DataCacheService cache, CustomerRepository customerRepo)
         {
             _billRepo = billRepo;
             _cache = cache;
-            _stockService = stockService;
             _customerRepo = customerRepo;
         }
 
@@ -60,7 +58,7 @@ namespace GroceryPOS.Services
                 if (string.IsNullOrWhiteSpace(it.ItemDescription))
                     throw new InvalidOperationException("Cannot save invoice because one or more items have missing descriptions.");
 
-                if (it.Quantity == 0)
+                if (it.Quantity <= 0)
                     throw new InvalidOperationException("Cannot save invoice because one or more items have invalid quantity.");
             }
 
@@ -70,10 +68,9 @@ namespace GroceryPOS.Services
             if (taxAmount < 0)
                 throw new ArgumentException("Tax amount cannot be negative.");
 
-            // ── Validate stock and resolve internal IDs ──
+            // ── Resolve internal IDs and validate items exist ──
             foreach (var item in items)
             {
-                // ItemId is now the string form of the integer DB Id
                 if (!int.TryParse(item.ItemId, out var internalId))
                     throw new InvalidOperationException($"Invalid product identifier '{item.ItemId}'.");
 
@@ -83,8 +80,18 @@ namespace GroceryPOS.Services
                 if (cachedItem == null)
                     throw new InvalidOperationException($"Item with ID '{item.ItemId}' not found.");
 
-                if (!_stockService.IsStockAvailable(internalId, item.Quantity, out double available))
-                    throw new InvalidOperationException($"Insufficient stock for item {cachedItem.Description}. Available: {available}, Required: {item.Quantity}");
+                if (string.IsNullOrWhiteSpace(item.ItemName))
+                    item.ItemName = item.ItemDescription;
+
+                if (string.IsNullOrWhiteSpace(item.Unit))
+                    item.Unit = "piece";
+
+                if (item.TypeId.HasValue && item.TypeId.Value > 0)
+                {
+                    // TypeId validated at UI layer in later phases; ensure snapshot name when provided
+                    if (string.IsNullOrWhiteSpace(item.TypeName))
+                        item.TypeName = "Type 1";
+                }
             }
 
             // ── Calculate totals per business rules ──
@@ -139,14 +146,8 @@ namespace GroceryPOS.Services
                 AccountId = (paymentMethod == "Online") ? accountId : null
             };
 
-            // ── Save atomically (bill + items + stock) ──
+            // ── Save atomically (bill + items + ledger) ──
             var savedBill = _billRepo.SaveBillWithTransaction(bill, items);
-
-            // ── Update Cache & UI after successful commit ──
-            foreach (var item in items)
-                _cache.UpdateStockInCache(item.ItemInternalId, -item.Quantity);
-
-            _stockService.NotifyChanged();
 
             return savedBill;
         }

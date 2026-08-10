@@ -1,11 +1,11 @@
-# GroceryPOS — Enterprise Grade Retail Management System
+# Fruit & Vegetable Market POS (سبزی منڈی)
 
-[![.NET Build](https://github.com/Muhammad-Talha990/GroceryPOS/actions/workflows/dotnet-build.yml/badge.svg)](https://github.com/Muhammad-Talha990/GroceryPOS/actions/workflows/dotnet-build.yml)
+[![.NET Build](https://github.com/Muhammad-Talha990/Fruit-Vegetables-Market-POS/actions/workflows/dotnet-build.yml/badge.svg)](https://github.com/Muhammad-Talha990/Fruit-Vegetables-Market-POS/actions/workflows/dotnet-build.yml)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![Framework](https://img.shields.io/badge/framework-.NET%208%20WPF-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-A professional, commercial-ready Point of Sale (POS) and Inventory Management System designed for grocery stores and retail outlets. Built with a focus on data integrity (3NF SQL Design), performance, and a premium user experience.
+A professional Point of Sale (POS) for fruit & vegetable markets (سبزی منڈی) — branded as **PMC (Pak Madinah Commission Agents)**. Built with .NET 8 WPF, SQLite, and a clear daily-selling workflow.
 
 ---
 
@@ -22,17 +22,15 @@ A professional, commercial-ready Point of Sale (POS) and Inventory Management Sy
 - **Credit Tracking**: Manage 'Udhar' (Store Credit) with automated balance reconciliation.
 - **Return Processing**: Integrated return module that updates stock and credit ledgers in real-time.
 
-### 📦 Inventory & Stock Control
-- **Audit Trails**: Every stock movement is logged with a detailed reference (Sale, Return, Purchase).
-- **Low Stock Alerts**: Visual indicators and reports for items reaching critical thresholds.
-- **Stock Purchases**: Manage supplier invoices and deduct purchase amounts from the cash drawer automatically.
+### 📦 Daily Menu & Catalog
+- **Today's Menu**: Select which items sell today with type-based unit prices.
+- **Product Photos**: Menu cards load images from `Assets/Products`.
+- **Catalog Management**: Add fruit/vegetable items with English + Urdu names.
 
-### 📊 Professional Reporting & Analytics (v1.1.0)
-- **Interactive Analytics Dashboard**: Beautiful pure-WPF bar charts displaying daily sales trends and top-performing products.
-- **KPI Summary Cards**: Real-time metrics for Total Revenue, Net Sales, Returns, Average Order Value, and Outstanding Credit.
-- **Advanced Audit Trail**: Comprehensive transaction grid with search, advanced filtering, and color-coded status badges for Sales and Returns.
-- **Financial Audits**: Daily and date-ranged sales, returns, and credit recovery reports.
-- **Thermal Printing**: Industry-standard 80mm thermal receipt printing with professional branding.
+### 📊 Professional Reporting & Analytics
+- **Interactive Analytics Dashboard**: WPF bar charts for sales trends and top products.
+- **KPI Summary Cards**: Revenue, returns, credit due, recovered credit, cash drawer, online.
+- **Thermal Printing**: 80mm ESC/POS receipts, gate pass, and payment slips.
 
 ---
 
@@ -49,7 +47,7 @@ A professional, commercial-ready Point of Sale (POS) and Inventory Management Sy
 ## 📁 Repository Structure
 
 ```text
-GroceryPOS/
+FruitVegetableMarketPOS/
 ├── Assets/          # Icons, Branding, and Media assets
 ├── Data/            # Repository pattern implementation and SQLite Logic
 ├── Docs/            # Detailed documentation (Schema, Audits, Financials)
@@ -73,31 +71,35 @@ GroceryPOS/
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/Muhammad-Talha990/GroceryPOS.git
-   cd GroceryPOS
+   git clone https://github.com/Muhammad-Talha990/Fruit-Vegetables-Market-POS.git
+   cd Fruit-Vegetables-Market-POS
    ```
 
 2. **Restore & Build**:
    ```bash
-   dotnet restore
-   dotnet build
+   dotnet restore FruitVegetableMarketPOS.sln
+   dotnet build FruitVegetableMarketPOS.sln
    ```
 
 3. **Launch**:
    ```bash
-   dotnet run --project GroceryPOS.csproj
+   dotnet run --project FruitVegetableMarketPOS.csproj
+   ```
+   Or from PowerShell in this folder:
+   ```powershell
+   .\run.ps1
    ```
 
-*Note: The database is initialized automatically on the first launch.*
+*Note: The SQLite database is created automatically under `%LOCALAPPDATA%\FruitVegetableMarketPOS\` on first launch.*
 
 ---
 
 ## 🛡 Security & Configuration
 
-This project follows professional security standards:
-- **No Hardcoded Secrets**: Credentials are moved to external configurations.
-- **BCrypt Hashing**: All user passwords are encrypted before storage.
-- **Portable DB**: Connection strings are resolved dynamically at runtime.
+- **Local DB only**: No cloud connection strings are committed.
+- **BCrypt**: User passwords are hashed before storage.
+- **Runtime config**: Printer settings stay on the local machine (`printer_config.txt` is gitignored).
+- **Default login** (change after first install): see the user manual — do not commit production credentials.
 
 ---
 

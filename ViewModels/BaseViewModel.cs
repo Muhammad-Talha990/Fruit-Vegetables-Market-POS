@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     [SupportedOSPlatform("windows")]
     public class BaseViewModel : INotifyPropertyChanged, IDisposable

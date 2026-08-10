@@ -3,35 +3,29 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
-using GroceryPOS.Data;
-using GroceryPOS.Data.Repositories;
-using GroceryPOS.Exceptions;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Data;
+using FruitVegetableMarketPOS.Data.Repositories;
+using FruitVegetableMarketPOS.Exceptions;
+using FruitVegetableMarketPOS.Models;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Helpers;
+using FruitVegetableMarketPOS.Helpers;
 
-namespace GroceryPOS.Services
+namespace FruitVegetableMarketPOS.Services
 {
     public class ReturnService : IReturnService
     {
         private readonly BillRepository _billRepo;
         private readonly BillReturnRepository _returnRepo;
-        private readonly DataCacheService _cache;
-        private readonly IStockService _stockService;
         private readonly CreditPaymentRepository _creditRepo;
         private readonly CustomerLedgerRepository _ledgerRepo = new();
 
         public ReturnService(
             BillRepository billRepo, 
             BillReturnRepository returnRepo, 
-            DataCacheService cache, 
-            IStockService stockService,
             CreditPaymentRepository creditRepo)
         {
             _billRepo = billRepo;
             _returnRepo = returnRepo;
-            _cache = cache;
-            _stockService = stockService;
             _creditRepo = creditRepo;
         }
 
@@ -128,7 +122,7 @@ namespace GroceryPOS.Services
                     // 1. Create Return Header
                     int returnId = _returnRepo.InsertReturnHeader(originalBillId, cashRefund, conn, txn);
 
-                    // 2. Create Return Items & Update Stock
+                    // 2. Create return line items (no stock adjustment — market POS does not track inventory)
                     foreach (var item in processedItems)
                     {
                         _returnRepo.InsertReturnItem(returnId, item.BillItemId, item.Qty, item.Price, conn, txn);
@@ -157,14 +151,6 @@ namespace GroceryPOS.Services
                     }
 
                     txn.Commit();
-
-                    // Update Cache & Notify
-                    foreach (var item in processedItems)
-                    {
-                        var origItem = originalBill.Items.First(i => i.BillItemId == item.BillItemId);
-                        _cache.UpdateStockInCache(origItem.ItemInternalId, item.Qty);
-                    }
-                    _stockService.NotifyChanged();
 
                     // Return a virtual Bill object representing the 'Return Transaction' for the UI
                     var returnBill = new Bill

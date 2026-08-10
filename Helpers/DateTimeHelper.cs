@@ -1,6 +1,6 @@
 using System;
 
-namespace GroceryPOS.Helpers
+namespace FruitVegetableMarketPOS.Helpers
 {
     /// <summary>
     /// Centralised date-time helper for transactional consistency.
@@ -23,6 +23,18 @@ namespace GroceryPOS.Helpers
         /// throughout the entire transaction / business operation.
         /// </summary>
         public static DateTime CaptureTransactionTime() => DateTime.Now;
+
+        /// <summary>
+        /// Returns the business date as yyyy-MM-dd (local time).
+        /// </summary>
+        public static string GetBusinessDate(DateTime? dt = null) =>
+            (dt ?? DateTime.Today).ToString("yyyy-MM-dd");
+
+        /// <summary>
+        /// Returns the business date as a DateTime at midnight (local time).
+        /// </summary>
+        public static DateTime GetBusinessDateValue(DateTime? dt = null) =>
+            (dt ?? DateTime.Today).Date;
 
         /// <summary>
         /// Formats a DateTime as an SQLite-compatible string.

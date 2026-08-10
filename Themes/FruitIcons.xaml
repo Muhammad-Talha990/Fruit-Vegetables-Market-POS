@@ -1,0 +1,727 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+      Colorful HD vector icons — ONE item per icon (scales sharp at any size).
+      Soft circular badge + single centered produce.
+    -->
+
+    <!-- APPLE — single fruit -->
+    <DrawingImage x:Key="FruitIcon_apple">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFE8E8" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FF5252" Geometry="M32,18 C20,18 14,28 14,38 C14,48 22,56 32,56 C42,56 50,48 50,38 C50,28 44,18 32,18 Z"/>
+                <GeometryDrawing Brush="#FF8A80" Geometry="M26,28 C24,34 26,44 32,48 C38,44 40,34 38,28 C36,24 28,24 26,28 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,16 C36,8 46,10 46,10 C44,16 38,20 32,18 Z"/>
+                <GeometryDrawing Brush="#5D4037" Geometry="M30,12 L34,12 L34,22 L30,22 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- BANANA — single banana -->
+    <DrawingImage x:Key="FruitIcon_banana">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFF8E1" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FFEB3B" Geometry="M16,40 C22,52 44,50 50,34 C52,26 46,18 38,22 C28,26 20,34 16,40 Z"/>
+                <GeometryDrawing Brush="#FBC02D" Geometry="M20,38 C26,46 42,44 46,34 C38,36 28,36 20,38 Z"/>
+                <GeometryDrawing Brush="#6D4C41" Geometry="M48,32 C52,28 54,24 55,22 C53,26 50,30 48,32 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- MANGO — single mango -->
+    <DrawingImage x:Key="FruitIcon_mango">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFF3E0" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FF9800" Geometry="M22,16 C14,26 16,48 32,54 C48,48 50,26 42,16 C36,10 26,10 22,16 Z"/>
+                <GeometryDrawing Brush="#FFB74D" Geometry="M26,22 C20,30 22,46 32,50 C42,46 44,30 38,22 C34,18 30,18 26,22 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M38,14 C44,8 52,10 52,10 C48,16 42,18 38,16 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- ORANGE — single orange -->
+    <DrawingImage x:Key="FruitIcon_orange">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFF3E0" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FF9800" Geometry="M32,12 A20,20 0 1 1 31.9,12 Z"/>
+                <GeometryDrawing Brush="#FFB74D" Geometry="M32,20 A12,12 0 1 1 31.9,20 Z"/>
+                <GeometryDrawing Brush="#FFE0B2" Geometry="M32,32 L32,16 M32,32 L44,26 M32,32 L20,26 M32,32 L44,38 M32,32 L20,38"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M30,12 C30,12 34,4 42,8 C38,14 32,14 30,12 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- GRAPE — one small bunch (single cluster, not a crate) -->
+    <DrawingImage x:Key="FruitIcon_grape">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F3E5F5" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,12 C32,12 40,8 44,12 L38,22 Z"/>
+                <GeometryDrawing Brush="#5D4037" Geometry="M31,14 L33,14 L33,22 L31,22 Z"/>
+                <GeometryDrawing Brush="#8E24AA" Geometry="M26,24 A6,6 0 1 1 25.9,24 Z"/>
+                <GeometryDrawing Brush="#AB47BC" Geometry="M38,24 A6,6 0 1 1 37.9,24 Z"/>
+                <GeometryDrawing Brush="#7B1FA2" Geometry="M32,34 A6,6 0 1 1 31.9,34 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- WATERMELON — one slice -->
+    <DrawingImage x:Key="FruitIcon_watermelon">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M12,22 C12,44 28,54 32,54 C36,54 52,44 52,22 Z"/>
+                <GeometryDrawing Brush="#E53935" Geometry="M16,24 C16,42 28,50 32,50 C36,50 48,42 48,24 Z"/>
+                <GeometryDrawing Brush="#FFCDD2" Geometry="M20,26 C20,38 28,44 32,44 C36,44 44,38 44,26 Z"/>
+                <GeometryDrawing Brush="#212121" Geometry="M24,36 A1.8,1.8 0 1 1 23.9,36 Z"/>
+                <GeometryDrawing Brush="#212121" Geometry="M32,40 A1.8,1.8 0 1 1 31.9,40 Z"/>
+                <GeometryDrawing Brush="#212121" Geometry="M40,36 A1.8,1.8 0 1 1 39.9,36 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_guava">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F1F8E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#9CCC65" Geometry="M32,14 C18,14 12,28 16,42 C18,52 26,56 32,56 C38,56 46,52 48,42 C52,28 46,14 32,14 Z"/>
+                <GeometryDrawing Brush="#C5E1A5" Geometry="M32,22 C22,22 20,32 22,40 C24,48 28,50 32,50 C36,50 40,48 42,40 C44,32 42,22 32,22 Z"/>
+                <GeometryDrawing Brush="#EF9A9A" Geometry="M28,34 A2,2 0 1 1 27.9,34 Z"/>
+                <GeometryDrawing Brush="#EF9A9A" Geometry="M36,36 A2,2 0 1 1 35.9,36 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M32,12 C36,6 44,6 44,6 C40,12 36,14 32,12 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_pomegranate">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FCE4EC" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#C62828" Geometry="M32,16 C18,16 12,30 16,44 C18,52 26,56 32,56 C38,56 46,52 48,44 C52,30 46,16 32,16 Z"/>
+                <GeometryDrawing Brush="#E53935" Geometry="M32,24 C22,24 20,34 22,42 C24,50 28,52 32,52 C36,52 40,50 42,42 C44,34 42,24 32,24 Z"/>
+                <GeometryDrawing Brush="#FFCDD2" Geometry="M26,14 L32,8 L38,14 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_papaya">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFF3E0" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FFA726" Geometry="M24,12 C16,16 14,36 18,48 C20,54 28,58 32,58 C36,58 44,54 46,48 C50,36 48,16 40,12 C36,10 28,10 24,12 Z"/>
+                <GeometryDrawing Brush="#FFCC80" Geometry="M28,20 C22,24 22,40 26,48 C28,52 32,54 32,54 C32,54 36,52 38,48 C42,40 42,24 36,20 C34,18 30,18 28,20 Z"/>
+                <GeometryDrawing Brush="#5D4037" Geometry="M30,34 A1.5,1.5 0 1 1 29.9,34 Z"/>
+                <GeometryDrawing Brush="#5D4037" Geometry="M34,38 A1.5,1.5 0 1 1 33.9,38 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M32,12 C34,6 40,6 40,6 C36,10 34,14 32,14 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_pineapple">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFF8E1" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#F9A825" Geometry="M22,22 C18,28 18,44 24,52 C28,56 36,56 40,52 C46,44 46,28 42,22 C38,18 26,18 22,22 Z"/>
+                <GeometryDrawing Brush="#FFB300" Geometry="M26,28 C24,32 24,44 28,50 C30,52 34,52 36,50 C40,44 40,32 38,28 C36,26 28,26 26,28 Z"/>
+                <GeometryDrawing Brush="#EF6C00" Geometry="M24,34 L40,34 M22,40 L42,40 M24,46 L40,46"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M26,22 C22,12 28,8 32,14 C36,8 42,12 38,22 C34,18 30,18 26,22 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_peach">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FCE4EC" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FF8A65" Geometry="M32,16 C18,16 12,30 16,44 C20,54 28,56 32,56 C36,56 44,54 48,44 C52,30 46,16 32,16 Z"/>
+                <GeometryDrawing Brush="#FFAB91" Geometry="M32,24 C24,24 20,34 22,42 C24,50 28,52 32,52 C36,52 40,50 42,42 C44,34 40,24 32,24 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,16 C36,8 46,10 46,10 C42,16 36,18 32,16 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_pear">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F1F8E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M32,14 C26,14 24,22 26,28 C20,32 18,44 24,52 C28,56 36,56 40,52 C46,44 44,32 38,28 C40,22 38,14 32,14 Z"/>
+                <GeometryDrawing Brush="#C5E1A5" Geometry="M32,22 C28,22 28,28 30,32 C26,34 26,44 30,50 C32,52 34,52 36,50 C40,44 40,34 36,32 C38,28 36,22 32,22 Z"/>
+                <GeometryDrawing Brush="#5D4037" Geometry="M30,10 L34,10 L34,18 L30,18 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M34,12 C38,8 44,10 44,10 C40,14 36,16 34,14 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_strawberry">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFEBEE" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#E53935" Geometry="M20,22 C16,28 16,40 24,50 C28,54 36,54 40,50 C48,40 48,28 44,22 C40,18 24,18 20,22 Z"/>
+                <GeometryDrawing Brush="#FFEB3B" Geometry="M26,30 A1.4,1.4 0 1 1 25.9,30 Z"/>
+                <GeometryDrawing Brush="#FFEB3B" Geometry="M34,34 A1.4,1.4 0 1 1 33.9,34 Z"/>
+                <GeometryDrawing Brush="#FFEB3B" Geometry="M30,40 A1.4,1.4 0 1 1 29.9,40 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M24,20 C22,12 28,12 32,16 C36,12 42,12 40,20 C36,18 28,18 24,20 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_lychee">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FCE4EC" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#EF5350" Geometry="M32,16 A18,18 0 1 1 31.9,16 Z"/>
+                <GeometryDrawing Brush="#FFCDD2" Geometry="M32,24 A10,10 0 1 1 31.9,24 Z"/>
+                <GeometryDrawing Brush="#E57373" Geometry="M24,28 A1.5,1.5 0 1 1 23.9,28 Z"/>
+                <GeometryDrawing Brush="#E57373" Geometry="M36,30 A1.5,1.5 0 1 1 35.9,30 Z"/>
+                <GeometryDrawing Brush="#E57373" Geometry="M30,38 A1.5,1.5 0 1 1 29.9,38 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,14 C36,8 44,10 44,10 C40,14 36,16 32,14 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_melon">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFF8E1" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FFCA28" Geometry="M32,12 A20,20 0 1 1 31.9,12 Z"/>
+                <GeometryDrawing Brush="#FFE082" Geometry="M32,20 A12,12 0 1 1 31.9,20 Z"/>
+                <GeometryDrawing Brush="#F9A825" Geometry="M18,24 C22,18 28,16 32,16 C36,16 42,18 46,24"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M30,12 C30,12 34,6 40,8 C36,14 32,14 30,12 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_coconut">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#EFEBE9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#6D4C41" Geometry="M32,14 A18,18 0 1 1 31.9,14 Z"/>
+                <GeometryDrawing Brush="#8D6E63" Geometry="M32,22 A10,10 0 1 1 31.9,22 Z"/>
+                <GeometryDrawing Brush="#3E2723" Geometry="M28,28 A1.8,1.8 0 1 1 27.9,28 Z"/>
+                <GeometryDrawing Brush="#3E2723" Geometry="M36,28 A1.8,1.8 0 1 1 35.9,28 Z"/>
+                <GeometryDrawing Brush="#3E2723" Geometry="M32,34 A1.8,1.8 0 1 1 31.9,34 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_dates">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#EFEBE9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#5D4037" Geometry="M28,14 C22,18 20,36 26,50 C28,54 32,56 32,56 C32,56 36,54 38,50 C44,36 42,18 36,14 C34,12 30,12 28,14 Z"/>
+                <GeometryDrawing Brush="#8D6E63" Geometry="M30,20 C26,24 26,38 30,46 C32,50 34,50 34,50 C34,50 36,50 36,46 C40,38 40,24 36,20 C34,18 32,18 30,20 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,12 C34,6 40,6 40,6 C36,10 34,14 32,14 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_lemon">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFFDE7" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FFEB3B" Geometry="M20,18 C12,28 14,46 32,52 C50,46 52,28 44,18 C38,12 26,12 20,18 Z"/>
+                <GeometryDrawing Brush="#FFF176" Geometry="M26,24 C20,30 22,44 32,48 C42,44 44,30 38,24 C34,20 30,20 26,24 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,16 C36,10 44,10 44,10 C40,16 36,18 32,16 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_tomato">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFEBEE" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#E53935" Geometry="M32,18 C18,18 12,30 16,44 C18,52 26,56 32,56 C38,56 46,52 48,44 C52,30 46,18 32,18 Z"/>
+                <GeometryDrawing Brush="#FF8A80" Geometry="M32,26 C24,26 22,36 24,44 C26,50 30,52 32,52 C34,52 38,50 40,44 C42,36 40,26 32,26 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M24,18 C26,10 32,12 32,12 C32,12 38,10 40,18 C36,16 34,20 32,22 C30,20 28,16 24,18 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_potato">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#EFEBE9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#A1887F" Geometry="M18,20 C12,28 14,44 26,50 C36,54 50,44 50,32 C50,18 36,14 26,16 C22,17 18,20 18,20 Z"/>
+                <GeometryDrawing Brush="#8D6E63" Geometry="M24,28 A2,2 0 1 1 23.9,28 Z"/>
+                <GeometryDrawing Brush="#8D6E63" Geometry="M34,26 A2,2 0 1 1 33.9,26 Z"/>
+                <GeometryDrawing Brush="#8D6E63" Geometry="M38,36 A2,2 0 1 1 37.9,36 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_sweetpotato">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FBE9E7" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FF7043" Geometry="M16,24 C12,32 16,46 28,52 C40,56 52,44 50,32 C48,20 36,14 26,16 C20,18 16,24 16,24 Z"/>
+                <GeometryDrawing Brush="#FFAB91" Geometry="M22,28 C20,34 24,44 32,48 C40,44 44,34 42,28 C40,24 24,24 22,28 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_onion">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F3E5F5" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#CE93D8" Geometry="M32,18 C18,18 14,32 18,44 C20,52 26,56 32,56 C38,56 44,52 46,44 C50,32 46,18 32,18 Z"/>
+                <GeometryDrawing Brush="#BA68C8" Geometry="M32,26 C22,26 20,36 22,44 C24,50 28,52 32,52 C36,52 40,50 42,44 C44,36 42,26 32,26 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M28,18 C28,10 24,6 24,6 C30,8 34,14 34,18 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M34,18 C38,10 44,6 44,6 C40,12 38,16 34,18 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_springonion">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FFFFFF" Geometry="M28,36 C26,42 28,52 32,54 C36,52 38,42 36,36 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M30,36 L28,12 L32,16 L36,10 L34,36 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M32,36 L30,14 L34,18 L38,12 L36,36 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_carrot">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFF3E0" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FF9800" Geometry="M28,18 L36,18 L42,48 C42,52 36,56 32,56 C28,56 22,52 22,48 Z"/>
+                <GeometryDrawing Brush="#FB8C00" Geometry="M28,26 L36,26 L38,46 L26,46 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M32,18 C26,10 18,8 18,8 C24,14 28,18 30,22 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,18 C38,10 46,8 46,8 C40,14 36,18 34,22 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_cucumber">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M18,14 C12,22 12,40 18,48 C24,56 40,56 46,48 C52,40 52,22 46,14 C40,6 24,6 18,14 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M24,20 C20,26 20,38 24,44 C28,50 36,50 40,44 C44,38 44,26 40,20 C36,14 28,14 24,20 Z"/>
+                <GeometryDrawing Brush="#A5D6A7" Geometry="M26,26 A1.6,1.6 0 1 1 25.9,26 Z"/>
+                <GeometryDrawing Brush="#A5D6A7" Geometry="M36,32 A1.6,1.6 0 1 1 35.9,32 Z"/>
+                <GeometryDrawing Brush="#A5D6A7" Geometry="M28,40 A1.6,1.6 0 1 1 27.9,40 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_broccoli">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#2E7D32" Geometry="M20,22 A9,9 0 1 1 19.9,22 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M38,20 A9,9 0 1 1 37.9,20 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M30,12 A8,8 0 1 1 29.9,12 Z"/>
+                <GeometryDrawing Brush="#8D6E63" Geometry="M28,30 L36,30 L38,52 L26,52 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_ginger">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFF8E1" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#D7CCC8" Geometry="M12,28 C12,22 20,20 26,24 L34,28 C40,22 48,22 52,30 C54,38 46,44 38,40 L30,38 C22,44 12,38 12,28 Z"/>
+                <GeometryDrawing Brush="#BCAAA4" Geometry="M18,30 C22,24 30,28 32,34 C28,38 20,36 18,30 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_garlic">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FAFAFA" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#F5F5F5" Geometry="M32,16 C18,18 14,34 18,46 C20,52 26,56 32,56 C38,56 44,52 46,46 C50,34 46,18 32,16 Z"/>
+                <GeometryDrawing Brush="#E0E0E0" Geometry="M32,22 C24,24 22,36 24,46 C26,52 30,54 32,54 C34,54 38,52 40,46 C42,36 40,24 32,22 Z"/>
+                <GeometryDrawing Brush="#9E9E9E" Geometry="M28,14 L32,8 L36,14 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_spinach">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M32,50 C32,50 12,34 16,20 C18,10 28,12 32,24 C36,12 46,10 48,20 C52,34 32,50 32,50 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,46 C32,46 20,34 22,22 C24,14 30,18 32,28 C34,18 40,14 42,22 C44,34 32,46 32,46 Z"/>
+                <GeometryDrawing Brush="#2E7D32" Geometry="M32,28 L32,50"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_coriander">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#2E7D32" Geometry="M32,52 L32,18"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,24 C20,16 14,22 14,22 C24,24 28,30 32,36 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M32,32 C44,24 50,30 50,30 C40,32 36,38 32,44 Z"/>
+                <GeometryDrawing Brush="#81C784" Geometry="M32,40 C24,36 18,42 18,42 C26,44 30,50 32,52 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_mint">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#2E7D32" Geometry="M32,50 L32,20"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,28 C18,20 14,28 14,28 C24,30 28,36 32,40 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M32,36 C46,28 50,36 50,36 C40,38 36,44 32,48 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_chili">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFEBEE" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#E53935" Geometry="M36,14 C46,22 48,38 40,48 C32,56 20,50 18,40 C16,28 24,16 36,14 Z"/>
+                <GeometryDrawing Brush="#FF7043" Geometry="M34,20 C42,26 42,38 36,46 C30,52 22,46 22,38 C22,30 28,20 34,20 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M36,14 C40,6 48,6 48,6 C44,12 40,14 36,16 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_pepper">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M22,18 C14,24 14,42 22,50 C28,56 40,56 46,48 C52,40 48,20 38,16 C32,14 26,16 22,18 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M26,24 C20,30 20,42 26,48 C32,54 40,50 42,42 C44,34 40,24 34,22 C30,20 28,22 26,24 Z"/>
+                <GeometryDrawing Brush="#2E7D32" Geometry="M32,14 C32,14 38,6 46,10 C40,16 36,18 32,18 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_okra">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#7CB342" Geometry="M30,12 C24,16 20,36 24,50 C26,54 30,56 32,56 C34,56 38,54 40,50 C44,36 40,16 34,12 C32,10 30,12 30,12 Z"/>
+                <GeometryDrawing Brush="#9CCC65" Geometry="M30,20 C28,24 26,40 30,48 C32,52 34,52 34,52 C34,52 36,52 36,48 C40,40 38,24 34,20 C32,18 30,20 30,20 Z"/>
+                <GeometryDrawing Brush="#558B2F" Geometry="M32,12 L32,52"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_eggplant">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F3E5F5" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#6A1B9A" Geometry="M26,18 C18,22 16,40 22,50 C26,56 38,56 42,48 C48,38 46,22 38,18 C34,16 30,16 26,18 Z"/>
+                <GeometryDrawing Brush="#8E24AA" Geometry="M28,26 C24,30 24,42 28,48 C32,52 38,50 40,44 C42,36 40,28 36,26 C34,24 30,24 28,26 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M30,16 C28,10 34,8 36,14 C40,10 46,12 42,18 C38,16 34,18 30,16 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_cauliflower">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FAFAFA" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#F5F5F5" Geometry="M22,24 A8,8 0 1 1 21.9,24 Z"/>
+                <GeometryDrawing Brush="#EEEEEE" Geometry="M34,20 A8,8 0 1 1 33.9,20 Z"/>
+                <GeometryDrawing Brush="#FAFAFA" Geometry="M28,16 A7,7 0 1 1 27.9,16 Z"/>
+                <GeometryDrawing Brush="#E0E0E0" Geometry="M38,28 A7,7 0 1 1 37.9,28 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M20,36 C18,44 24,52 32,52 C40,52 46,44 44,36 C38,40 26,40 20,36 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_cabbage">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,12 A20,20 0 1 1 31.9,12 Z"/>
+                <GeometryDrawing Brush="#81C784" Geometry="M32,20 A12,12 0 1 1 31.9,20 Z"/>
+                <GeometryDrawing Brush="#A5D6A7" Geometry="M32,26 A6,6 0 1 1 31.9,26 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_peas">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#7CB342" Geometry="M20,16 C14,22 14,40 20,48 C24,52 40,52 44,46 C50,38 48,20 42,16 C36,12 26,12 20,16 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M28,24 A4,4 0 1 1 27.9,24 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M32,34 A4,4 0 1 1 31.9,34 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M36,44 A4,4 0 1 1 35.9,44 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_radish">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFEBEE" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#EF5350" Geometry="M26,22 C20,26 18,40 24,50 C28,54 36,54 40,48 C46,40 44,26 38,22 C34,20 30,20 26,22 Z"/>
+                <GeometryDrawing Brush="#FFCDD2" Geometry="M30,28 C26,32 26,42 30,48 C32,50 34,50 36,48 C40,42 40,32 36,28 C34,26 32,26 30,28 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M28,22 C24,12 30,10 32,16 C34,10 40,12 36,22 C34,20 30,20 28,22 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_turnip">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F3E5F5" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#CE93D8" Geometry="M20,24 C16,32 18,46 28,52 C36,56 48,48 48,36 C48,24 38,18 28,20 C24,21 20,24 20,24 Z"/>
+                <GeometryDrawing Brush="#E1BEE7" Geometry="M26,30 C24,36 28,46 34,50 C40,46 44,36 42,30 C40,26 28,26 26,30 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M30,20 C28,12 34,10 36,16 C40,12 46,14 42,22 C38,20 34,22 30,20 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_beetroot">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FCE4EC" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#AD1457" Geometry="M32,22 A16,16 0 1 1 31.9,22 Z"/>
+                <GeometryDrawing Brush="#C2185B" Geometry="M32,28 A10,10 0 1 1 31.9,28 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M26,20 C22,10 28,8 32,14 C36,8 42,10 38,20 C34,18 30,18 26,20 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_bottlegourd">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#9CCC65" Geometry="M28,12 C24,14 24,24 28,28 C22,32 18,44 24,52 C28,56 36,56 40,50 C46,40 42,30 36,28 C40,24 40,14 36,12 C34,10 30,10 28,12 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M30,16 C28,18 28,24 32,26 C28,30 26,40 30,48 C32,52 36,50 38,46 C42,38 40,30 36,28 C38,24 38,18 34,16 C32,14 30,16 30,16 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_bittergourd">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#7CB342" Geometry="M18,18 C12,26 12,42 20,50 C26,56 38,56 44,48 C50,40 48,24 42,18 C36,12 24,12 18,18 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M24,24 A2,2 0 1 1 23.9,24 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M32,22 A2,2 0 1 1 31.9,22 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M40,28 A2,2 0 1 1 39.9,28 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M28,36 A2,2 0 1 1 27.9,36 Z"/>
+                <GeometryDrawing Brush="#AED581" Geometry="M36,40 A2,2 0 1 1 35.9,40 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_pumpkin">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFF3E0" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FB8C00" Geometry="M16,28 C14,40 22,52 32,52 C42,52 50,40 48,28 C46,18 38,16 32,16 C26,16 18,18 16,28 Z"/>
+                <GeometryDrawing Brush="#FFA726" Geometry="M22,28 C20,38 26,48 32,48 C38,48 44,38 42,28 C40,22 36,20 32,20 C28,20 24,22 22,28 Z"/>
+                <GeometryDrawing Brush="#EF6C00" Geometry="M32,18 L32,50"/>
+                <GeometryDrawing Brush="#5D4037" Geometry="M30,12 L34,12 L34,20 L30,20 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M34,14 C38,8 44,10 44,10 C40,14 36,16 34,14 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_corn">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#FFFDE7" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#FDD835" Geometry="M26,14 C22,18 20,40 24,50 C26,54 30,56 32,56 C34,56 38,54 40,50 C44,40 42,18 38,14 C36,12 28,12 26,14 Z"/>
+                <GeometryDrawing Brush="#FFEE58" Geometry="M28,20 C26,24 26,42 30,48 C32,50 34,50 36,48 C40,42 40,24 38,20 C36,18 30,18 28,20 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M22,18 C16,24 18,40 24,36 C22,28 22,22 22,18 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M42,18 C48,24 46,40 40,36 C42,28 42,22 42,18 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_fenugreek">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#2E7D32" Geometry="M32,52 L32,18"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,24 C20,18 16,26 16,26 C24,28 28,34 32,38 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M32,34 C44,28 48,36 48,36 C40,40 36,44 32,48 Z"/>
+                <GeometryDrawing Brush="#81C784" Geometry="M24,30 C18,28 16,34 16,34 C22,36 24,40 26,42 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_kiwi">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#8D6E63" Geometry="M32,10 A22,22 0 1 1 31.9,10 Z"/>
+                <GeometryDrawing Brush="#C0CA33" Geometry="M32,16 A16,16 0 1 1 31.9,16 Z"/>
+                <GeometryDrawing Brush="#F9A825" Geometry="M32,28 A4,4 0 1 1 31.9,28 Z"/>
+                <GeometryDrawing Brush="#33691E" Geometry="M24,24 A1.5,1.5 0 1 1 23.9,24 Z"/>
+                <GeometryDrawing Brush="#33691E" Geometry="M40,24 A1.5,1.5 0 1 1 39.9,24 Z"/>
+                <GeometryDrawing Brush="#33691E" Geometry="M24,36 A1.5,1.5 0 1 1 23.9,36 Z"/>
+                <GeometryDrawing Brush="#33691E" Geometry="M40,36 A1.5,1.5 0 1 1 39.9,36 Z"/>
+                <GeometryDrawing Brush="#33691E" Geometry="M32,20 A1.5,1.5 0 1 1 31.9,20 Z"/>
+                <GeometryDrawing Brush="#33691E" Geometry="M32,40 A1.5,1.5 0 1 1 31.9,40 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_lettuce">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#81C784" Geometry="M16,28 C14,18 24,12 32,14 C40,12 50,18 48,28 C52,38 42,50 32,50 C22,50 12,38 16,28 Z"/>
+                <GeometryDrawing Brush="#A5D6A7" Geometry="M22,30 C22,22 28,20 32,22 C36,20 42,22 42,30 C42,38 36,44 32,44 C28,44 22,38 22,30 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_zucchini">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#7CB342" Geometry="M22,12 C16,18 14,40 20,50 C24,56 40,56 44,48 C50,38 48,18 42,12 C36,8 28,8 22,12 Z"/>
+                <GeometryDrawing Brush="#9CCC65" Geometry="M26,18 C22,24 22,40 26,48 C30,54 38,52 40,46 C44,38 42,22 38,18 C34,14 30,14 26,18 Z"/>
+                <GeometryDrawing Brush="#558B2F" Geometry="M30,14 C28,8 34,6 36,12 C34,14 32,16 30,14 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="FruitIcon_default">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#E8F5E9" Geometry="M32,4 A28,28 0 1 1 31.9,4 Z"/>
+                <GeometryDrawing Brush="#66BB6A" Geometry="M32,14 C18,14 12,28 16,42 C18,52 26,56 32,56 C38,56 46,52 48,42 C52,28 46,14 32,14 Z"/>
+                <GeometryDrawing Brush="#43A047" Geometry="M24,28 C26,20 32,22 32,22 C32,22 38,20 40,28 C36,26 34,32 32,38 C30,32 28,26 24,28 Z"/>
+                <GeometryDrawing Brush="#2E7D32" Geometry="M32,12 C36,6 44,6 44,6 C40,12 36,14 32,14 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Nav icons — cohesive soft outlines for dark sidebar (48×48 canvas) -->
+    <DrawingImage x:Key="NavIcon_leaf">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#52B788" Geometry="M24,6 C12,12 8,26 14,36 C18,42 24,44 24,44 C24,44 30,42 34,36 C40,26 36,12 24,6 Z"/>
+                <GeometryDrawing Geometry="M24,14 L24,40">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#1B4332" Thickness="2.2" StartLineCap="Round" EndLineCap="Round"/>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="NavIcon_dashboard">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- Soft tiles with shared corner language -->
+                <GeometryDrawing Brush="#95D5B2" Geometry="M8,8 H21 V21 H8 Z"/>
+                <GeometryDrawing Brush="#74C69D" Geometry="M27,8 H40 V21 H27 Z"/>
+                <GeometryDrawing Brush="#52B788" Geometry="M8,27 H21 V40 H8 Z"/>
+                <GeometryDrawing Brush="#40916C" Geometry="M27,27 H40 V40 H27 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="NavIcon_items">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- Box / crate -->
+                <GeometryDrawing Brush="#74C69D" Geometry="M8,16 L24,8 L40,16 L40,36 L24,44 L8,36 Z"/>
+                <GeometryDrawing Brush="#52B788" Geometry="M8,16 L24,24 L40,16 L24,8 Z"/>
+                <GeometryDrawing Geometry="M24,24 L24,44">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#661B4332" Thickness="1.8" StartLineCap="Round" EndLineCap="Round"/>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M8,16 L24,24 L40,16">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#D8F3DC" Thickness="1.6" StartLineCap="Round" EndLineCap="Round" LineJoin="Round"/>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="NavIcon_billing">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- Receipt -->
+                <GeometryDrawing Brush="#95D5B2" Geometry="M14,6 H34 V42 L30,39 L26,42 L22,39 L18,42 L14,39 Z"/>
+                <GeometryDrawing Brush="#8C1B4332" Geometry="M18,14 H30 V17 H18 Z"/>
+                <GeometryDrawing Brush="#591B4332" Geometry="M18,21 H28 V23.5 H18 Z"/>
+                <GeometryDrawing Brush="#591B4332" Geometry="M18,27 H26 V29.5 H18 Z"/>
+                <GeometryDrawing Brush="#40916C" Geometry="M18,33 H24 V36 H18 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="NavIcon_customers">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- Primary person -->
+                <GeometryDrawing Brush="#95D5B2" Geometry="M24,8 A7,7 0 1 1 23.9,8 Z"/>
+                <GeometryDrawing Brush="#74C69D" Geometry="M12,40 C12,30 17,26 24,26 C31,26 36,30 36,40 Z"/>
+                <!-- Secondary person hint -->
+                <GeometryDrawing Brush="#52B788" Geometry="M36,14 A5,5 0 1 1 35.9,14 Z"/>
+                <GeometryDrawing Brush="#40916C" Geometry="M34,24 C38,24 42,27 42,34 L36,34 C35,28 34,26 34,24 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="NavIcon_reports">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- Axis -->
+                <GeometryDrawing Geometry="M8,40 L40,40">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#94A3B8" Thickness="2" StartLineCap="Round" EndLineCap="Round"/>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <!-- Bars — ascending green scale -->
+                <GeometryDrawing Brush="#95D5B2" Geometry="M11,40 L11,28 L17,28 L17,40 Z"/>
+                <GeometryDrawing Brush="#74C69D" Geometry="M21,40 L21,20 L27,20 L27,40 Z"/>
+                <GeometryDrawing Brush="#40916C" Geometry="M31,40 L31,12 L37,12 L37,40 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="NavIcon_returns">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- Circular return arrow -->
+                <GeometryDrawing Geometry="M14,18 A12,12 0 1 1 14,30">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#F87171" Thickness="3.2" StartLineCap="Round" EndLineCap="Round"/>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F87171" Geometry="M14,12 L22,18 L12,22 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="NavIcon_logout">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <!-- Door frame -->
+                <GeometryDrawing Geometry="M10,10 H26 V38 H10">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FCA5A5" Thickness="2.8" StartLineCap="Round" EndLineCap="Round" LineJoin="Round"/>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <!-- Arrow out -->
+                <GeometryDrawing Geometry="M22,24 L40,24">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#F87171" Thickness="3" StartLineCap="Round" EndLineCap="Round"/>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#F87171" Geometry="M34,16 L42,24 L34,32 Z"/>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>

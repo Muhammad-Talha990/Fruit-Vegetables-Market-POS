@@ -1,4 +1,4 @@
-# GroceryPOS — Database Design Document
+# FruitVegetableMarketPOS — Database Design Document
 
 > **Version:** 2.0 (Normalized 3NF)
 > **Engine:** SQLite 3 (via Microsoft.Data.Sqlite)
@@ -279,7 +279,7 @@
 
 ```sql
 -- ═══════════════════════════════════════════════
---  GroceryPOS Normalized Schema v2.0 (3NF)
+--  FruitVegetableMarketPOS Normalized Schema v2.0 (3NF)
 -- ═══════════════════════════════════════════════
 
 PRAGMA journal_mode = WAL;
@@ -854,7 +854,7 @@ v2 (Fully normalized: surrogate PKs, correct column names, BillReturnItems)
 
 Delete the database file and restart:
 ```
-%AppData%\GroceryPOS\GroceryPOS.db
+%AppData%\FruitVegetableMarketPOS\FruitVegetableMarketPOS.db
 ```
 The application will recreate all tables and seed default data.
 

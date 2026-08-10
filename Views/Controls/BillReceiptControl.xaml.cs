@@ -1,8 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Views.Controls
+namespace FruitVegetableMarketPOS.Views.Controls
 {
     /// <summary>
     /// A reusable receipt-style bill view that mirrors the thermal print format exactly.

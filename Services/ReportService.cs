@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Data;
-using GroceryPOS.Data.Repositories;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Data;
+using FruitVegetableMarketPOS.Data.Repositories;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Services
+namespace FruitVegetableMarketPOS.Services
 {
     /// <summary>
     /// Reporting helper DTO for product-wise reports.
@@ -16,8 +16,19 @@ namespace GroceryPOS.Services
     {
         public string ItemDescription { get; set; } = string.Empty;
         public string ItemId { get; set; } = string.Empty;
-        public int QuantitySold { get; set; }
+        public string? TypeName { get; set; }
+        public string? CategoryName { get; set; }
+        public double UnitPrice { get; set; }
+        public double QuantitySold { get; set; }
         public double TotalRevenue { get; set; }
+        public string QuantityDisplay => QuantitySold.ToString("0.###");
+        /// <summary>Alias for daily sale qty column (Sale).</summary>
+        public double Sale => QuantitySold;
+        public string SaleDisplay => QuantityDisplay;
+        public string UnitPriceDisplay => $"Rs.{UnitPrice:N0}";
+        /// <summary>Sale qty × unit price for the selected day.</summary>
+        public double Amount => Math.Round(QuantitySold * UnitPrice, 2);
+        public string AmountDisplay => $"Rs.{Amount:N0}";
     }
 
     /// <summary>
@@ -62,7 +73,7 @@ namespace GroceryPOS.Services
             return _billRepo.GetByDateRange(start, end);
         }
 
-        /// <summary>Gets product-wise sales summary for a date range.</summary>
+        /// <summary>Gets product-wise sales summary for a date range (uses frozen BillItems snapshots).</summary>
         public List<ReportItem> GetProductWiseReport(DateTime from, DateTime to)
         {
             var reportItems = new List<ReportItem>();
@@ -70,14 +81,15 @@ namespace GroceryPOS.Services
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 SELECT 
-                    bd.ItemId,
-                    COALESCE(i.Description, 'Unknown') AS ItemDesc,
-                    SUM(bd.Quantity)   AS TotalQty,
-                    SUM(bd.Quantity * bd.UnitPrice - bd.DiscountAmount) AS TotalRevenue
+                    CAST(bd.ItemId AS TEXT) AS ItemId,
+                    COALESCE(NULLIF(bd.ItemName, ''), i.Description, 'Unknown') AS ItemDesc,
+                    SUM(bd.Quantity) AS TotalQty,
+                    SUM(bd.Quantity * bd.UnitPrice - COALESCE(bd.DiscountAmount, 0)) AS TotalRevenue
                 FROM BillItems bd
                 INNER JOIN Bills b ON bd.BillId = b.BillId
                 LEFT  JOIN Items i ON bd.ItemId = i.ItemId
                 WHERE datetime(b.CreatedAt, 'localtime') >= @from AND datetime(b.CreatedAt, 'localtime') < @to
+                  AND b.Status != 'Cancelled'
                 GROUP BY bd.ItemId, ItemDesc
                 ORDER BY TotalRevenue DESC;
             ";
@@ -91,7 +103,137 @@ namespace GroceryPOS.Services
                 {
                     ItemId          = reader.GetString(reader.GetOrdinal("ItemId")),
                     ItemDescription = reader.GetString(reader.GetOrdinal("ItemDesc")),
-                    QuantitySold    = Convert.ToInt32(reader.GetValue(reader.GetOrdinal("TotalQty"))),
+                    QuantitySold    = Convert.ToDouble(reader.GetValue(reader.GetOrdinal("TotalQty"))),
+                    TotalRevenue    = Convert.ToDouble(reader.GetValue(reader.GetOrdinal("TotalRevenue")))
+                });
+            }
+
+            return reportItems;
+        }
+
+        /// <summary>Type-wise sales summary (Apple - Golden, etc.) using frozen snapshots.</summary>
+        public List<ReportItem> GetTypeWiseReport(DateTime from, DateTime to)
+        {
+            var reportItems = new List<ReportItem>();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT 
+                    CAST(bd.ItemId AS TEXT) AS ItemId,
+                    COALESCE(NULLIF(bd.ItemName, ''), i.Description, 'Unknown') AS ItemDesc,
+                    COALESCE(NULLIF(bd.TypeName, ''), 'Type 1') AS TypeName,
+                    SUM(bd.Quantity) AS TotalQty,
+                    SUM(bd.Quantity * bd.UnitPrice - COALESCE(bd.DiscountAmount, 0)) AS TotalRevenue
+                FROM BillItems bd
+                INNER JOIN Bills b ON bd.BillId = b.BillId
+                LEFT  JOIN Items i ON bd.ItemId = i.ItemId
+                WHERE datetime(b.CreatedAt, 'localtime') >= @from AND datetime(b.CreatedAt, 'localtime') < @to
+                  AND b.Status != 'Cancelled'
+                GROUP BY bd.ItemId, ItemDesc, TypeName
+                ORDER BY TotalRevenue DESC;
+            ";
+            cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var itemDesc = reader.GetString(reader.GetOrdinal("ItemDesc"));
+                var typeName = reader.GetString(reader.GetOrdinal("TypeName"));
+                reportItems.Add(new ReportItem
+                {
+                    ItemId          = reader.GetString(reader.GetOrdinal("ItemId")),
+                    ItemDescription = $"{itemDesc} - {typeName}",
+                    TypeName        = typeName,
+                    QuantitySold    = Convert.ToDouble(reader.GetValue(reader.GetOrdinal("TotalQty"))),
+                    TotalRevenue    = Convert.ToDouble(reader.GetValue(reader.GetOrdinal("TotalRevenue")))
+                });
+            }
+
+            return reportItems;
+        }
+
+        /// <summary>
+        /// Daily sale qty by item + type + unit price for one business day.
+        /// Sale column = SUM(Quantity) that day (resets when you pick another date).
+        /// </summary>
+        public List<ReportItem> GetDailySaleQtyReport(DateTime businessDate)
+        {
+            var start = businessDate.Date;
+            var end = start.AddDays(1);
+            var reportItems = new List<ReportItem>();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT 
+                    COALESCE(NULLIF(TRIM(i.Barcode), ''), CAST(bd.ItemId AS TEXT)) AS ItemCode,
+                    COALESCE(NULLIF(bd.ItemName, ''), i.Description, 'Unknown') AS ItemDesc,
+                    COALESCE(NULLIF(bd.TypeName, ''), 'Type 1') AS TypeName,
+                    bd.UnitPrice AS UnitPrice,
+                    SUM(bd.Quantity) AS SaleQty,
+                    SUM(bd.Quantity * bd.UnitPrice - COALESCE(bd.DiscountAmount, 0)) AS TotalRevenue
+                FROM BillItems bd
+                INNER JOIN Bills b ON bd.BillId = b.BillId
+                LEFT  JOIN Items i ON bd.ItemId = i.ItemId
+                WHERE datetime(b.CreatedAt, 'localtime') >= @from
+                  AND datetime(b.CreatedAt, 'localtime') < @to
+                  AND b.Status != 'Cancelled'
+                GROUP BY ItemCode, ItemDesc, TypeName, bd.UnitPrice
+                ORDER BY ItemDesc COLLATE NOCASE, TypeName, bd.UnitPrice;
+            ";
+            cmd.Parameters.AddWithValue("@from", start.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@to", end.ToString("yyyy-MM-dd HH:mm:ss"));
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var qty = Convert.ToDouble(reader.GetValue(reader.GetOrdinal("SaleQty")));
+                var unit = Convert.ToDouble(reader.GetValue(reader.GetOrdinal("UnitPrice")));
+                reportItems.Add(new ReportItem
+                {
+                    ItemId          = reader.GetString(reader.GetOrdinal("ItemCode")),
+                    ItemDescription = reader.GetString(reader.GetOrdinal("ItemDesc")),
+                    TypeName        = reader.GetString(reader.GetOrdinal("TypeName")),
+                    UnitPrice       = unit,
+                    QuantitySold    = qty,
+                    TotalRevenue    = Convert.ToDouble(reader.GetValue(reader.GetOrdinal("TotalRevenue")))
+                });
+            }
+
+            return reportItems;
+        }
+
+        /// <summary>Category-wise sales for a date range.</summary>
+        public List<ReportItem> GetCategoryWiseReport(DateTime from, DateTime to)
+        {
+            var reportItems = new List<ReportItem>();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT 
+                    COALESCE(c.Name, 'Uncategorized') AS CategoryName,
+                    SUM(bd.Quantity) AS TotalQty,
+                    SUM(bd.Quantity * bd.UnitPrice - COALESCE(bd.DiscountAmount, 0)) AS TotalRevenue
+                FROM BillItems bd
+                INNER JOIN Bills b ON bd.BillId = b.BillId
+                LEFT  JOIN Items i ON bd.ItemId = i.ItemId
+                LEFT  JOIN Categories c ON i.CategoryId = c.CategoryId
+                WHERE datetime(b.CreatedAt, 'localtime') >= @from AND datetime(b.CreatedAt, 'localtime') < @to
+                  AND b.Status != 'Cancelled'
+                GROUP BY CategoryName
+                ORDER BY TotalRevenue DESC;
+            ";
+            cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
+            cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                reportItems.Add(new ReportItem
+                {
+                    ItemDescription = reader.GetString(reader.GetOrdinal("CategoryName")),
+                    CategoryName    = reader.GetString(reader.GetOrdinal("CategoryName")),
+                    QuantitySold    = Convert.ToDouble(reader.GetValue(reader.GetOrdinal("TotalQty"))),
                     TotalRevenue    = Convert.ToDouble(reader.GetValue(reader.GetOrdinal("TotalRevenue")))
                 });
             }

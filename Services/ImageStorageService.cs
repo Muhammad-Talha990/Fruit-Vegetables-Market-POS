@@ -1,97 +1,126 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using GroceryPOS.Helpers;
+using FruitVegetableMarketPOS.Helpers;
 
-namespace GroceryPOS.Services
+namespace FruitVegetableMarketPOS.Services
 {
     public class ImageStorageService : IImageStorageService
     {
-        private const string RootFolder = @"C:\ProgramData\MyPOS\SupplierBills\";
+        private static readonly string BillRootFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FruitVegetableMarketPOS", "Images", "Bills");
+
+        private static readonly string ProductRootFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FruitVegetableMarketPOS", "Images", "Products");
+
         private const long MaxFileSizeBytes = 5 * 1024 * 1024; // 5MB
         private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png" };
 
         public ImageStorageService()
         {
-            EnsureDirectoryExists();
+            EnsureDirectoryExists(BillRootFolder);
+            EnsureDirectoryExists(ProductRootFolder);
         }
 
         public async Task<string> SaveBillImageAsync(string sourceFilePath, string billId)
+        {
+            string destFileName = $"{billId}{ValidateAndGetExtension(sourceFilePath)}";
+            string destPath = Path.Combine(BillRootFolder, destFileName);
+            await CopyImageAsync(sourceFilePath, destPath);
+            AppLogger.Info($"Bill image saved: {destPath}");
+            return destPath;
+        }
+
+        public async Task<string> SaveProductImageAsync(string sourceFilePath, int itemId)
+        {
+            string destFileName = $"item-{itemId}{ValidateAndGetExtension(sourceFilePath)}";
+            string destPath = Path.Combine(ProductRootFolder, destFileName);
+            await CopyImageAsync(sourceFilePath, destPath);
+            AppLogger.Info($"Product image saved: {destPath}");
+            return destPath;
+        }
+
+        public void DeleteBillImage(string billId)
+        {
+            DeleteImageByPrefix(BillRootFolder, billId);
+        }
+
+        public string GetBillImagePath(string billId)
+            => FindImagePath(BillRootFolder, billId);
+
+        public string GetProductImagePath(int itemId)
+            => FindImagePath(ProductRootFolder, $"item-{itemId}");
+
+        private static string ValidateAndGetExtension(string sourceFilePath)
         {
             if (!File.Exists(sourceFilePath))
                 throw new FileNotFoundException("Source image file not found.", sourceFilePath);
 
             var fileInfo = new FileInfo(sourceFilePath);
-            
-            // Validation: Size
             if (fileInfo.Length > MaxFileSizeBytes)
                 throw new InvalidOperationException($"File size exceeds the 5MB limit ({fileInfo.Length / (1024 * 1024):N2} MB).");
 
-            // Validation: Extension
             string extension = Path.GetExtension(sourceFilePath).ToLower();
             if (Array.IndexOf(AllowedExtensions, extension) < 0)
                 throw new InvalidOperationException($"Invalid file type. Only {string.Join(", ", AllowedExtensions)} are allowed.");
 
-            // Construct new filename: SUP-2026-0001.jpg
-            string destFileName = $"{billId}{extension}";
-            string destPath = Path.Combine(RootFolder, destFileName);
+            return extension;
+        }
 
-            // Copy to local storage
+        private static async Task CopyImageAsync(string sourceFilePath, string destPath)
+        {
             try
             {
-                using (var sourceStream = new FileStream(sourceFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
-                using (var destStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, true))
-                {
-                    await sourceStream.CopyToAsync(destStream);
-                }
-                
-                AppLogger.Info($"Supplier Bill Image saved: {destPath}");
-                return destPath;
+                using var sourceStream = new FileStream(sourceFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true);
+                using var destStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, true);
+                await sourceStream.CopyToAsync(destStream);
             }
             catch (Exception ex)
             {
-                AppLogger.Error($"Failed to save bill image for {billId}", ex);
-                throw new InvalidOperationException("Could not save the bill image. Please check permissions.", ex);
+                AppLogger.Error($"Failed to save image to {destPath}", ex);
+                throw new InvalidOperationException("Could not save the image. Please check permissions.", ex);
             }
         }
 
-        public void DeleteBillImage(string billId)
+        private static void DeleteImageByPrefix(string folder, string prefix)
         {
             try
             {
                 foreach (var ext in AllowedExtensions)
                 {
-                    string path = Path.Combine(RootFolder, $"{billId}{ext}");
+                    string path = Path.Combine(folder, $"{prefix}{ext}");
                     if (File.Exists(path))
                     {
                         File.Delete(path);
-                        AppLogger.Info($"Deleted bill image: {path}");
+                        AppLogger.Info($"Deleted image: {path}");
                         break;
                     }
                 }
             }
             catch (Exception ex)
             {
-                AppLogger.Error($"Error deleting image for bill {billId}", ex);
+                AppLogger.Error($"Error deleting image for prefix {prefix}", ex);
             }
         }
 
-        public string GetBillImagePath(string billId)
+        private static string FindImagePath(string folder, string prefix)
         {
             foreach (var ext in AllowedExtensions)
             {
-                string path = Path.Combine(RootFolder, $"{billId}{ext}");
+                string path = Path.Combine(folder, $"{prefix}{ext}");
                 if (File.Exists(path)) return path;
             }
             return string.Empty;
         }
 
-        private void EnsureDirectoryExists()
+        private static void EnsureDirectoryExists(string path)
         {
-            if (!Directory.Exists(RootFolder))
+            if (!Directory.Exists(path))
             {
-                Directory.CreateDirectory(RootFolder);
-                AppLogger.Info($"Created supplier bill storage directory: {RootFolder}");
+                Directory.CreateDirectory(path);
+                AppLogger.Info($"Created image storage directory: {path}");
             }
         }
     }

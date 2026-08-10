@@ -1,7 +1,7 @@
-<UserControl x:Class="GroceryPOS.Views.Controls.BillReceiptControl"
+<UserControl x:Class="FruitVegetableMarketPOS.Views.Controls.BillReceiptControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:converters="clr-namespace:GroceryPOS.Converters"
+             xmlns:converters="clr-namespace:FruitVegetableMarketPOS.Converters"
              x:Name="ReceiptRoot">
 
     <UserControl.Resources>
@@ -19,21 +19,23 @@
                   DataContext="{Binding Bill, ElementName=ReceiptRoot}">
         <StackPanel>
             <!-- ═══ STORE HEADER ═══ -->
-            <TextBlock Text="GROCERY MART" FontSize="20" FontWeight="Bold" 
+            <TextBlock Text="PMC" FontSize="28" FontWeight="Bold" 
                        HorizontalAlignment="Center" Foreground="#1E293B" FontFamily="Consolas"/>
+            <TextBlock Text="پاک مدینہ کمیشن ایجنٹس" FontSize="13" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" Foreground="#334155" Margin="0,2,0,0"
+                       FlowDirection="RightToLeft"/>
             
             <TextBlock Text="--- RETURN RECEIPT ---" FontSize="11" FontWeight="Bold"
                        HorizontalAlignment="Center" Foreground="#1E293B" FontFamily="Consolas"
                        Visibility="{Binding IsReturn, Converter={StaticResource BoolToVis}}" Margin="0,4,0,0"/>
 
-            <TextBlock Text="123 Main Street, City Name" FontSize="10" 
-                       HorizontalAlignment="Center" Foreground="#64748B" Margin="0,4" FontFamily="Consolas"/>
-            <TextBlock Text="Ph: 0300-1234567" FontSize="10" 
+            <TextBlock Text="I-11/4 Islamabad" FontSize="10" 
+                       HorizontalAlignment="Center" Foreground="#64748B" Margin="0,2,0,0" FontFamily="Consolas"/>
+            <TextBlock Text="Ph: 0345 5113044" FontSize="10" 
                        HorizontalAlignment="Center" Foreground="#64748B" FontFamily="Consolas"/>
 
             <!-- Divider -->
-            <TextBlock Text="------------------------------------------" FontSize="9" FontFamily="Consolas"
-                       HorizontalAlignment="Center" Foreground="#CBD5E1" Margin="0,12"/>
+            <Rectangle Height="1" Margin="0,8" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
 
             <!-- ═══ BILL INFO ═══ -->
             <Grid Margin="0,0,0,4">
@@ -61,8 +63,7 @@
 
             <!-- ═══ ORIGINAL SALE DETAILS (If Return) ═══ -->
             <StackPanel Visibility="{Binding IsReturn, Converter={StaticResource BoolToVis}}">
-                <TextBlock Text="------------------------------------------" FontSize="9" FontFamily="Consolas"
-                           HorizontalAlignment="Center" Foreground="#CBD5E1" Margin="0,8"/>
+            <Rectangle Height="1" Margin="0,8" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
                 <TextBlock Text="ORIGINAL SALE DETAILS" FontSize="10" FontWeight="Bold" Foreground="#1E293B" FontFamily="Consolas"/>
                 
                 <Grid Margin="0,4,0,4">
@@ -88,8 +89,8 @@
                                     <ColumnDefinition Width="55"/>
                                     <ColumnDefinition Width="70"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding ItemDescription}" FontSize="9" Foreground="#334155" TextWrapping="Wrap" FontFamily="Consolas"/>
-                                <TextBlock Grid.Column="1" Text="{Binding Quantity}" FontSize="9" Foreground="#334155" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                                <TextBlock Text="{Binding DisplayName}" FontSize="9" Foreground="#334155" TextWrapping="Wrap" FontFamily="Consolas"/>
+                                <TextBlock Grid.Column="1" Text="{Binding QuantityDisplay}" FontSize="9" Foreground="#334155" HorizontalAlignment="Center" FontFamily="Consolas"/>
                                 <TextBlock Grid.Column="2" Text="{Binding UnitPrice, StringFormat='{}{0:N0}'}" FontSize="9" Foreground="#64748B" HorizontalAlignment="Center" FontFamily="Consolas"/>
                                 <TextBlock Grid.Column="3" Text="{Binding TotalPrice, StringFormat='{}{0:N0}'}" FontSize="9" Foreground="#334155" HorizontalAlignment="Right" FontFamily="Consolas"/>
                             </Grid>
@@ -102,8 +103,7 @@
 
             <!-- ═══ PREVIOUS RETURNS (If any) ═══ -->
             <StackPanel Visibility="{Binding ReturnHistory.Count, Converter={StaticResource CountToVis}}">
-                <TextBlock Text="------------------------------------------" FontSize="9" FontFamily="Consolas"
-                           HorizontalAlignment="Center" Foreground="#CBD5E1" Margin="0,8"/>
+            <Rectangle Height="1" Margin="0,8" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
                 <TextBlock Text="PREVIOUS RETURNS" FontSize="10" FontWeight="Bold" Foreground="#1E293B" FontFamily="Consolas"/>
                 
                 <ItemsControl ItemsSource="{Binding ReturnHistory}">
@@ -123,8 +123,8 @@
                                                     <ColumnDefinition Width="40"/>
                                                     <ColumnDefinition Width="70"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding ItemDescription}" FontSize="9" Foreground="#475569" TextWrapping="Wrap" FontFamily="Consolas"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding Quantity, Converter={StaticResource AbsConv}}" FontSize="9" Foreground="#475569" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                                                <TextBlock Text="{Binding DisplayName}" FontSize="9" Foreground="#475569" TextWrapping="Wrap" FontFamily="Consolas"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding QuantityDisplay}" FontSize="9" Foreground="#475569" HorizontalAlignment="Center" FontFamily="Consolas"/>
                                                 <TextBlock Grid.Column="2" Text="{Binding TotalPrice, Converter={StaticResource AbsConv}, StringFormat='{}{0:N0}'}" FontSize="9" Foreground="#475569" HorizontalAlignment="Right" FontFamily="Consolas"/>
                                             </Grid>
                                         </DataTemplate>
@@ -137,43 +137,58 @@
             </StackPanel>
 
             <!-- Items Header Divider -->
-            <TextBlock Text="------------------------------------------" FontSize="9" FontFamily="Consolas"
-                       HorizontalAlignment="Center" Foreground="#CBD5E1" Margin="0,8"/>
+            <Rectangle Height="1" Margin="0,8" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
 
             <TextBlock Text="RETURNED ITEMS (THIS RETURN)" FontSize="10" FontWeight="Bold" Foreground="#1E293B" FontFamily="Consolas"
                        Visibility="{Binding IsReturn, Converter={StaticResource BoolToVis}}"/>
 
             <!-- ═══ ITEMS TABLE HEADER ═══ -->
-            <Grid Margin="0,4,0,4">
+            <Grid Margin="0,2,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="40"/>
                     <ColumnDefinition Width="55"/>
                     <ColumnDefinition Width="70"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Item" FontSize="10" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas"/>
-                <TextBlock Grid.Column="1" Text="Qty" FontSize="10" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
-                <TextBlock Grid.Column="2" Text="Price" FontSize="10" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
-                <TextBlock Grid.Column="3" Text="Total" FontSize="10" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Right"/>
+                <TextBlock Text="Item" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas"/>
+                <TextBlock Grid.Column="1" Text="Qty" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Text="Unit Price" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Text="Total" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Right"/>
+            </Grid>
+            <Grid Margin="0,0,0,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="40"/>
+                    <ColumnDefinition Width="55"/>
+                    <ColumnDefinition Width="70"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="جنس" FontSize="9" Foreground="#64748B" FlowDirection="RightToLeft"/>
+                <TextBlock Grid.Column="1" Text="تعداد" FontSize="9" Foreground="#64748B" HorizontalAlignment="Center" FlowDirection="RightToLeft"/>
+                <TextBlock Grid.Column="2" Text="ریٹ" FontSize="9" Foreground="#64748B" HorizontalAlignment="Center" FlowDirection="RightToLeft"/>
+                <TextBlock Grid.Column="3" Text="کل رقم" FontSize="9" Foreground="#64748B" HorizontalAlignment="Right" FlowDirection="RightToLeft"/>
             </Grid>
 
-            <TextBlock Text="------------------------------------------" FontSize="9" FontFamily="Consolas"
-                       HorizontalAlignment="Center" Foreground="#CBD5E1" Margin="0,0,0,4"/>
+            <Rectangle Height="1" Margin="0,0,0,2" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
 
             <!-- ═══ ITEMS LIST ═══ -->
             <ItemsControl ItemsSource="{Binding Items}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Grid Margin="0,3">
+                        <Grid Margin="0,1">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="40"/>
                                 <ColumnDefinition Width="55"/>
                                 <ColumnDefinition Width="70"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding ItemDescription}" FontSize="10" Foreground="#1E293B" 
-                                       TextWrapping="Wrap" FontFamily="Consolas"/>
-                            <TextBlock Grid.Column="1" Text="{Binding Quantity, Converter={StaticResource AbsConv}}" FontSize="10" Foreground="#1E293B" 
+                            <StackPanel>
+                                <TextBlock Text="{Binding ReceiptUrduName}" FontSize="12" FontWeight="SemiBold" Foreground="#1E293B"
+                                           TextWrapping="Wrap" FlowDirection="RightToLeft"
+                                           Visibility="{Binding ReceiptUrduName, Converter={StaticResource StringToVis}}"/>
+                                <TextBlock Text="{Binding ReceiptEnglishName}" FontSize="9" Foreground="#64748B"
+                                           TextWrapping="Wrap" FontFamily="Consolas"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding QuantityDisplay}" FontSize="10" Foreground="#1E293B" 
                                        HorizontalAlignment="Center" VerticalAlignment="Top" FontFamily="Consolas"/>
                             <TextBlock Grid.Column="2" Text="{Binding UnitPrice, StringFormat='{}{0:N0}'}" FontSize="10" 
                                        Foreground="#64748B" HorizontalAlignment="Center" VerticalAlignment="Top" FontFamily="Consolas"/>
@@ -186,8 +201,7 @@
             </ItemsControl>
 
             <!-- Totals Divider -->
-            <TextBlock Text="------------------------------------------" FontSize="9" FontFamily="Consolas"
-                       HorizontalAlignment="Center" Foreground="#CBD5E1" Margin="0,10"/>
+            <Rectangle Height="1" Margin="0,10" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
 
             <!-- ═══ TOTALS SECTION ═══ -->
             <StackPanel HorizontalAlignment="Right" Width="200">
@@ -200,6 +214,11 @@
                     <TextBlock Text="Discount:" FontSize="10" Foreground="#334155" FontFamily="Consolas"/>
                     <TextBlock Text="{Binding DiscountAmount, Converter={StaticResource AbsConv}, StringFormat='-Rs.{0:N2}'}" FontSize="10" HorizontalAlignment="Right" 
                                Foreground="#EF4444" FontFamily="Consolas"/>
+                </Grid>
+                <Grid Margin="0,2" Visibility="{Binding TaxAmount, Converter={StaticResource NumToVis}}">
+                    <TextBlock Text="Tax:" FontSize="10" Foreground="#334155" FontFamily="Consolas"/>
+                    <TextBlock Text="{Binding TaxAmount, Converter={StaticResource AbsConv}, StringFormat='+Rs.{0:N2}'}" FontSize="10" HorizontalAlignment="Right"
+                               Foreground="#1E293B" FontFamily="Consolas"/>
                 </Grid>
 
                 <!-- Double divider before grand total -->
@@ -224,8 +243,16 @@
 
                 <!-- Payment details (Only for Sales) -->
                 <StackPanel Visibility="{Binding IsReturn, Converter={StaticResource InvBoolToVis}}">
-                    <TextBlock Text="------------------------------------------" FontSize="9" FontFamily="Consolas"
-                               Foreground="#CBD5E1" Margin="0,6"/>
+                    <Rectangle Height="1" Margin="0,6" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
+
+                    <Grid Margin="0,2" Visibility="{Binding PaymentMethod, Converter={StaticResource StringToVis}}">
+                        <TextBlock Text="Payment:" FontSize="10" Foreground="#64748B" FontFamily="Consolas"/>
+                        <TextBlock FontSize="10" HorizontalAlignment="Right" Foreground="#1E293B" FontFamily="Consolas" FontWeight="SemiBold">
+                            <Run Text="{Binding PaymentMethod, Mode=OneWay}"/>
+                            <Run Text=" "/>
+                            <Run Text="{Binding OnlinePaymentMethod, Mode=OneWay}"/>
+                        </TextBlock>
+                    </Grid>
 
                     <Grid Margin="0,2">
                         <TextBlock Text="Cash Received:" FontSize="10" Foreground="#64748B" FontFamily="Consolas"/>
@@ -257,8 +284,7 @@
 
                 <!-- Return Outcomes (If Return) -->
                 <StackPanel Visibility="{Binding IsReturn, Converter={StaticResource BoolToVis}}">
-                     <TextBlock Text="------------------------------------------" FontSize="9" FontFamily="Consolas"
-                                Foreground="#CBD5E1" Margin="0,6"/>
+                     <Rectangle Height="1" Margin="0,6" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
                      <!-- Based on PrintService logic: repurpose RemainingAmount for CreditOffset and CashReceived for refund -->
                      <Grid Margin="0,2" Visibility="{Binding RemainingAmount, Converter={StaticResource NumToVis}}">
                         <StackPanel>
@@ -277,8 +303,7 @@
             </StackPanel>
 
             <!-- Footer Divider -->
-            <TextBlock Text="------------------------------------------" FontSize="9" FontFamily="Consolas"
-                       HorizontalAlignment="Center" Foreground="#CBD5E1" Margin="0,15,0,0"/>
+            <Rectangle Height="1" Margin="0,15,0,0" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
 
             <!-- ═══ FOOTER ═══ -->
             <TextBlock Text="Thank you for shopping!" FontSize="10" HorizontalAlignment="Center"

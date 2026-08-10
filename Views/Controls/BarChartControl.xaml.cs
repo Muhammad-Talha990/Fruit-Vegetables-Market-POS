@@ -12,9 +12,9 @@ using Color = System.Windows.Media.Color;
 using Point = System.Windows.Point;
 using Rectangle = System.Windows.Shapes.Rectangle;
 using Brushes = System.Windows.Media.Brushes;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Views.Controls
+namespace FruitVegetableMarketPOS.Views.Controls
 {
     /// <summary>
     /// Pure WPF Canvas bar chart — no third-party libraries.

@@ -6,12 +6,12 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Text.RegularExpressions;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
-using GroceryPOS.Services;
-using GroceryPOS.Exceptions;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
+using FruitVegetableMarketPOS.Services;
+using FruitVegetableMarketPOS.Exceptions;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     [SupportedOSPlatform("windows")]
     public class ReturnViewModel : BaseViewModel
@@ -183,9 +183,9 @@ namespace GroceryPOS.ViewModels
             OnPropertyChanged(nameof(HasLiveReturn));
         }
 
-        public string StoreName => "GROCERY MART";
-        public string StoreAddress => "123 Main Street, City Name";
-        public string StorePhone => "0300-1234567";
+        public string StoreName => "PMC";
+        public string StoreAddress => "I-11/4 Islamabad";
+        public string StorePhone => "0345 5113044";
 
         public ICommand SearchCommand { get; }
         public ICommand SearchByPhoneCommand { get; }
@@ -461,12 +461,18 @@ namespace GroceryPOS.ViewModels
                     AppLogger.Error("Return receipt print failed", pex);
                 }
 
-                // ── Refresh the current view instead of clearing it ──
-                // This lets the user see the updated "Already Returned" quantities and the new history entry.
-                await LoadBillById(OriginalBill.BillId);
-                
-                // Keep the success message visible even after SearchBill updates it
-                StatusMessage = $"✓ Return processed! Return Bill: {returnBill.InvoiceNumber}";
+                // Refresh bill so "Already Returned" / history update — don't fail the whole return if refresh glitches.
+                try
+                {
+                    await LoadBillById(OriginalBill.BillId);
+                }
+                catch (Exception refreshEx)
+                {
+                    AppLogger.Error("Return refresh after ProcessReturn failed", refreshEx);
+                }
+
+                StatusMessage = msg;
+                SalesEvents.NotifyChanged();
             }
             catch (BusinessException ex)
             {

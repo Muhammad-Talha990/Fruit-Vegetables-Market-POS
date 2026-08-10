@@ -6,26 +6,34 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Threading.Tasks;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
-using GroceryPOS.Services;
-using GroceryPOS.Data.Repositories;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
+using FruitVegetableMarketPOS.Services;
+using FruitVegetableMarketPOS.Data.Repositories;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     [SupportedOSPlatform("windows")]
     public class BillingViewModel : BaseViewModel
     {
         private readonly AuthService _authService;
         private readonly ItemService _itemService;
+        private readonly ItemTypeService _itemTypeService;
+        private readonly CategoryService _categoryService;
+        private readonly DailyItemSelectionService _dailySelection;
         private readonly BillService _billService;
         private readonly PrintService _printService;
-        private readonly IStockService _stockService;
         private readonly CustomerService _customerService;
         private readonly CreditService _creditService;
         private readonly BillRepository _billRepo;
         private readonly AccountService _accountService;
         private readonly System.Windows.Threading.DispatcherTimer _timer;
+        private bool _isWarmedUp;
+        private readonly List<PosProductCard> _allTodayProducts = new();
+        private Item? _pendingScanItem;
+
+        /// <summary>Standard quantity unit / +/- step for fruit-veg POS (5 KG).</summary>
+        public const double QuantityStepKg = 5.0;
 
         public ObservableCollection<BillingTab> Tabs { get; set; } = new();
         private BillingTab? _selectedTab;
@@ -69,11 +77,26 @@ namespace GroceryPOS.ViewModels
         public string HistoryPaymentError { get => SelectedTab?.HistoryPaymentError ?? ""; set { if (SelectedTab != null) { SelectedTab.HistoryPaymentError = value; OnPropertyChanged(); } } }
         public bool IsBillDetailOpen { get => SelectedTab?.IsBillDetailOpen ?? false; set { if (SelectedTab != null) { SelectedTab.IsBillDetailOpen = value; OnPropertyChanged(); } } }
 
-        public Customer? SelectedCustomer { get => SelectedTab?.Customer; set { if (SelectedTab != null) { SelectedTab.Customer = value; SelectedTab.CustomerId = value?.CustomerId; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedCustomer)); OnPropertyChanged(nameof(IsWalkIn)); OnPropertyChanged(nameof(IsWalkInCustomerSelected)); OnPropertyChanged(nameof(IsRegisteredCustomerSelected)); OnPropertyChanged(nameof(IsAmountEditable)); OnPropertyChanged(nameof(CustomerDisplayName)); OnPropertyChanged(nameof(HasPendingCredit)); CalculateChange(); } } }
+        public Customer? SelectedCustomer { get => SelectedTab?.Customer; set { if (SelectedTab != null) { SelectedTab.Customer = value; SelectedTab.CustomerId = value?.CustomerId; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedCustomer)); OnPropertyChanged(nameof(IsWalkIn)); OnPropertyChanged(nameof(IsWalkInCustomerSelected)); OnPropertyChanged(nameof(IsRegisteredCustomerSelected)); OnPropertyChanged(nameof(IsAmountEditable)); OnPropertyChanged(nameof(CustomerDisplayName)); OnPropertyChanged(nameof(HasPendingCredit)); OnPropertyChanged(nameof(IsCustomerInactive)); OnPropertyChanged(nameof(IsBillingLocked)); OnPropertyChanged(nameof(MenuOpacity)); OnPropertyChanged(nameof(InactiveCustomerBannerVisible)); CalculateChange(); } } }
         public bool HasSelectedCustomer => SelectedCustomer != null;
         public bool IsWalkIn => SelectedCustomer == null || SelectedCustomer.FullName == "Walk-in Customer";
         public bool IsWalkInCustomerSelected => SelectedCustomer != null && SelectedCustomer.FullName == "Walk-in Customer";
         public bool IsRegisteredCustomerSelected => SelectedCustomer != null && SelectedCustomer.FullName != "Walk-in Customer";
+
+        /// <summary>Registered customer selected but marked inactive — billing must be locked.</summary>
+        public bool IsCustomerInactive =>
+            SelectedCustomer != null &&
+            !string.Equals(SelectedCustomer.FullName, "Walk-in Customer", StringComparison.OrdinalIgnoreCase) &&
+            !SelectedCustomer.IsActive;
+
+        public bool IsBillingLocked => IsCustomerInactive;
+        public double MenuOpacity => IsBillingLocked ? 0.32 : 1.0;
+        public bool InactiveCustomerBannerVisible => IsBillingLocked;
+
+        public const string InactiveCustomerMessageEn = "Customer is inactive at the moment";
+        public const string InactiveCustomerMessageUr = "گاہک اس وقت غیر فعال ہے";
+        public string InactiveCustomerMessageEnText => InactiveCustomerMessageEn;
+        public string InactiveCustomerMessageUrText => InactiveCustomerMessageUr;
 
         // ── Store Credit ──
 
@@ -86,8 +109,22 @@ namespace GroceryPOS.ViewModels
         public string PendingCreditDisplay => $"⚠ This customer has Rs. {PendingCreditAmount:N0} pending.";
 
 
-        public string CustomerSearchQuery { get => SelectedTab?.CustomerSearchQuery ?? string.Empty; set { if (SelectedTab != null && SelectedTab.CustomerSearchQuery != value) { SelectedTab.CustomerSearchQuery = value; SearchCustomers(); OnPropertyChanged(); } } }
+        public string CustomerSearchQuery
+        {
+            get => SelectedTab?.CustomerSearchQuery ?? string.Empty;
+            set
+            {
+                if (SelectedTab == null || SelectedTab.CustomerSearchQuery == value) return;
+                SelectedTab.CustomerSearchQuery = value;
+                SearchCustomers();
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasCustomerSearchResults));
+                OnPropertyChanged(nameof(IsCustomerDropDownOpen));
+            }
+        }
         public ObservableCollection<Customer> CustomerSearchResults => SelectedTab?.CustomerSearchResults ?? new();
+        public bool HasCustomerSearchResults => CustomerSearchResults.Count > 0;
+        public bool IsCustomerDropDownOpen => HasCustomerSearchResults && !HasSelectedCustomer;
         public ObservableCollection<Bill> CustomerBills => SelectedTab?.CustomerBills ?? new();
         public Customer? SelectedSearchResult { get => SelectedTab?.SelectedSearchResult; set { if (SelectedTab != null) { SelectedTab.SelectedSearchResult = value; OnPropertyChanged(); } } }
         private Bill? _selectedHistoryBill;
@@ -105,7 +142,217 @@ namespace GroceryPOS.ViewModels
 
         public ObservableCollection<Item> ItemList { get; set; } = new();
         public ObservableCollection<Item> FilteredItemList { get; set; } = new();
-        
+
+        // ── POS Product Grid ──
+        public ObservableCollection<Category> PosCategories { get; } = new();
+        public ObservableCollection<PosCategoryChip> CategoryFilters { get; } = new();
+        public ObservableCollection<PosProductCard> TodayProducts { get; } = new();
+        public ObservableCollection<ItemType> AvailableTypesForPicker { get; } = new();
+        public ObservableCollection<TypeQtyRow> TypeQtyRows { get; } = new();
+        public ObservableCollection<Item> AllMasterItems { get; } = new();
+        public ObservableCollection<PreviousDayMenuItem> PreviousDayMenuItems { get; } = new();
+
+
+        private bool _isNewDayPromptVisible;
+        public bool IsNewDayPromptVisible
+        {
+            get => _isNewDayPromptVisible;
+            set
+            {
+                if (SetProperty(ref _isNewDayPromptVisible, value))
+                    OnPropertyChanged(nameof(IsNewDaySetupActive));
+            }
+        }
+
+        private bool _isPreviousDayPickerVisible;
+        public bool IsPreviousDayPickerVisible
+        {
+            get => _isPreviousDayPickerVisible;
+            set
+            {
+                if (SetProperty(ref _isPreviousDayPickerVisible, value))
+                    OnPropertyChanged(nameof(IsNewDaySetupActive));
+            }
+        }
+
+        /// <summary>True while Continue/Refresh new-day flow is active over the product grid.</summary>
+        public bool IsNewDaySetupActive => IsNewDayPromptVisible || IsPreviousDayPickerVisible;
+
+        private string _previousMenuDateDisplay = string.Empty;
+        public string PreviousMenuDateDisplay
+        {
+            get => _previousMenuDateDisplay;
+            set => SetProperty(ref _previousMenuDateDisplay, value);
+        }
+
+        private Category? _selectedCategory;
+        public Category? SelectedCategory
+        {
+            get => _selectedCategory;
+            set
+            {
+                if (SetProperty(ref _selectedCategory, value))
+                {
+                    UpdateCategoryChipSelection();
+                    ApplyProductFilters();
+                }
+            }
+        }
+
+        private string _productSearchQuery = string.Empty;
+        public string ProductSearchQuery
+        {
+            get => _productSearchQuery;
+            set
+            {
+                if (SetProperty(ref _productSearchQuery, value))
+                    ApplyProductFilters();
+            }
+        }
+
+        private PosProductCard? _selectedPosProduct;
+        public PosProductCard? SelectedPosProduct
+        {
+            get => _selectedPosProduct;
+            set => SetProperty(ref _selectedPosProduct, value);
+        }
+
+        private ItemType? _selectedType;
+        public ItemType? SelectedType
+        {
+            get => _selectedType;
+            set
+            {
+                if (SetProperty(ref _selectedType, value))
+                {
+                    SelectedTypePrice = value?.Price ?? 0;
+                    OnPropertyChanged(nameof(SelectedTypeDisplay));
+                }
+            }
+        }
+
+        public string SelectedTypeDisplay => SelectedType != null
+            ? $"{SelectedType.TypeName} — Rs. {SelectedType.Price:N0}"
+            : string.Empty;
+
+        private bool _isTypePickerOpen;
+        public bool IsTypePickerOpen
+        {
+            get => _isTypePickerOpen;
+            set => SetProperty(ref _isTypePickerOpen, value);
+        }
+
+        private bool _isQuantityPickerOpen;
+        public bool IsQuantityPickerOpen
+        {
+            get => _isQuantityPickerOpen;
+            set => SetProperty(ref _isQuantityPickerOpen, value);
+        }
+
+        private string _quantityText = "1.000";
+        public string QuantityText
+        {
+            get => _quantityText;
+            set => SetProperty(ref _quantityText, value);
+        }
+
+        private double _selectedTypePrice;
+        public double SelectedTypePrice
+        {
+            get => _selectedTypePrice;
+            set => SetProperty(ref _selectedTypePrice, value);
+        }
+
+        private bool _syncingDailySetup;
+
+        private string _dailySetupItemIdText = string.Empty;
+        public string DailySetupItemIdText
+        {
+            get => _dailySetupItemIdText;
+            set
+            {
+                if (!SetProperty(ref _dailySetupItemIdText, value)) return;
+                if (_syncingDailySetup) return;
+                SyncDailySetupFromId(value);
+            }
+        }
+
+        private Item? _dailySetupSelectedItem;
+        public Item? DailySetupSelectedItem
+        {
+            get => _dailySetupSelectedItem;
+            set
+            {
+                if (!SetProperty(ref _dailySetupSelectedItem, value)) return;
+                if (_syncingDailySetup) return;
+                SyncDailySetupFromItem(value);
+            }
+        }
+
+        /// <summary>Dropdown choices: Type 1 / قسم 1 … Type 10 / قسم 10.</summary>
+        public ObservableCollection<TypeCountOption> DailyTypeCountOptions { get; } = new(
+            Enumerable.Range(1, 10).Select(n => new TypeCountOption { Count = n }));
+
+        private TypeCountOption? _selectedDailyTypeCountOption;
+        /// <summary>Selected type-count from the Type dropdown (null until chosen).</summary>
+        public TypeCountOption? SelectedDailyTypeCountOption
+        {
+            get => _selectedDailyTypeCountOption;
+            set
+            {
+                if (!SetProperty(ref _selectedDailyTypeCountOption, value)) return;
+                _dailyTypeCountText = value?.Count.ToString() ?? string.Empty;
+                OnPropertyChanged(nameof(DailyTypeCountText));
+                // Keep prices already typed for Type 1…N when increasing/decreasing count
+                if (!_syncingDailySetup)
+                    RebuildDailyTypePriceRows(preserveTypedPrices: true);
+            }
+        }
+
+        private string _dailyTypeCountText = string.Empty;
+        /// <summary>How many types (qism) to create — 1 to 10 (kept in sync with dropdown).</summary>
+        public string DailyTypeCountText
+        {
+            get => _dailyTypeCountText;
+            set
+            {
+                if (!SetProperty(ref _dailyTypeCountText, value)) return;
+                SyncTypeCountOptionFromText(value);
+                RebuildDailyTypePriceRows();
+            }
+        }
+
+        public ObservableCollection<DailyTypePriceRow> DailyTypePriceRows { get; } = new();
+
+        public bool HasDailyTypePriceRows => DailyTypePriceRows.Count > 0;
+
+        private void SyncTypeCountOptionFromText(string? text)
+        {
+            TypeCountOption? match = null;
+            if (int.TryParse((text ?? string.Empty).Trim(), out var n) && n >= 1 && n <= 10)
+                match = DailyTypeCountOptions.FirstOrDefault(o => o.Count == n);
+
+            if (!Equals(_selectedDailyTypeCountOption, match))
+            {
+                _selectedDailyTypeCountOption = match;
+                OnPropertyChanged(nameof(SelectedDailyTypeCountOption));
+            }
+        }
+
+        private void SetDailyTypeCount(int count, bool rebuild, bool preserveTypedPrices = false)
+        {
+            count = Math.Clamp(count, 1, 10);
+            _dailyTypeCountText = count.ToString();
+            _selectedDailyTypeCountOption = DailyTypeCountOptions.FirstOrDefault(o => o.Count == count);
+            OnPropertyChanged(nameof(DailyTypeCountText));
+            OnPropertyChanged(nameof(SelectedDailyTypeCountOption));
+            if (rebuild)
+                RebuildDailyTypePriceRows(preserveTypedPrices);
+        }
+
+        public bool IsAdmin => _authService.IsAdmin;
+        public string BusinessDateDisplay => _dailySelection.CurrentBusinessDate;
+
         private string _productSearchText = "";
         public string ProductSearchText
         {
@@ -277,9 +524,33 @@ namespace GroceryPOS.ViewModels
         public DateTime CurrentTime => DateTime.Now;
         public string StatusMessage { get => SelectedTab?.StatusMessage ?? ""; set { if (SelectedTab != null) { SelectedTab.StatusMessage = value; OnPropertyChanged(); } } }
         public bool IsPreviewVisible { get; set; }
-        public string StoreName => "GROCERY MART";
-        public string StoreAddress => "Rawat, Rawalpindi, Pakistan";
-        public string StorePhone => "0300-1234567";
+
+        private bool _isCartPreviewOpen;
+        /// <summary>Full receipt preview overlay for the current cart (before Place Order).</summary>
+        public bool IsCartPreviewOpen
+        {
+            get => _isCartPreviewOpen;
+            set => SetProperty(ref _isCartPreviewOpen, value);
+        }
+
+        private Bill? _cartBillPreview;
+        /// <summary>Draft bill mirroring the cart — shown in BillReceiptControl.</summary>
+        public Bill? CartBillPreview
+        {
+            get => _cartBillPreview;
+            private set => SetProperty(ref _cartBillPreview, value);
+        }
+
+        private bool _isCustomerHistoryOpen;
+        public bool IsCustomerHistoryOpen
+        {
+            get => _isCustomerHistoryOpen;
+            set => SetProperty(ref _isCustomerHistoryOpen, value);
+        }
+        public string StoreName => "PMC";
+        public string StoreNameUrdu => "پاک مدینہ کمیشن ایجنٹس";
+        public string StoreAddress => "I-11/4 Islamabad";
+        public string StorePhone => "0345 5113044";
         public string CashierName => _authService.CurrentUser?.FullName ?? "Cashier";
         public string CustomerDisplayName => SelectedCustomer?.FullName ?? "Walk-in";
 
@@ -301,9 +572,11 @@ namespace GroceryPOS.ViewModels
             }
         }
 
-        public bool IsWalkInPhoneValid => 
-            string.IsNullOrWhiteSpace(WalkInPhoneInput) || 
-            System.Text.RegularExpressions.Regex.IsMatch(WalkInPhoneInput, "^0[0-9]{10}$");
+        private static bool IsValidPkPhone(string? phone) =>
+            !string.IsNullOrWhiteSpace(phone) &&
+            System.Text.RegularExpressions.Regex.IsMatch(phone.Trim(), "^0[0-9]{10}$");
+
+        public bool IsWalkInPhoneValid => IsValidPkPhone(WalkInPhoneInput);
 
         public CartItem? SelectedCartItem { get; set; }
         public ICommand OpenBillDetailCommand { get; }
@@ -418,12 +691,23 @@ namespace GroceryPOS.ViewModels
         public ICommand CompleteSaleCommand { get; }
         public ICommand ClearCartCommand { get; }
         public ICommand AddTabCommand { get; }
+        public ICommand SelectTabCommand { get; }
         public ICommand CloseTabCommand { get; }
+
+        /// <summary>True when more than one bill tab is open (close × allowed).</summary>
+        public bool CanCloseTabs => Tabs.Count > 1;
         public ICommand TogglePreviewCommand { get; }
+        public ICommand OpenCartPreviewCommand { get; }
+        public ICommand CloseCartPreviewCommand { get; }
         public ICommand SelectCustomerCommand { get; }
         public ICommand SelectWalkInCustomerCommand { get; }
         public ICommand ClearCustomerCommand { get; }
         public ICommand LoadPreviewToCartCommand { get; }
+        public ICommand OpenCustomerHistoryCommand { get; }
+        public ICommand CloseCustomerHistoryCommand { get; }
+        public ICommand ViewCustomerHistoryBillCommand { get; }
+        public ICommand PayCustomerHistoryBillCommand { get; }
+        public ICommand LoadCustomerHistoryBillCommand { get; }
         public ICommand OpenHistoryPaymentCommand { get; }
         public ICommand CloseHistoryPaymentCommand { get; }
         public ICommand RecordHistoryPaymentCommand { get; }
@@ -439,12 +723,52 @@ namespace GroceryPOS.ViewModels
         public ICommand CancelAddAddressCommand { get; }
         public ICommand SaveAddressCommand { get; }
 
-        public BillingViewModel(AuthService authService, ItemService itemService, BillService billService, PrintService printService, IStockService stockService, CustomerService customerService, CreditService creditService, BillRepository billRepo, AccountService accountService)
+        public ICommand SelectCategoryCommand { get; }
+        public ICommand SelectProductCommand { get; }
+        public ICommand ToggleTodayAvailabilityCommand { get; }
+        public ICommand UpdateTodayProductCommand { get; }
+        public ICommand ConfirmTypeCommand { get; }
+        public ICommand ConfirmQuantityAndAddCommand { get; }
+        public ICommand IncrementQuantityCommand { get; }
+        public ICommand DecrementQuantityCommand { get; }
+        public ICommand IncrementTypeQtyCommand { get; }
+        public ICommand DecrementTypeQtyCommand { get; }
+        public ICommand AddDailyItemCommand { get; }
+        public ICommand ClearDailySetupCommand { get; }
+        public ICommand RefreshTodayProductsCommand { get; }
+        public ICommand CloseTypePickerCommand { get; }
+        public ICommand CloseQuantityPickerCommand { get; }
+        public ICommand ShowContinuePreviousCommand { get; }
+        public ICommand NewDayRefreshCommand { get; }
+        public ICommand ConfirmPreviousSelectionCommand { get; }
+        public ICommand CancelPreviousPickerCommand { get; }
+        public ICommand SelectAllPreviousCommand { get; }
+        public ICommand ClearPreviousSelectionCommand { get; }
+
+        public BillingViewModel(
+            AuthService authService,
+            ItemService itemService,
+            ItemTypeService itemTypeService,
+            CategoryService categoryService,
+            DailyItemSelectionService dailySelection,
+            BillService billService,
+            PrintService printService,
+            CustomerService customerService,
+            CreditService creditService,
+            BillRepository billRepo,
+            AccountService accountService)
         {
-            _authService = authService; _itemService = itemService; _billService = billService; _printService = printService; _stockService = stockService;            _customerService = customerService;
-            _creditService   = creditService;
-            _billRepo        = billRepo;
-            _accountService  = accountService;
+            _authService = authService;
+            _itemService = itemService;
+            _itemTypeService = itemTypeService;
+            _categoryService = categoryService;
+            _dailySelection = dailySelection;
+            _billService = billService;
+            _printService = printService;
+            _customerService = customerService;
+            _creditService = creditService;
+            _billRepo = billRepo;
+            _accountService = accountService;
             Tabs = new ObservableCollection<BillingTab>(); AddNewTab();
             _timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _timer.Tick += (s, e) => { OnPropertyChanged(nameof(CurrentTime)); OnPropertyChanged(nameof(CurrentDateTime)); };
@@ -459,12 +783,34 @@ namespace GroceryPOS.ViewModels
             CompleteSaleCommand = new RelayCommand(_ => CompleteSale());
             ClearCartCommand = new RelayCommand(_ => ClearCart());
             AddTabCommand = new RelayCommand(_ => AddNewTab());
-            CloseTabCommand = new RelayCommand(obj => CloseTab(obj as BillingTab));
-            TogglePreviewCommand = new RelayCommand(() => { IsPreviewVisible = !IsPreviewVisible; OnPropertyChanged(nameof(IsPreviewVisible)); });
-            SelectCustomerCommand = new RelayCommand(obj => SelectCustomer(obj as Customer));
+            SelectTabCommand = new RelayCommand(obj =>
+            {
+                if (obj is BillingTab tab)
+                    SelectedTab = tab;
+            });
+            CloseTabCommand = new RelayCommand(obj => CloseTab(obj as BillingTab, confirmIfDirty: true));
+            TogglePreviewCommand = new RelayCommand(_ => OpenCartBillPreview());
+            OpenCartPreviewCommand = new RelayCommand(_ => OpenCartBillPreview(), _ => CartItems.Count > 0);
+            CloseCartPreviewCommand = new RelayCommand(_ => CloseCartBillPreview());
+            SelectCustomerCommand = new RelayCommand(obj =>
+            {
+                var customer = obj as Customer ?? SelectedSearchResult ?? CustomerSearchResults.FirstOrDefault();
+                SelectCustomer(customer);
+            });
             SelectWalkInCustomerCommand = new RelayCommand(_ => TrySelectWalkInCustomer(_walkInPhoneInput));
             ClearCustomerCommand = new RelayCommand(_ => ClearCustomer());
             LoadPreviewToCartCommand= new RelayCommand(_ => { if (PreviewHistoryBill != null) LoadBillIntoCart(PreviewHistoryBill); });
+            OpenCustomerHistoryCommand = new RelayCommand(_ => OpenCustomerHistory(), _ => IsRegisteredCustomerSelected);
+            CloseCustomerHistoryCommand = new RelayCommand(_ => IsCustomerHistoryOpen = false);
+            ViewCustomerHistoryBillCommand = new RelayCommand(obj => ViewCustomerHistoryBill(obj as Bill));
+            PayCustomerHistoryBillCommand = new RelayCommand(obj => PayCustomerHistoryBill(obj as Bill));
+            LoadCustomerHistoryBillCommand = new RelayCommand(obj =>
+            {
+                if (obj is not Bill bill) return;
+                SetPreviewHistoryBill(bill);
+                LoadBillIntoCart(bill);
+                IsCustomerHistoryOpen = false;
+            });
             OpenHistoryPaymentCommand = new RelayCommand(_ => { if (PreviewHistoryBill != null) { var fresh = _billRepo.GetById(PreviewHistoryBill.BillId); if (fresh != null && SelectedTab != null) { fresh.Customer = PreviewHistoryBill.Customer; SelectedTab.PreviewHistoryBill = fresh; } HistoryPaymentAmount = ""; HistoryPaymentNote = ""; HistoryPaymentError = ""; SelectedHistoryPaymentMethod = "Cash"; SelectedHistoryAccount = HistoryActiveAccounts.FirstOrDefault(); SelectedHistoryOnlineMethod = null; IsHistoryPaymentOpen = true; OnPropertyChanged(nameof(PreviewHistoryBill)); } });
             CloseHistoryPaymentCommand = new RelayCommand(_ => IsHistoryPaymentOpen = false);
             RecordHistoryPaymentCommand = new RelayCommand(_ => RecordHistoryPayment());
@@ -482,10 +828,78 @@ namespace GroceryPOS.ViewModels
             AddAddressCommand = new RelayCommand(_ => { IsAddingAddress = true; NewAddressInput = ""; });
             CancelAddAddressCommand = new RelayCommand(_ => { IsAddingAddress = false; NewAddressInput = ""; });
             SaveAddressCommand = new RelayCommand(_ => SaveAddress());
-            _stockService.StockChanged += LoadDashboardStats;
+
+            SelectCategoryCommand = new RelayCommand(obj => SelectCategory(obj as PosCategoryChip));
+            SelectProductCommand = new RelayCommand(SelectProduct);
+            ToggleTodayAvailabilityCommand = new RelayCommand(ToggleTodayAvailability);
+            UpdateTodayProductCommand = new RelayCommand(UpdateTodayProduct);
+            ConfirmTypeCommand = new RelayCommand(_ => ConfirmTypeQuantitiesAndAdd());
+            ConfirmQuantityAndAddCommand = new RelayCommand(_ => ConfirmQuantityAndAdd());
+            IncrementQuantityCommand = new RelayCommand(_ => AdjustPickerQuantity(1));
+            DecrementQuantityCommand = new RelayCommand(_ => AdjustPickerQuantity(-1));
+            IncrementTypeQtyCommand = new RelayCommand(obj => AdjustTypeQty(obj as TypeQtyRow, 1));
+            DecrementTypeQtyCommand = new RelayCommand(obj => AdjustTypeQty(obj as TypeQtyRow, -1));
+            AddDailyItemCommand = new RelayCommand(_ => AddDailyItem());
+            ClearDailySetupCommand = new RelayCommand(_ => ClearDailySetup());
+            RefreshTodayProductsCommand = new RelayCommand(_ => RefreshTodayProducts());
+            CloseTypePickerCommand = new RelayCommand(_ =>
+            {
+                IsTypePickerOpen = false;
+                TypeQtyRows.Clear();
+                _pendingScanItem = null;
+            });
+            CloseQuantityPickerCommand = new RelayCommand(_ => { IsQuantityPickerOpen = false; _pendingScanItem = null; });
+            ShowContinuePreviousCommand = new RelayCommand(_ => ShowContinuePrevious());
+            NewDayRefreshCommand = new RelayCommand(_ => NewDayRefresh());
+            ConfirmPreviousSelectionCommand = new RelayCommand(_ => ConfirmPreviousSelection());
+            CancelPreviousPickerCommand = new RelayCommand(_ => CancelPreviousPicker());
+            SelectAllPreviousCommand = new RelayCommand(_ => SetAllPreviousSelection(true));
+            ClearPreviousSelectionCommand = new RelayCommand(_ => SetAllPreviousSelection(false));
+
+            // Heavy POS data loads in OnActivated / Warmup — keep ctor fast so Billing opens instantly.
+            CatalogEvents.CatalogChanged += OnCatalogChanged;
+        }
+
+        /// <summary>
+        /// Preloads billing data in the background after login so the first Billing click is instant.
+        /// </summary>
+        public void Warmup()
+        {
+            if (_isWarmedUp) return;
             LoadDashboardStats();
             LoadProducts();
             LoadActiveAccounts();
+            LoadPosData();
+            RebuildDailyTypePriceRows();
+            _isWarmedUp = true;
+        }
+
+        /// <summary>Called whenever Billing is opened so prices/photos stay live.</summary>
+        public void OnActivated()
+        {
+            if (!_isWarmedUp)
+            {
+                Warmup();
+                return;
+            }
+
+            // Already warm — only refresh stats + today's menu (cheap compared to full warmup).
+            LoadDashboardStats();
+            RefreshTodayProducts();
+            LoadActiveAccounts();
+            CheckNewDaySetup();
+            OnPropertyChanged(nameof(BusinessDateDisplay));
+            OnPropertyChanged(nameof(IsAdmin));
+        }
+
+        private void OnCatalogChanged()
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                LoadDashboardStats();
+                LoadAllMasterItemsForSetup();
+                RefreshTodayProducts();
+            });
         }
 
         private void LoadActiveAccounts()
@@ -504,6 +918,640 @@ namespace GroceryPOS.ViewModels
         }
 
         private void LoadProducts() { var items = _itemService.GetAllItems(); ItemList = new ObservableCollection<Item>(items); FilteredItemList = new ObservableCollection<Item>(items); }
+
+        private void LoadPosData()
+        {
+            LoadPosCategories();
+            LoadAllMasterItemsForSetup();
+            CheckNewDaySetup();
+            RefreshTodayProducts();
+            OnPropertyChanged(nameof(BusinessDateDisplay));
+            OnPropertyChanged(nameof(IsAdmin));
+        }
+
+        private void CheckNewDaySetup()
+        {
+            IsPreviousDayPickerVisible = false;
+            PreviousDayMenuItems.Clear();
+            PreviousMenuDateDisplay = string.Empty;
+
+            // Quietly mark the day done when there is nothing to prompt for
+            // (first day, or today's menu already has items).
+            if (!_dailySelection.IsDaySetupDone() && !_dailySelection.NeedsNewDaySetup())
+                _dailySelection.MarkDaySetupDone();
+
+            IsNewDayPromptVisible = _dailySelection.NeedsNewDaySetup();
+            if (IsNewDayPromptVisible)
+                PreviousMenuDateDisplay = _dailySelection.GetPreviousMenuDate() ?? string.Empty;
+        }
+
+        private void ShowContinuePrevious()
+        {
+            PreviousDayMenuItems.Clear();
+            var prevDate = _dailySelection.GetPreviousMenuDate();
+            PreviousMenuDateDisplay = prevDate ?? string.Empty;
+
+            foreach (var row in _dailySelection.GetPreviousDayMenuItems())
+                PreviousDayMenuItems.Add(row);
+
+            if (PreviousDayMenuItems.Count == 0)
+            {
+                ShowPopupError("No previous-day items found.");
+                return;
+            }
+
+            IsNewDayPromptVisible = false;
+            IsPreviousDayPickerVisible = true;
+        }
+
+        private void NewDayRefresh()
+        {
+            try
+            {
+                _dailySelection.RefreshStartFresh(_authService.CurrentUser?.Id);
+                IsNewDayPromptVisible = false;
+                IsPreviousDayPickerVisible = false;
+                PreviousDayMenuItems.Clear();
+                ClearDailySetupForm();
+                RefreshTodayProducts();
+                ShowPopupSuccess("Today's list cleared. Add items manually.");
+            }
+            catch (Exception ex)
+            {
+                ShowPopupError($"Refresh failed: {ex.Message}");
+                AppLogger.Error("NewDayRefresh failed", ex);
+            }
+        }
+
+        private void ConfirmPreviousSelection()
+        {
+            var selectedIds = PreviousDayMenuItems
+                .Where(i => i.IsSelected)
+                .Select(i => i.ItemId)
+                .ToList();
+
+            if (selectedIds.Count == 0)
+            {
+                ShowPopupError("Select at least one item, or use Refresh to start empty.");
+                return;
+            }
+
+            try
+            {
+                var added = _dailySelection.ContinueWithSelected(selectedIds, _authService.CurrentUser?.Id);
+                IsPreviousDayPickerVisible = false;
+                IsNewDayPromptVisible = false;
+                PreviousDayMenuItems.Clear();
+                RefreshTodayProducts();
+                ShowPopupSuccess($"✓ {added} item(s) added to today's menu.");
+            }
+            catch (Exception ex)
+            {
+                ShowPopupError($"Continue failed: {ex.Message}");
+                AppLogger.Error("ConfirmPreviousSelection failed", ex);
+            }
+        }
+
+        private void CancelPreviousPicker()
+        {
+            IsPreviousDayPickerVisible = false;
+            PreviousDayMenuItems.Clear();
+            IsNewDayPromptVisible = _dailySelection.NeedsNewDaySetup();
+        }
+
+        private void SetAllPreviousSelection(bool selected)
+        {
+            foreach (var item in PreviousDayMenuItems)
+                item.IsSelected = selected;
+        }
+
+        private void LoadPosCategories()
+        {
+            PosCategories.Clear();
+            CategoryFilters.Clear();
+
+            CategoryFilters.Add(new PosCategoryChip { Label = "All (تمام)", Category = null, IsSelected = true });
+
+            foreach (var cat in _categoryService.GetAllActive()
+                         .Where(c => c.Name is "Fruits" or "Vegetables")
+                         .OrderBy(c => c.DisplayOrder).ThenBy(c => c.Name))
+            {
+                PosCategories.Add(cat);
+                CategoryFilters.Add(new PosCategoryChip { Label = cat.ChipLabel, Category = cat, IsSelected = false });
+            }
+        }
+
+        private void LoadAllMasterItemsForSetup()
+        {
+            AllMasterItems.Clear();
+            foreach (var item in _itemService.GetActiveItems()
+                         .OrderBy(i => int.TryParse(i.PosCode, out var n) ? n : int.MaxValue)
+                         .ThenBy(i => i.Description))
+                AllMasterItems.Add(item);
+        }
+
+        /// <summary>When user types item ID (1,2,3…), fill the name dropdown — clear if ID not found.</summary>
+        private void SyncDailySetupFromId(string? code)
+        {
+            Item? matched = null;
+            _syncingDailySetup = true;
+            try
+            {
+                code = (code ?? string.Empty).Trim();
+                if (!string.IsNullOrEmpty(code))
+                {
+                    // Match by POS code (barcode) first — e.g. "5" → Grapes — not raw DB ItemId.
+                    var item = _itemService.GetItemByBarcode(code);
+                    if (item != null && item.IsActive)
+                        matched = AllMasterItems.FirstOrDefault(i => i.Id == item.Id) ?? item;
+                }
+
+                // Always sync dropdown: show match, or clear when ID is empty/invalid
+                _dailySetupSelectedItem = matched;
+                OnPropertyChanged(nameof(DailySetupSelectedItem));
+            }
+            finally
+            {
+                _syncingDailySetup = false;
+            }
+
+            PrefillDailyTypeRowsFromItem(matched);
+        }
+
+        /// <summary>When user picks a name, fill the item ID box.</summary>
+        private void SyncDailySetupFromItem(Item? item)
+        {
+            _syncingDailySetup = true;
+            try
+            {
+                _dailySetupItemIdText = item == null ? string.Empty : item.PosCode;
+                OnPropertyChanged(nameof(DailySetupItemIdText));
+            }
+            finally
+            {
+                _syncingDailySetup = false;
+            }
+
+            PrefillDailyTypeRowsFromItem(item);
+        }
+
+        private void PrefillDailyTypeRowsFromItem(Item? item)
+        {
+            if (item == null)
+            {
+                DailyTypePriceRows.Clear();
+                OnPropertyChanged(nameof(HasDailyTypePriceRows));
+                return;
+            }
+
+            // Every item needs at least Type 1 — select it by default when picking an item.
+            // Prices stay empty for fresh entry (Update button loads existing types separately).
+            SetDailyTypeCount(1, rebuild: true);
+        }
+
+        private void RebuildDailyTypePriceRows(bool preserveTypedPrices = true)
+        {
+            var previousPrices = preserveTypedPrices
+                ? DailyTypePriceRows.Select(r => r.PriceText).ToList()
+                : new System.Collections.Generic.List<string>();
+            DailyTypePriceRows.Clear();
+
+            if (!int.TryParse((DailyTypeCountText ?? string.Empty).Trim(), out var count) || count < 1)
+                count = 0;
+            if (count > 10)
+            {
+                count = 10;
+                if (_dailyTypeCountText != "10")
+                    SetDailyTypeCount(10, rebuild: false);
+            }
+
+            for (int i = 1; i <= count; i++)
+            {
+                DailyTypePriceRows.Add(new DailyTypePriceRow
+                {
+                    Index = i,
+                    PriceText = i - 1 < previousPrices.Count ? previousPrices[i - 1] : string.Empty
+                });
+            }
+
+            OnPropertyChanged(nameof(HasDailyTypePriceRows));
+        }
+
+        private void RefreshTodayProducts()
+        {
+            PosProductCard.InvalidatePhotoCache();
+            _allTodayProducts.Clear();
+            foreach (var sel in _dailySelection.GetVisibleForToday())
+            {
+                var item = _itemService.GetItemWithTypes(sel.ItemId);
+                if (item == null || !item.IsActive) continue;
+
+                var types = item.Types.OrderBy(t => t.SortOrder).ToList();
+                var defaultType = types.FirstOrDefault();
+                var typeNames = string.Join(" ", types.Select(t => t.TypeName));
+
+                _allTodayProducts.Add(new PosProductCard
+                {
+                    Selection = sel,
+                    ItemId = item.Id,
+                    Name = item.Description,
+                    NameUrdu = item.NameUrdu,
+                    Unit = "piece",
+                    CategoryId = item.CategoryId,
+                    DisplayPrice = defaultType?.Price ?? 0,
+                    Barcode = item.Barcode,
+                    IsAvailable = sel.IsAvailable,
+                    SearchText = $"{item.Description} {item.NameUrdu} {item.Barcode} {item.Id} {typeNames}".ToLowerInvariant()
+                });
+            }
+
+            ApplyProductFilters();
+        }
+
+        private void ApplyProductFilters()
+        {
+            var query = (ProductSearchQuery ?? string.Empty).Trim().ToLowerInvariant();
+            IEnumerable<PosProductCard> filtered = _allTodayProducts;
+
+            if (SelectedCategory != null)
+                filtered = filtered.Where(p => p.CategoryId == SelectedCategory.CategoryId);
+
+            if (!string.IsNullOrWhiteSpace(query))
+                filtered = filtered.Where(p => p.SearchText.Contains(query));
+
+            TodayProducts.Clear();
+            foreach (var card in filtered)
+                TodayProducts.Add(card);
+        }
+
+        private void UpdateCategoryChipSelection()
+        {
+            foreach (var chip in CategoryFilters)
+            {
+                chip.IsSelected = chip.Category == null
+                    ? SelectedCategory == null
+                    : SelectedCategory?.CategoryId == chip.Category.CategoryId;
+            }
+        }
+
+        private void SelectCategory(PosCategoryChip? chip)
+        {
+            if (chip == null) return;
+            SelectedCategory = chip.Category;
+        }
+
+        private void SelectProduct(object? param)
+        {
+            if (param is not PosProductCard card) return;
+
+            if (IsBillingLocked)
+            {
+                ShowPopupError($"{InactiveCustomerMessageEn}\n{InactiveCustomerMessageUr}");
+                return;
+            }
+
+            if (!card.IsAvailable)
+            {
+                ShowPopupError($"'{card.Name}' is deactivated for today. Tap ✓ to activate again.");
+                return;
+            }
+
+            SelectedPosProduct = card;
+            _pendingScanItem = null;
+
+            var types = _itemTypeService.GetActiveByItemId(card.ItemId).OrderBy(t => t.SortOrder).ToList();
+            if (!types.Any())
+            {
+                MessageBox.Show("Item has no active types.", "POS", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            AvailableTypesForPicker.Clear();
+            TypeQtyRows.Clear();
+            foreach (var t in types)
+            {
+                AvailableTypesForPicker.Add(t);
+                TypeQtyRows.Add(new TypeQtyRow { Type = t, Quantity = 0 });
+            }
+
+            SelectedType = types[0];
+            IsQuantityPickerOpen = false;
+            IsTypePickerOpen = true;
+        }
+
+        private static void AdjustTypeQty(TypeQtyRow? row, int step)
+        {
+            if (row == null) return;
+            row.Quantity = Math.Max(0, row.Quantity + step);
+        }
+
+        private void ConfirmTypeQuantitiesAndAdd()
+        {
+            if (IsBillingLocked)
+            {
+                IsTypePickerOpen = false;
+                ShowPopupError($"{InactiveCustomerMessageEn}\n{InactiveCustomerMessageUr}");
+                return;
+            }
+
+            Item? item = _pendingScanItem;
+            if (item == null && SelectedPosProduct != null)
+                item = _itemService.GetItemById(SelectedPosProduct.ItemId);
+
+            if (item == null)
+            {
+                ShowPopupError("Product not found.");
+                return;
+            }
+
+            // At least one type must have qty ≥ 1; multiple types allowed.
+            var lines = TypeQtyRows.Where(r => r.Quantity >= 1).ToList();
+            if (lines.Count == 0)
+            {
+                ShowPopupError("Select at least one type with quantity 1 or more.");
+                return;
+            }
+
+            foreach (var row in lines)
+                AddToCart(item, row.Type, row.Quantity);
+
+            IsTypePickerOpen = false;
+            IsQuantityPickerOpen = false;
+            TypeQtyRows.Clear();
+            _pendingScanItem = null;
+            SelectedPosProduct = null;
+            ShowPopupSuccess(lines.Count == 1
+                ? "✓ Added to cart."
+                : $"✓ Added {lines.Count} types to cart.");
+        }
+
+        private void OpenQuantityPicker()
+        {
+            QuantityText = "0";
+            IsQuantityPickerOpen = true;
+        }
+
+        private void AdjustPickerQuantity(double step)
+        {
+            if (!double.TryParse(QuantityText, out var qty) || qty < 0)
+                qty = 0;
+
+            qty = Math.Round(qty + step, 3);
+            if (qty < 0) qty = 0;
+            QuantityText = qty.ToString("0.###");
+        }
+
+        private void ConfirmQuantityAndAdd()
+        {
+            if (SelectedType == null)
+            {
+                ShowPopupError("No type selected.");
+                return;
+            }
+
+            if (!double.TryParse(QuantityText, out var qty) || qty <= 0)
+            {
+                ShowPopupError("Enter quantity (1, 2, 3…).");
+                return;
+            }
+
+            Item? item = _pendingScanItem;
+            if (item == null && SelectedPosProduct != null)
+                item = _itemService.GetItemById(SelectedPosProduct.ItemId);
+
+            if (item == null)
+            {
+                ShowPopupError("Product not found.");
+                return;
+            }
+
+            AddToCart(item, SelectedType, qty);
+            IsQuantityPickerOpen = false;
+            IsTypePickerOpen = false;
+            _pendingScanItem = null;
+            SelectedPosProduct = null;
+        }
+
+        private void ToggleTodayAvailability(object? param)
+        {
+            if (param is not PosProductCard card) return;
+
+            var makeAvailable = !card.IsAvailable;
+            var confirm = makeAvailable
+                ? MessageBox.Show(
+                    $"Activate '{card.Name}' for today?\n\nآج دوبارہ فعال کریں؟",
+                    "Activate item",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question)
+                : MessageBox.Show(
+                    $"Deactivate '{card.Name}' for today?\n\nItem stays on the list but cannot be sold until activated again.\n\nآج غیر فعال کریں؟",
+                    "Deactivate item",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+            if (confirm != MessageBoxResult.Yes) return;
+
+            try
+            {
+                _dailySelection.SetAvailable(card.DailySelectionId, makeAvailable);
+                card.IsAvailable = makeAvailable;
+                ShowPopupSuccess(makeAvailable
+                    ? $"✓ '{card.Name}' activated for today."
+                    : $"'{card.Name}' deactivated for today.");
+            }
+            catch (Exception ex)
+            {
+                ShowPopupError($"Failed to update item status: {ex.Message}");
+                AppLogger.Error("ToggleTodayAvailability failed", ex);
+            }
+        }
+
+        /// <summary>Load this card into the Add/Update form with current type prices for editing.</summary>
+        private void UpdateTodayProduct(object? param)
+        {
+            if (param is not PosProductCard card) return;
+
+            var item = AllMasterItems.FirstOrDefault(i => i.Id == card.ItemId)
+                       ?? _itemService.GetItemById(card.ItemId);
+            if (item == null)
+            {
+                ShowPopupError("Item not found.");
+                return;
+            }
+
+            var types = _itemTypeService.GetActiveByItemId(item.Id).OrderBy(t => t.SortOrder).ToList();
+            var typeCount = Math.Clamp(types.Count > 0 ? types.Count : 1, 1, 10);
+
+            _syncingDailySetup = true;
+            try
+            {
+                _dailySetupSelectedItem = AllMasterItems.FirstOrDefault(i => i.Id == item.Id) ?? item;
+                _dailySetupItemIdText = item.PosCode;
+                OnPropertyChanged(nameof(DailySetupSelectedItem));
+                OnPropertyChanged(nameof(DailySetupItemIdText));
+                SetDailyTypeCount(typeCount, rebuild: false);
+            }
+            finally
+            {
+                _syncingDailySetup = false;
+            }
+
+            DailyTypePriceRows.Clear();
+            for (int i = 1; i <= typeCount; i++)
+            {
+                var price = i - 1 < types.Count ? types[i - 1].Price : 0;
+                DailyTypePriceRows.Add(new DailyTypePriceRow
+                {
+                    Index = i,
+                    PriceText = price > 0 ? price.ToString("0.##") : string.Empty
+                });
+            }
+            OnPropertyChanged(nameof(HasDailyTypePriceRows));
+            ShowPopupSuccess($"Update '{card.Name}' — edit types/prices above, then tap Add.");
+        }
+
+        private void AddDailyItem()
+        {
+            Item? item = DailySetupSelectedItem;
+            var code = DailySetupItemIdText?.Trim();
+            if (item == null && !string.IsNullOrWhiteSpace(code))
+            {
+                item = _itemService.GetItemByBarcode(code);
+                if (item == null && int.TryParse(code, out var id))
+                    item = _itemService.GetItemById(id);
+            }
+
+            if (item == null || !item.IsActive)
+            {
+                ShowPopupError("Select an item or enter a valid item ID (e.g. 1, 2, 3…).");
+                return;
+            }
+
+            // Keep dropdown + ID in sync for clarity
+            if (DailySetupSelectedItem == null || DailySetupSelectedItem.Id != item.Id)
+            {
+                _syncingDailySetup = true;
+                try
+                {
+                    _dailySetupSelectedItem = AllMasterItems.FirstOrDefault(i => i.Id == item.Id) ?? item;
+                    _dailySetupItemIdText = item.PosCode;
+                    OnPropertyChanged(nameof(DailySetupSelectedItem));
+                    OnPropertyChanged(nameof(DailySetupItemIdText));
+                }
+                finally { _syncingDailySetup = false; }
+            }
+
+            if (!int.TryParse((DailyTypeCountText ?? string.Empty).Trim(), out var typeCount) || typeCount < 1 || typeCount > 10)
+            {
+                SetDailyTypeCount(1, rebuild: true);
+                ShowPopupError("Select at least Type 1 (minimum 1 type / قسم, maximum 10).");
+                return;
+            }
+
+            if (DailyTypePriceRows.Count != typeCount)
+                RebuildDailyTypePriceRows(preserveTypedPrices: true);
+
+            if (DailyTypePriceRows.Count == 0)
+            {
+                ShowPopupError("Add at least one type price before saving.");
+                return;
+            }
+
+            var prices = new List<double>();
+            for (int i = 0; i < DailyTypePriceRows.Count; i++)
+            {
+                var raw = DailyTypePriceRows[i].PriceText?.Trim();
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    ShowPopupError($"Enter a price for Type {i + 1} / قسم {i + 1}.");
+                    return;
+                }
+                if (!double.TryParse(raw, out var price) || price < 0)
+                {
+                    ShowPopupError($"Invalid price for Type {i + 1} / قسم {i + 1}.");
+                    return;
+                }
+                prices.Add(price);
+            }
+
+            if (prices.Any(p => p == 0))
+            {
+                var zeroOk = MessageBox.Show(
+                    "One or more type prices are Rs.0.\nSave anyway?",
+                    "Zero Price",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                if (zeroOk != MessageBoxResult.Yes) return;
+            }
+
+            var alreadyOnMenu = _dailySelection.IsOnTodayMenu(item.Id);
+            if (alreadyOnMenu)
+            {
+                var confirm = MessageBox.Show(
+                    $"'{item.DisplayName}' (#{item.PosCode}) is already on today's selling list.\n\n" +
+                    "Do you want to update its price / types?",
+                    "Item Already Added",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (confirm != MessageBoxResult.Yes)
+                    return; // close / cancel — leave form as-is so user can edit or Clear
+            }
+
+            try
+            {
+                _itemTypeService.ReplaceWithNumberedTypes(item.Id, prices);
+
+                if (!alreadyOnMenu)
+                    _dailySelection.AddItem(item.Id, _authService.CurrentUser?.Id);
+
+                var name = item.Description;
+                ClearDailySetupForm();
+                RefreshTodayProducts();
+                LoadAllMasterItemsForSetup();
+                CatalogEvents.NotifyChanged();
+
+                ShowPopupSuccess(alreadyOnMenu
+                    ? $"✓ '{name}' prices/types updated ({typeCount} type(s))."
+                    : $"✓ '{name}' added to today with {typeCount} type(s).");
+            }
+            catch (Exception ex)
+            {
+                ShowPopupError(ex.Message);
+                AppLogger.Error("AddDailyItem failed", ex);
+            }
+        }
+
+        /// <summary>Clears Add Today form (ID, item, type count, prices) and refreshes today's list.</summary>
+        private void ClearDailySetup()
+        {
+            ClearDailySetupForm();
+            RefreshTodayProducts();
+            LoadAllMasterItemsForSetup();
+        }
+
+        private void ClearDailySetupForm()
+        {
+            _syncingDailySetup = true;
+            try
+            {
+                _dailySetupItemIdText = string.Empty;
+                _dailySetupSelectedItem = null;
+                _dailyTypeCountText = string.Empty;
+                _selectedDailyTypeCountOption = null;
+                OnPropertyChanged(nameof(DailySetupItemIdText));
+                OnPropertyChanged(nameof(DailySetupSelectedItem));
+                OnPropertyChanged(nameof(DailyTypeCountText));
+                OnPropertyChanged(nameof(SelectedDailyTypeCountOption));
+            }
+            finally
+            {
+                _syncingDailySetup = false;
+            }
+
+            DailyTypePriceRows.Clear();
+            OnPropertyChanged(nameof(HasDailyTypePriceRows));
+        }
         private string _onlinePaymentBreakdownTooltip = "No online payments today";
         public string OnlinePaymentBreakdownTooltip { get => _onlinePaymentBreakdownTooltip; set => SetProperty(ref _onlinePaymentBreakdownTooltip, value); }
 
@@ -558,18 +1606,18 @@ namespace GroceryPOS.ViewModels
         {
             try
             {
-                // Fetch fresh base number from DB
+                // Next free BillId from DB, then assign sequential provisional numbers to open tabs
                 string baseNumStr = _billService.GetNextInvoiceNumber();
                 if (!int.TryParse(baseNumStr, out int nextId)) nextId = 1;
 
-                // Re-assign numbers sequentially to all tabs to keep them in sync with DB
                 for (int i = 0; i < Tabs.Count; i++)
                 {
                     Tabs[i].InvoiceNumber = (nextId + i).ToString("D5");
+                    Tabs[i].TabName = $"Bill {i + 1}";
                 }
-                
-                // Notify UI for the active tab's bound InvoiceNumber property
+
                 OnPropertyChanged(nameof(InvoiceNumber));
+                OnPropertyChanged(nameof(CanCloseTabs));
             }
             catch (Exception ex)
             {
@@ -577,44 +1625,109 @@ namespace GroceryPOS.ViewModels
             }
         }
 
-        private void AddNewTab() 
-        { 
-            var tab = new BillingTab { TabName = $"Bill {Tabs.Count + 1}" }; 
-            Tabs.Add(tab); 
+        private void AddNewTab()
+        {
+            const int maxTabs = 12;
+            if (Tabs.Count >= maxTabs)
+            {
+                ShowPopupError($"Maximum {maxTabs} open bills. Complete or close a tab first.");
+                return;
+            }
+
+            var tab = new BillingTab();
+            Tabs.Add(tab);
             RefreshInvoiceNumbers();
-            SelectedTab = tab; 
-            RefocusBarcode(); 
+            SelectedTab = tab;
+            OnPropertyChanged(nameof(CanCloseTabs));
+            RefocusBarcode();
         }
 
-        private void CloseTab(BillingTab? tab) 
-        { 
-            if (tab == null || Tabs.Count <= 1) return; 
-            Tabs.Remove(tab); 
-            
-            // Re-sequence tab names and invoice numbers after closing one
-            for (int i = 0; i < Tabs.Count; i++) 
+        /// <param name="confirmIfDirty">Ask before closing a tab that still has cart items.</param>
+        private void CloseTab(BillingTab? tab, bool confirmIfDirty = false)
+        {
+            if (tab == null || Tabs.Count <= 1) return;
+
+            if (confirmIfDirty && tab.CartItems.Count > 0)
             {
-                Tabs[i].TabName = $"Bill {i + 1}";
+                var result = MessageBox.Show(
+                    $"Bill #{tab.InvoiceNumber} has items in the cart.\nClose this tab and discard them?",
+                    "Close Bill Tab",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (result != MessageBoxResult.Yes) return;
             }
-            
+
+            var closingActive = ReferenceEquals(tab, SelectedTab);
+            var index = Tabs.IndexOf(tab);
+            Tabs.Remove(tab);
+
             RefreshInvoiceNumbers();
-            SelectedTab = Tabs.LastOrDefault(); 
-            NotifyTabPropertiesChanged(); 
+
+            if (closingActive || SelectedTab == null || !Tabs.Contains(SelectedTab))
+            {
+                var nextIndex = Math.Clamp(index, 0, Tabs.Count - 1);
+                SelectedTab = Tabs[nextIndex];
+            }
+
+            OnPropertyChanged(nameof(CanCloseTabs));
+            NotifyTabPropertiesChanged();
+            RecalculateTotal();
+            RefocusBarcode();
+        }
+
+        /// <summary>After a successful sale: close that tab (or reset the only tab) and renumber.</summary>
+        private void FinishCompletedTab(BillingTab completedTab)
+        {
+            WalkInPhoneInput = "";
+            SelectedPaymentMethod = "Cash";
+            SelectedOnlineMethod = null;
+            SelectedAccount = ActiveAccounts.FirstOrDefault();
+
+            if (Tabs.Count > 1)
+            {
+                // No confirm — bill already saved
+                CloseTab(completedTab, confirmIfDirty: false);
+            }
+            else
+            {
+                // Keep one empty tab with the next bill id
+                if (!ReferenceEquals(SelectedTab, completedTab))
+                    SelectedTab = completedTab;
+                ClearCart();
+            }
+
+            OnPropertyChanged(nameof(CanCloseTabs));
         }
         private void ScanBarcode() 
         { 
             StatusMessage = string.Empty;
             OnPropertyChanged(nameof(StatusMessage));
 
+            if (IsBillingLocked)
+            {
+                ShowPopupError($"{InactiveCustomerMessageEn}\n{InactiveCustomerMessageUr}");
+                return;
+            }
+
             string bc = !string.IsNullOrWhiteSpace(BarcodeInput) ? BarcodeInput : SelectedSearchItem?.Barcode ?? SelectedSearchItem?.ItemId ?? ""; 
             if (string.IsNullOrWhiteSpace(bc)) return; 
             
-            // Try barcode lookup first, then fall back to ID lookup
             var it = _itemService.GetItemByBarcode(bc)
                   ?? (int.TryParse(bc, out var id) ? _itemService.GetItemById(id) : null);
             if (it != null) 
             { 
-                AddToCart(it); 
+                var types = _itemTypeService.GetActiveByItemId(it.Id).OrderBy(t => t.SortOrder).ToList();
+                if (!types.Any())
+                {
+                    StatusMessage = "✗ Item has no active types.";
+                    OnPropertyChanged(nameof(StatusMessage));
+                    ShowPopupError("Item has no active types.");
+                    return;
+                }
+
+                var defaultType = types[0];
+                AddToCart(it, defaultType, 1.0);
+
                 BarcodeInput = ""; 
                 SelectedSearchItem = null; 
                 ProductSearchText = string.Empty;
@@ -625,140 +1738,183 @@ namespace GroceryPOS.ViewModels
             } 
             else { StatusMessage = "✗ Product not found."; OnPropertyChanged(nameof(StatusMessage)); ShowPopupError("Product not found."); } 
         }
-        private void AddToCart(Item it) 
-        { 
-            if (SelectedTab == null) return; 
-            var ex = SelectedTab.CartItems.FirstOrDefault(i => i.ItemId == it.ItemId); 
-            if (ex != null) 
+
+        private void AddToCart(Item it, ItemType type, double qty)
+        {
+            if (SelectedTab == null) return;
+            if (IsBillingLocked)
             {
-                double totalRequested = ex.Quantity + QuantityInput;
-                if (totalRequested > it.StockQuantity)
-                {
-                    ShowSystemError($"⚠ Maximum Available Stock: {it.StockQuantity}");
-                    StatusMessage = $"⚠ Maximum Available Stock: {it.StockQuantity}";
-                    OnPropertyChanged(nameof(StatusMessage));
-                }
-                else
-                {
-                    ex.Quantity = totalRequested;
-                    if (totalRequested == it.StockQuantity)
-                    {
-                        StatusMessage = $"⚠ Maximum Available Stock: {it.StockQuantity}";
-                        OnPropertyChanged(nameof(StatusMessage));
-                    }
-                    else if (StatusMessage.Contains("Available Stock"))
-                    {
-                        StatusMessage = "";
-                        OnPropertyChanged(nameof(StatusMessage));
-                    }
-                }
+                ShowPopupError($"{InactiveCustomerMessageEn}\n{InactiveCustomerMessageUr}");
+                return;
             }
-            else 
+            if (qty <= 0) return;
+
+            var ex = SelectedTab.CartItems.FirstOrDefault(i =>
+                i.ItemId == it.ItemId.ToString() && i.TypeId == type.TypeId);
+
+            if (ex != null)
             {
-                int quantityToAdd = QuantityInput;
-                if (quantityToAdd >= it.StockQuantity)
-                {
-                    if (quantityToAdd > it.StockQuantity)
-                    {
-                        quantityToAdd = (int)it.StockQuantity;
-                        ShowSystemError($"⚠ Maximum Available Stock: {it.StockQuantity}");
-                        StatusMessage = $"⚠ Maximum Available Stock: {it.StockQuantity}";
-                        OnPropertyChanged(nameof(StatusMessage));
-                    }
-                    else if (quantityToAdd == it.StockQuantity)
-                    {
-                        StatusMessage = $"⚠ Maximum Available Stock: {it.StockQuantity}";
-                        OnPropertyChanged(nameof(StatusMessage));
-                    }
-                    else 
-                    {
-                        if (StatusMessage.Contains("Available Stock"))
-                        {
-                            StatusMessage = "";
-                            OnPropertyChanged(nameof(StatusMessage));
-                        }
-                    }
-                }
-                else
-                {
-                    // Do nothing here so we don't accidentally overwrite a success message unnecessarily, or explicitly clear it
-                    if (StatusMessage.Contains("Available Stock"))
-                    {
-                        StatusMessage = "";
-                        OnPropertyChanged(nameof(StatusMessage));
-                    }
-                }
-                
-                if (quantityToAdd > 0)
-                {
-                    SelectedTab.CartItems.Add(new CartItem 
-                    { 
-                        ItemId = it.ItemId, 
-                        Barcode = it.Barcode,
-                        ItemDescription = it.Description, 
-                        UnitPrice = it.SalePrice, 
-                        Quantity = quantityToAdd,
-                        AvailableStock = it.StockQuantity
-                    });
-                }
-                else if (it.StockQuantity <= 0)
-                {
-                    StatusMessage = $"⚠ Maximum Available Stock: {it.StockQuantity}";
-                    ShowSystemError($"⚠ Maximum Available Stock: {it.StockQuantity}");
-                    OnPropertyChanged(nameof(StatusMessage));
-                }
+                // Keep unit price in sync with the selected type price
+                ex.TypeName = type.TypeName;
+                ex.UnitPrice = type.Price;
+                ex.Quantity += qty;
+                if (string.IsNullOrWhiteSpace(ex.NameUrdu) && !string.IsNullOrWhiteSpace(it.NameUrdu))
+                    ex.NameUrdu = it.NameUrdu;
             }
-            QuantityInput = 1; 
+            else
+            {
+                SelectedTab.CartItems.Add(new CartItem
+                {
+                    ItemId = it.ItemId,
+                    TypeId = type.TypeId,
+                    TypeName = type.TypeName,
+                    Unit = "piece",
+                    Barcode = it.Barcode,
+                    ItemDescription = it.Description,
+                    NameUrdu = it.NameUrdu,
+                    UnitPrice = type.Price,
+                    Quantity = qty
+                });
+            }
+
             SelectedCartItem = null;
             OnPropertyChanged(nameof(SelectedCartItem));
-            RecalculateTotal(); 
+            RecalculateTotal();
             RefocusBarcode();
         }
-        private void RemoveFromCart() { if (SelectedCartItem != null && SelectedTab != null) { SelectedTab.CartItems.Remove(SelectedCartItem); RecalculateTotal(); } }
-        private void IncreaseQuantity() 
+
+        private void AddToCart(Item it) 
         { 
+            var types = _itemTypeService.GetActiveByItemId(it.Id).OrderBy(t => t.SortOrder).ToList();
+            if (!types.Any())
+            {
+                ShowPopupError("Item has no active types.");
+                return;
+            }
+
+            var qty = Math.Max(0.001, QuantityInput);
+            AddToCart(it, types[0], qty);
+            QuantityInput = 1;
+        }
+        private void RemoveFromCart()
+        {
+            if (IsBillingLocked) return;
+            if (SelectedCartItem != null && SelectedTab != null)
+            {
+                SelectedTab.CartItems.Remove(SelectedCartItem);
+                RecalculateTotal();
+            }
+        }
+        private void IncreaseQuantity() 
+        {
+            if (IsBillingLocked) return; 
             if (SelectedCartItem != null) 
             { 
-                if (SelectedCartItem.Quantity + 1 >= SelectedCartItem.AvailableStock)
-                {
-                    if (SelectedCartItem.Quantity + 1 > SelectedCartItem.AvailableStock)
-                    {
-                        ShowSystemError($"⚠ Maximum Available Stock: {SelectedCartItem.AvailableStock}");
-                        StatusMessage = $"⚠ Maximum Available Stock: {SelectedCartItem.AvailableStock}";
-                        OnPropertyChanged(nameof(StatusMessage));
-                        return;
-                    }
-                    StatusMessage = $"⚠ Maximum Available Stock: {SelectedCartItem.AvailableStock}";
-                    OnPropertyChanged(nameof(StatusMessage));
-                }
-                else
-                {
-                    if (StatusMessage.Contains("Available Stock"))
-                    {
-                        StatusMessage = "";
-                        OnPropertyChanged(nameof(StatusMessage));
-                    }
-                }
-                SelectedCartItem.Quantity++; 
+                // Cart +/- steps by 1 KG
+                SelectedCartItem.Quantity = Math.Round(SelectedCartItem.Quantity + 1, 3);
                 RecalculateTotal(); 
                 RefocusBarcode(); 
             } 
         }
         private void DecreaseQuantity() 
         { 
-            if (SelectedCartItem != null && SelectedCartItem.Quantity > 1) 
-            { 
-                SelectedCartItem.Quantity--; 
-                if (SelectedCartItem.Quantity < SelectedCartItem.AvailableStock)
-                {
-                    StatusMessage = "";
-                    OnPropertyChanged(nameof(StatusMessage));
-                }
-                RecalculateTotal(); 
-                RefocusBarcode(); 
-            } 
+            if (IsBillingLocked) return;
+            if (SelectedCartItem == null) return;
+            // Cart +/- steps by 1 KG
+            var next = Math.Round(SelectedCartItem.Quantity - 1, 3);
+            if (next < 1) return;
+            SelectedCartItem.Quantity = next;
+            RecalculateTotal(); 
+            RefocusBarcode(); 
         }
-        private void RecalculateTotal() { if (SelectedTab == null) return; SubTotal = SelectedTab.CartItems.Sum(i => i.TotalPrice); double.TryParse(DiscountText, out var d); double.TryParse(TaxText, out var t); if (d > SubTotal) { d = SubTotal; DiscountText = d.ToString("F0"); } DiscountAmount = d; TaxAmount = t; GrandTotal = Math.Max(0, SubTotal - DiscountAmount + TaxAmount); if (!IsCashPayment && IsWalkIn) { CashReceivedText = GrandTotal.ToString("F2"); } else if (!IsCashPayment && HasSelectedCustomer) { double.TryParse(CashReceivedText, out var curAmt); if (curAmt > GrandTotal || string.IsNullOrWhiteSpace(CashReceivedText)) { CashReceivedText = GrandTotal.ToString("F2"); } } CalculateChange(); OnPropertyChanged(nameof(SubTotal)); OnPropertyChanged(nameof(DiscountAmount)); OnPropertyChanged(nameof(TaxAmount)); OnPropertyChanged(nameof(GrandTotal)); OnPropertyChanged(nameof(CartItems)); OnPropertyChanged(nameof(PreviewShowTax)); }
+        private void OpenCartBillPreview()
+        {
+            if (IsBillingLocked)
+            {
+                ShowPopupError($"{InactiveCustomerMessageEn}\n{InactiveCustomerMessageUr}");
+                return;
+            }
+            if (SelectedTab == null || CartItems.Count == 0)
+            {
+                ShowPopupError("Add items to the cart before previewing the bill.");
+                return;
+            }
+
+            RecalculateTotal();
+            CartBillPreview = BuildCartPreviewBill();
+            IsCartPreviewOpen = true;
+        }
+
+        private void CloseCartBillPreview()
+        {
+            IsCartPreviewOpen = false;
+            CartBillPreview = null;
+        }
+
+        /// <summary>
+        /// Builds an exact draft Bill from the current cart for receipt preview (not saved).
+        /// </summary>
+        private Bill BuildCartPreviewBill()
+        {
+            double.TryParse(CashReceivedText, out var cashReceived);
+            cashReceived = Math.Round(cashReceived, 2);
+            var paid = Math.Min(cashReceived, GrandTotal);
+            if (!IsCashPayment && IsWalkIn)
+                paid = GrandTotal;
+
+            var changeGiven = Math.Max(0, Math.Round(cashReceived - GrandTotal, 2));
+            int.TryParse(InvoiceNumber, out var provisionalId);
+
+            var bill = new Bill
+            {
+                BillId = provisionalId > 0 ? provisionalId : 0,
+                CreatedAt = DateTime.Now,
+                Type = "Sale",
+                Status = "Preview",
+                TaxAmount = TaxAmount,
+                DiscountAmount = DiscountAmount,
+                SubTotal = SubTotal,
+                CashReceived = cashReceived,
+                ChangeGiven = changeGiven,
+                InitialPayment = paid,
+                PaidAmount = paid,
+                PaymentMethod = SelectedPaymentMethod,
+                OnlinePaymentMethod = IsOnlinePayment
+                    ? (SelectedAccount?.DisplayName ?? SelectedOnlineMethod)
+                    : null,
+                AccountId = SelectedAccount?.Id,
+                Account = SelectedAccount,
+                CustomerId = SelectedCustomer?.CustomerId,
+                Customer = SelectedCustomer,
+                UserId = _authService.CurrentUser?.Id,
+                User = _authService.CurrentUser
+            };
+
+            foreach (var cart in CartItems)
+            {
+                int.TryParse(cart.ItemId, out var itemInternalId);
+                bill.Items.Add(new BillDescription
+                {
+                    ItemInternalId = itemInternalId,
+                    ItemId = cart.ItemId,
+                    Barcode = cart.Barcode,
+                    ItemDescription = cart.ItemDescription,
+                    ItemName = cart.ItemDescription,
+                    NameUrdu = cart.NameUrdu,
+                    TypeId = cart.TypeId,
+                    TypeName = cart.TypeName,
+                    Unit = string.IsNullOrWhiteSpace(cart.Unit) ? "piece" : cart.Unit,
+                    Quantity = cart.Quantity,
+                    UnitPrice = cart.UnitPrice,
+                    DiscountAmount = 0,
+                    TotalPrice = cart.TotalPrice
+                });
+            }
+
+            return bill;
+        }
+
+        private void RecalculateTotal() { if (SelectedTab == null) return; SubTotal = SelectedTab.CartItems.Sum(i => i.TotalPrice); double.TryParse(DiscountText, out var d); double.TryParse(TaxText, out var t); if (d > SubTotal) { d = SubTotal; DiscountText = d.ToString("F0"); } DiscountAmount = d; TaxAmount = t; GrandTotal = Math.Max(0, SubTotal - DiscountAmount + TaxAmount); if (!IsCashPayment && IsWalkIn) { CashReceivedText = GrandTotal.ToString("F2"); } else if (!IsCashPayment && HasSelectedCustomer) { double.TryParse(CashReceivedText, out var curAmt); if (curAmt > GrandTotal || string.IsNullOrWhiteSpace(CashReceivedText)) { CashReceivedText = GrandTotal.ToString("F2"); } } CalculateChange(); OnPropertyChanged(nameof(SubTotal)); OnPropertyChanged(nameof(DiscountAmount)); OnPropertyChanged(nameof(TaxAmount)); OnPropertyChanged(nameof(GrandTotal)); OnPropertyChanged(nameof(CartItems)); OnPropertyChanged(nameof(PreviewShowTax)); (OpenCartPreviewCommand as RelayCommand)?.RaiseCanExecuteChanged(); }
         private void CalculateChange() 
         { 
             if (!IsCashPayment)
@@ -800,11 +1956,28 @@ namespace GroceryPOS.ViewModels
         private bool CanCompleteSale()
         {
             if (SelectedTab == null || !SelectedTab.CartItems.Any()) return false;
+            if (IsBillingLocked) return false;
             return true;
+        }
+
+        /// <summary>Phone used for walk-in when no registered customer is selected.</summary>
+        private string ResolveWalkInPhoneInput()
+        {
+            if (IsValidPkPhone(WalkInPhoneInput))
+                return WalkInPhoneInput.Trim();
+            if (IsValidPkPhone(CustomerSearchQuery))
+                return CustomerSearchQuery.Trim();
+            return (WalkInPhoneInput ?? string.Empty).Trim();
         }
 
         private async void CompleteSale() 
         { 
+            if (IsBillingLocked)
+            {
+                ShowPopupError($"{InactiveCustomerMessageEn}\n{InactiveCustomerMessageUr}");
+                return;
+            }
+
             if (!CanCompleteSale()) return;
 
             try 
@@ -816,19 +1989,27 @@ namespace GroceryPOS.ViewModels
 
                 var txnTime = DateTimeHelper.CaptureTransactionTime();
 
-                // 1. Resolve Customer (GetOrCreate for Walk-in)
+                // 1. Resolve Customer (GetOrCreate for Walk-in) — walk-in must have phone
                 Customer? finalCustomer = SelectedCustomer;
-                if (finalCustomer == null)
+                if (finalCustomer == null || finalCustomer.FullName == "Walk-in Customer")
                 {
-                    if (string.IsNullOrWhiteSpace(WalkInPhoneInput))
+                    var walkInPhone = ResolveWalkInPhoneInput();
+                    if (string.IsNullOrWhiteSpace(walkInPhone) &&
+                        finalCustomer != null &&
+                        IsValidPkPhone(finalCustomer.PrimaryPhone))
+                    {
+                        walkInPhone = finalCustomer.PrimaryPhone.Trim();
+                    }
+
+                    if (string.IsNullOrWhiteSpace(walkInPhone))
                     {
                         StatusMessage = "✗ Walk-in phone number is required.";
                         OnPropertyChanged(nameof(StatusMessage));
-                        ShowPopupError("Walk-in contact is mandatory.\nPlease enter an 11-digit phone number for this walk-in customer.");
+                        ShowPopupError("Walk-in phone is required.\nPlease enter an 11-digit phone number (e.g. 03001234567) to place this bill.");
                         return;
                     }
-                    
-                    if (!IsWalkInPhoneValid || WalkInPhoneInput.Length != 11)
+
+                    if (!IsValidPkPhone(walkInPhone))
                     {
                         StatusMessage = "✗ Invalid phone format.";
                         OnPropertyChanged(nameof(StatusMessage));
@@ -836,12 +2017,14 @@ namespace GroceryPOS.ViewModels
                         return;
                     }
 
+                    WalkInPhoneInput = walkInPhone;
+
                     // Alert if the phone number belongs to a registered customer (not a walk-in)
-                    var existing = _customerService.GetCustomerByPhone(WalkInPhoneInput);
+                    var existing = _customerService.GetCustomerByPhone(walkInPhone);
                     if (existing != null && existing.FullName != "Walk-in Customer")
                     {
                         var res = MessageBox.Show(
-                            $"The phone number '{WalkInPhoneInput}' is registered to customer '{existing.FullName}'.\n\nDo you want to proceed with this customer?",
+                            $"The phone number '{walkInPhone}' is registered to customer '{existing.FullName}'.\n\nDo you want to proceed with this customer?",
                             "Registered Customer Found",
                             MessageBoxButton.YesNo,
                             MessageBoxImage.Question);
@@ -857,7 +2040,7 @@ namespace GroceryPOS.ViewModels
                     }
                     else
                     {
-                        finalCustomer = _customerService.GetOrCreateWalkIn(WalkInPhoneInput);
+                        finalCustomer = _customerService.GetOrCreateWalkIn(walkInPhone);
                     }
                 }
 
@@ -912,57 +2095,110 @@ namespace GroceryPOS.ViewModels
                     }
                 }
 
+                var onlineMethod = SelectedOnlineMethod
+                    ?? SelectedAccount?.AccountTitle
+                    ?? SelectedAccount?.DisplayName;
+
+                // Capture the tab being completed so async print / UI updates can't switch it away
+                var completedTab = SelectedTab!;
+                var cartSnapshot = completedTab.CartItems.Select(c => new Models.BillDescription
+                {
+                    ItemInternalId = int.TryParse(c.ItemId, out var id) ? id : 0,
+                    ItemId = c.ItemId,
+                    Quantity = c.Quantity,
+                    UnitPrice = c.UnitPrice,
+                    ItemDescription = c.ItemDescription,
+                    ItemName = c.ItemDescription,
+                    NameUrdu = c.NameUrdu,
+                    TypeId = c.TypeId,
+                    TypeName = c.TypeName,
+                    Unit = "piece"
+                }).ToList();
+
                 var sb = _billService.CompleteBill(
-                    _authService.CurrentUser?.Id, 
-                    finalCustomer?.CustomerId, 
-                    SelectedTab!.CartItems.Select(c => new Models.BillDescription { 
-                        ItemInternalId = int.TryParse(c.ItemId, out var id) ? id : 0,
-                        ItemId = c.ItemId, 
-                        Quantity = c.Quantity, 
-                        UnitPrice = c.UnitPrice, 
-                        ItemDescription = c.ItemDescription 
-                    }).ToList(), 
-                    d, 
-                    t, 
-                    cashReceived, 
-                    paidAmount, 
-                    SelectedBillingAddress, 
-                    SelectedPaymentMethod, 
-                    SelectedOnlineMethod,
+                    _authService.CurrentUser?.Id,
+                    finalCustomer?.CustomerId,
+                    cartSnapshot,
+                    d,
+                    t,
+                    cashReceived,
+                    paidAmount,
+                    SelectedBillingAddress,
+                    SelectedPaymentMethod,
+                    onlineMethod,
                     SelectedAccount?.Id);
 
                 // Ensure Customer object is attached for PrintService
                 sb.Customer = finalCustomer;
 
                 await AttemptPrint(sb);
+
+                // Real bill id from DB (may differ from provisional tab preview)
                 StatusMessage = $"✓ Sale Completed: Bill #{sb.InvoiceNumber} | {sb.PaymentStatus}";
                 OnPropertyChanged(nameof(StatusMessage));
                 ShowPopupSuccess(StatusMessage);
-                
-                // Clear walk-in info
-                WalkInPhoneInput = "";
 
-                if (Tabs.Count > 1) CloseTab(SelectedTab); else ClearCart(); 
+                FinishCompletedTab(completedTab);
+                CloseCartBillPreview();
                 RefocusBarcode();
-            } 
-            catch (Exception ex) { StatusMessage = $"✗ Bill failed: {ex.Message}"; OnPropertyChanged(nameof(StatusMessage)); ShowPopupError($"Bill failed: {ex.Message}"); AppLogger.Error("Complete bill failed", ex); } 
+
+                // Instant top-bar + dashboard refresh (Sales / Cash / Online / Credit)
+                LoadDashboardStats();
+                SalesEvents.NotifyChanged();
+            }
+            catch (Exception ex) { StatusMessage = $"✗ Bill failed: {ex.Message}"; OnPropertyChanged(nameof(StatusMessage)); ShowPopupError($"Bill failed: {ex.Message}"); AppLogger.Error("Complete bill failed", ex); }
         }
         private async Task AttemptPrint(Bill b) 
         { 
-            bool isOnline = _printService.IsPrinterOnline();
-
-            if (isOnline)
+            try
             {
-                bool printSuccess = _printService.PrintReceipt(b, _authService.CurrentUser?.FullName ?? "Cashier");
+                // Ensure line items + payment snapshot are present for the receipt
+                var full = _billRepo.GetById(b.BillId) ?? b;
+                if (full.Items == null || full.Items.Count == 0)
+                    full.Items = b.Items;
+                full.Customer ??= b.Customer;
+                full.CashReceived = b.CashReceived > 0 ? b.CashReceived : full.CashReceived;
+                full.ChangeGiven = b.ChangeGiven;
+                full.PaidAmount = b.PaidAmount > 0 ? b.PaidAmount : full.PaidAmount;
+                full.PaymentMethod = string.IsNullOrWhiteSpace(b.PaymentMethod) ? full.PaymentMethod : b.PaymentMethod;
+                full.OnlinePaymentMethod = b.OnlinePaymentMethod ?? full.OnlinePaymentMethod;
+                full.Account = b.Account ?? full.Account;
+                full.BillingAddress = b.BillingAddress ?? full.BillingAddress;
+
+                if (full.Items == null || full.Items.Count == 0)
+                {
+                    AppLogger.Warning($"AttemptPrint: Bill #{full.BillId} has zero items — attaching cart snapshot failed.");
+                }
+
+                // Always attempt print. IsPrinterOnline used to skip printing entirely
+                // after false "offline" / purge failures on BlackCopper.
+                bool printSuccess = _printService.PrintReceipt(full, _authService.CurrentUser?.FullName ?? "Cashier");
                 if (printSuccess)
                 {
-                    _billRepo.UpdatePrintStatus(b.BillId, true, DateTime.Now); 
+                    _billRepo.UpdatePrintStatus(full.BillId, true, DateTime.Now);
+
+                    // Also print gate pass (same sale, no Total / no payment footer)
+                    bool gateOk = _printService.PrintGatePass(full, _authService.CurrentUser?.FullName ?? "Cashier");
+                    if (!gateOk)
+                    {
+                        AppLogger.Warning($"AttemptPrint: Gate pass failed for Bill #{full.BillId}");
+                        ShowPopupError("Bill printed, but the gate pass could not be printed.\nCheck that the printer is ON and connected.");
+                    }
                     return;
                 }
+
+                AppLogger.Warning($"AttemptPrint: PrintReceipt returned false for Bill #{full.BillId}");
+                _billRepo.UpdatePrintStatus(full.BillId, false, null);
+                ShowPopupError("Sale saved, but the bill could not be printed.\nCheck that BlackCopper 80mm is ON and connected.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("AttemptPrint failed", ex);
+                _billRepo.UpdatePrintStatus(b.BillId, false, null);
+                ShowPopupError($"Sale saved, but printing failed:\n{ex.Message}");
             }
 
-            // Printer is offline or print failed. Complete the sale normally without queuing.
-            _billRepo.UpdatePrintStatus(b.BillId, false, null); 
+            await Task.CompletedTask;
         }
         private void ClearCart() 
         { 
@@ -979,6 +2215,7 @@ namespace GroceryPOS.ViewModels
             OnPropertyChanged(nameof(IsOnlinePayment));
             ClearCustomer(); 
             RecalculateTotal(); 
+            CloseCartBillPreview();
             
             // Ensure UI is notified of reset fields
             OnPropertyChanged(nameof(CashReceivedText));
@@ -987,10 +2224,31 @@ namespace GroceryPOS.ViewModels
             
             RefreshInvoiceNumbers(); 
         }
-        private void SearchCustomers() { if (SelectedTab == null) return; SelectedSearchResult = null; if (string.IsNullOrWhiteSpace(CustomerSearchQuery) || CustomerSearchQuery.Length < 1) { SelectedTab.CustomerSearchResults.Clear(); OnPropertyChanged(nameof(CustomerSearchResults)); return; } var results = _customerService.SearchCustomers(CustomerSearchQuery); SelectedTab.CustomerSearchResults.Clear(); foreach (var c in results) SelectedTab.CustomerSearchResults.Add(c); OnPropertyChanged(nameof(CustomerSearchResults)); }
+        private void SearchCustomers()
+        {
+            if (SelectedTab == null) return;
+
+            SelectedSearchResult = null;
+            SelectedTab.CustomerSearchResults.Clear();
+
+            var query = CustomerSearchQuery?.Trim() ?? string.Empty;
+            if (query.Length >= 1)
+            {
+                foreach (var c in _customerService.SearchCustomers(query))
+                    SelectedTab.CustomerSearchResults.Add(c);
+
+                if (SelectedTab.CustomerSearchResults.Count > 0)
+                    SelectedSearchResult = SelectedTab.CustomerSearchResults[0];
+            }
+
+            OnPropertyChanged(nameof(CustomerSearchResults));
+            OnPropertyChanged(nameof(HasCustomerSearchResults));
+            OnPropertyChanged(nameof(IsCustomerDropDownOpen));
+            OnPropertyChanged(nameof(SelectedSearchResult));
+        }
         private void TrySelectWalkInCustomer(string phone)
         {
-            if (string.IsNullOrWhiteSpace(phone) || phone.Length != 11 || !IsWalkInPhoneValid)
+            if (!IsValidPkPhone(phone))
                 return;
 
             if (SelectedCustomer != null && SelectedCustomer.Phone == phone)
@@ -1021,6 +2279,11 @@ namespace GroceryPOS.ViewModels
         {
             var targetCustomer = c ?? SelectedSearchResult;
             if (targetCustomer == null || SelectedTab == null) return;
+
+            // Prefer fresh DB status (reactivated / deactivated since search)
+            var fresh = _customerService.GetCustomerById(targetCustomer.CustomerId);
+            if (fresh != null)
+                targetCustomer = fresh;
             
             SelectedCustomer = targetCustomer;
             SelectedTab.CustomerSearchQuery = "";
@@ -1028,10 +2291,33 @@ namespace GroceryPOS.ViewModels
             SelectedSearchResult = null;
             OnPropertyChanged(nameof(CustomerSearchQuery));
             OnPropertyChanged(nameof(CustomerSearchResults));
+            OnPropertyChanged(nameof(HasCustomerSearchResults));
+            OnPropertyChanged(nameof(IsCustomerDropDownOpen));
+
+            if (IsCustomerInactive)
+            {
+                // Lock billing: clear cart so nothing can be sold for an inactive account
+                foreach (var item in SelectedTab.CartItems)
+                    item.PropertyChanged -= OnCartItemPropertyChanged;
+                SelectedTab.CartItems.Clear();
+                RecalculateTotal();
+                OnPropertyChanged(nameof(CartItems));
+
+                PendingCreditAmount = 0;
+                AvailableAddresses.Clear();
+                SelectedBillingAddress = null;
+                StatusMessage = $"{InactiveCustomerMessageEn} · {InactiveCustomerMessageUr}";
+                OnPropertyChanged(nameof(StatusMessage));
+                ShowPopupError($"{InactiveCustomerMessageEn}\n{InactiveCustomerMessageUr}");
+                (OpenCustomerHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                return;
+            }
+
             LoadCustomerHistory(targetCustomer.CustomerId);
 
             // Load pending credit for warning badge
             PendingCreditAmount = _customerService.GetPendingCredit(targetCustomer.CustomerId);
+            (OpenCustomerHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
             // Populate address selection
             AvailableAddresses.Clear();
@@ -1039,6 +2325,8 @@ namespace GroceryPOS.ViewModels
             if (!string.IsNullOrWhiteSpace(targetCustomer.Address2)) AvailableAddresses.Add(targetCustomer.Address2);
             if (!string.IsNullOrWhiteSpace(targetCustomer.Address3)) AvailableAddresses.Add(targetCustomer.Address3);
             SelectedBillingAddress = AvailableAddresses.FirstOrDefault();
+            StatusMessage = string.Empty;
+            OnPropertyChanged(nameof(StatusMessage));
         }
         private void ClearCustomer() 
         { 
@@ -1086,6 +2374,12 @@ namespace GroceryPOS.ViewModels
             OnPropertyChanged(nameof(IsRegisteredCustomerSelected));
             OnPropertyChanged(nameof(HasSelectedCustomer));
             OnPropertyChanged(nameof(PendingCreditAmount));
+            OnPropertyChanged(nameof(IsCustomerInactive));
+            OnPropertyChanged(nameof(IsBillingLocked));
+            OnPropertyChanged(nameof(MenuOpacity));
+            OnPropertyChanged(nameof(InactiveCustomerBannerVisible));
+            IsCustomerHistoryOpen = false;
+            (OpenCustomerHistoryCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void SaveAddress()
@@ -1111,7 +2405,53 @@ namespace GroceryPOS.ViewModels
                 ShowSystemError("Failed to save address: " + ex.Message);
             }
         }
-        private void LoadCustomerHistory(int id) { if (SelectedTab == null) return; var bills = _billRepo.GetBillsByCustomerId(id); SelectedTab.CustomerBills.Clear(); foreach (var b in bills) SelectedTab.CustomerBills.Add(b); OnPropertyChanged(nameof(CustomerBills)); }
+        private void LoadCustomerHistory(int id)
+        {
+            if (SelectedTab == null) return;
+            var bills = _billRepo.GetBillsByCustomerId(id);
+            SelectedTab.CustomerBills.Clear();
+            foreach (var b in bills)
+                SelectedTab.CustomerBills.Add(b);
+            OnPropertyChanged(nameof(CustomerBills));
+        }
+
+        private void OpenCustomerHistory()
+        {
+            if (!IsRegisteredCustomerSelected || SelectedCustomer == null) return;
+
+            LoadCustomerHistory(SelectedCustomer.CustomerId);
+            PendingCreditAmount = _customerService.GetPendingCredit(SelectedCustomer.CustomerId);
+            IsCustomerHistoryOpen = true;
+        }
+
+        private void SetPreviewHistoryBill(Bill bill)
+        {
+            if (SelectedTab == null) return;
+            var fresh = _billRepo.GetById(bill.BillId) ?? bill;
+            fresh.Customer ??= SelectedCustomer;
+            SelectedTab.PreviewHistoryBill = fresh;
+            OnPropertyChanged(nameof(PreviewHistoryBill));
+        }
+
+        private void ViewCustomerHistoryBill(Bill? bill)
+        {
+            if (bill == null) return;
+            SetPreviewHistoryBill(bill);
+            IsBillDetailOpen = true;
+        }
+
+        private void PayCustomerHistoryBill(Bill? bill)
+        {
+            if (bill == null || bill.RemainingAmount <= 0.01) return;
+            SetPreviewHistoryBill(bill);
+            HistoryPaymentAmount = "";
+            HistoryPaymentNote = "";
+            HistoryPaymentError = "";
+            SelectedHistoryPaymentMethod = "Cash";
+            SelectedHistoryAccount = HistoryActiveAccounts.FirstOrDefault();
+            SelectedHistoryOnlineMethod = null;
+            IsHistoryPaymentOpen = true;
+        }
         private void LoadBillIntoCart(Bill b)
         {
             if (SelectedTab == null) return;
@@ -1122,48 +2462,48 @@ namespace GroceryPOS.ViewModels
                 return;
             }
             bool cartWasEmpty = SelectedTab.CartItems.Count == 0;
-            bool wasCapped = false;
 
             foreach (var it in b.Items)
             {
                 var currentItem = _itemService.GetItemById(it.ItemInternalId);
-                double stock = currentItem?.StockQuantity ?? 0;
-                double currentPrice = currentItem?.SalePrice ?? it.UnitPrice;
-                double finalQty = it.Quantity;
-                if (finalQty > stock) { finalQty = stock; wasCapped = true; }
-                if (finalQty <= 0) continue;
+                double currentPrice = it.UnitPrice;
+                if (it.TypeId.HasValue)
+                {
+                    var type = _itemTypeService.GetById(it.TypeId.Value);
+                    if (type != null) currentPrice = type.Price;
+                }
+                else if (currentItem != null)
+                {
+                    var fallbackType = _itemTypeService.GetActiveByItemId(currentItem.Id)
+                        .OrderBy(t => t.SortOrder)
+                        .FirstOrDefault();
+                    if (fallbackType != null)
+                        currentPrice = fallbackType.Price;
+                }
 
-                // Match strictly by ItemId (barcode) only — never by name or price
-                var existing = SelectedTab.CartItems.FirstOrDefault(c => c.ItemId == it.ItemId);
+                var existing = SelectedTab.CartItems.FirstOrDefault(c => c.ItemId == it.ItemId && c.TypeId == it.TypeId);
                 if (existing != null)
                 {
-                    existing.AvailableStock = stock;
                     existing.UnitPrice = currentPrice;
-                    existing.Quantity += finalQty;
+                    existing.Quantity += it.Quantity;
                     existing.IsCopied = true;
-                    if (existing.Quantity > stock) { existing.Quantity = stock; wasCapped = true; }
                 }
                 else
                 {
-                    var newItem = new CartItem 
+                    SelectedTab.CartItems.Add(new CartItem 
                     { 
                         ItemId = it.ItemId, 
+                        TypeId = it.TypeId,
+                        TypeName = it.TypeName,
+                        Unit = "piece",
                         Barcode = currentItem?.Barcode,
-                        ItemDescription = currentItem?.Description ?? it.ItemDescription, 
+                        ItemDescription = currentItem?.Description ?? it.ItemDescription,
+                        NameUrdu = currentItem?.NameUrdu,
                         UnitPrice = currentPrice, 
-                        Quantity = finalQty,
-                        AvailableStock = stock,
+                        Quantity = it.Quantity,
                         IsCopied = true
-                    };
-                    // PropertyChanged is handled by OnCartItemsCollectionChanged — no manual subscription
-                    SelectedTab.CartItems.Add(newItem);
+                    });
                 }
-            }
-
-            if (wasCapped)
-            {
-                StatusMessage = "⚠ Some items were capped due to current stock levels.";
-                OnPropertyChanged(nameof(StatusMessage));
             }
 
             if (cartWasEmpty)
@@ -1260,6 +2600,7 @@ namespace GroceryPOS.ViewModels
             if (nextIndex >= 0 && nextIndex < CustomerSearchResults.Count)
             {
                 SelectedSearchResult = CustomerSearchResults[nextIndex];
+                OnPropertyChanged(nameof(IsCustomerDropDownOpen));
             }
         }
 
@@ -1300,35 +2641,8 @@ namespace GroceryPOS.ViewModels
 
         private void OnCartItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(CartItem.Quantity))
-            {
-                if (sender is CartItem item)
-                {
-                    if (item.Quantity >= item.AvailableStock)
-                    {
-                        if (item.Quantity > item.AvailableStock)
-                        {
-                            item.Quantity = (int)item.AvailableStock;
-                            ShowSystemError($"⚠ Maximum Available Stock: {item.AvailableStock}");
-                            return; // Wait for the recursive property changed to hit this logic instead
-                        }
-                        StatusMessage = $"⚠ Maximum Available Stock: {item.AvailableStock}";
-                    }
-                    else
-                    {
-                        if (StatusMessage.Contains("Available Stock"))
-                        {
-                            StatusMessage = "";
-                        }
-                    }
-                    OnPropertyChanged(nameof(StatusMessage));
-                }
+            if (e.PropertyName == nameof(CartItem.Quantity) || e.PropertyName == nameof(CartItem.UnitPrice))
                 RecalculateTotal();
-            }
-            else if (e.PropertyName == nameof(CartItem.UnitPrice))
-            {
-                RecalculateTotal();
-            }
         }
 
         private void RecordHistoryPayment()
@@ -1380,6 +2694,9 @@ namespace GroceryPOS.ViewModels
                 StatusMessage = $"✓ Payment of Rs. {amount:N0} recorded for Bill #{updatedBill.InvoiceNumber}";
                 MessageBox.Show(StatusMessage, "Payment Recorded", MessageBoxButton.OK, MessageBoxImage.Information);
                 OnPropertyChanged(nameof(StatusMessage));
+
+                LoadDashboardStats();
+                SalesEvents.NotifyChanged();
             }
             catch (Exception ex)
             {
@@ -1405,6 +2722,6 @@ namespace GroceryPOS.ViewModels
             }
         }
 
-        public override void Dispose() { _timer.Stop(); _stockService.StockChanged -= LoadDashboardStats; base.Dispose(); }
+        public override void Dispose() { _timer.Stop(); base.Dispose(); }
     }
 }

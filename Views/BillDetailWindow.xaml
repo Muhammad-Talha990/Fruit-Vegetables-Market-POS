@@ -1,4 +1,4 @@
-<Window x:Class="GroceryPOS.Views.BillDetailWindow"
+<Window x:Class="FruitVegetableMarketPOS.Views.BillDetailWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Bill Details" Height="620" Width="700"

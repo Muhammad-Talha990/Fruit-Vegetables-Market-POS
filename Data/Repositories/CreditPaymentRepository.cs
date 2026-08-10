@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
-using GroceryPOS.Helpers;
-using GroceryPOS.Models;
+using FruitVegetableMarketPOS.Helpers;
+using FruitVegetableMarketPOS.Models;
 
-namespace GroceryPOS.Data.Repositories
+namespace FruitVegetableMarketPOS.Data.Repositories
 {
     /// <summary>
     /// Data access for CreditPayments — individual payment installments against credit bills.

@@ -1,6 +1,6 @@
 using System;
 
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     /// <summary>
     /// Represents one payment installment against a credit (udhar) bill.

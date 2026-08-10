@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     /// <summary>
     /// Represents a customer in the system.

@@ -2,10 +2,10 @@ using System;
 using System.Runtime.Versioning;
 using System.Windows.Input;
 using Microsoft.Extensions.DependencyInjection;
-using GroceryPOS.Services;
-using GroceryPOS.Views;
+using FruitVegetableMarketPOS.Services;
+using FruitVegetableMarketPOS.Views;
 
-namespace GroceryPOS.ViewModels
+namespace FruitVegetableMarketPOS.ViewModels
 {
     /// <summary>
     /// Main shell ViewModel — handles navigation between views and logout.
@@ -51,7 +51,11 @@ namespace GroceryPOS.ViewModels
         public bool IsSidebarVisible
         {
             get => _isSidebarVisible;
-            set => SetProperty(ref _isSidebarVisible, value);
+            set
+            {
+                if (SetProperty(ref _isSidebarVisible, value))
+                    OnPropertyChanged(nameof(ShowSidebarHoverStrip));
+            }
         }
 
         private string _selectedMenu = "Dashboard";
@@ -65,12 +69,20 @@ namespace GroceryPOS.ViewModels
             }
         }
 
+        /// <summary>True while Billing is the active screen.</summary>
+        public bool IsBillingScreen => string.Equals(_selectedMenu, "Billing", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Thin left-edge strip to reopen the sidebar on Billing.</summary>
+        public bool ShowSidebarHoverStrip => IsBillingScreen && !IsSidebarVisible;
+
         /// <summary>Customer ID to load when navigating to CustomerLedger view.</summary>
         public int PendingLedgerCustomerId { get; set; }
 
         public ICommand NavigateCommand { get; }
         public ICommand LogoutCommand { get; }
         public ICommand ToggleSidebarCommand { get; }
+        public ICommand OpenSidebarCommand { get; }
+        public ICommand CloseSidebarIfBillingCommand { get; }
 
         public MainViewModel(AuthService authService, IServiceProvider serviceProvider)
         {
@@ -84,6 +96,12 @@ namespace GroceryPOS.ViewModels
             NavigateCommand = new RelayCommand(p => NavigateTo(p?.ToString() ?? "Dashboard"));
             LogoutCommand = new RelayCommand(ExecuteLogout);
             ToggleSidebarCommand = new RelayCommand(_ => IsSidebarVisible = !IsSidebarVisible);
+            OpenSidebarCommand = new RelayCommand(_ => IsSidebarVisible = true);
+            CloseSidebarIfBillingCommand = new RelayCommand(_ =>
+            {
+                if (IsBillingScreen)
+                    IsSidebarVisible = false;
+            });
 
             NavigateTo("Dashboard");
         }
@@ -98,28 +116,25 @@ namespace GroceryPOS.ViewModels
 
         private void NavigateTo(string view)
         {
-            // Auto-restore sidebar if navigating away from billing (optional, but user requested "only if we are billing")
-            if (view != "Billing")
-            {
-                IsSidebarVisible = true;
-            }
-
             _selectedMenu = view;
             OnPropertyChanged(nameof(SelectedMenu));
+            OnPropertyChanged(nameof(IsBillingScreen));
+
+            // Billing: collapse sidebar for max POS space. Other screens: keep sidebar open.
+            IsSidebarVisible = !string.Equals(view, "Billing", StringComparison.OrdinalIgnoreCase);
+            OnPropertyChanged(nameof(ShowSidebarHoverStrip));
 
             CurrentView = view switch
             {
-                "Dashboard"    => _serviceProvider.GetRequiredService<DashboardViewModel>(),
+                "Dashboard"    => ActivateDashboard(),
                 "Products"     => ActivateProducts(),
-                "Billing"      => _serviceProvider.GetRequiredService<BillingViewModel>(),
+                "Billing"      => ActivateBilling(),
                 "Reports"      => _serviceProvider.GetRequiredService<ReportsViewModel>(),
-                "SupplierBills"=> _serviceProvider.GetRequiredService<SupplierBillsViewModel>(),
                 "Returns"      => RefreshReturnVM(),
                 "Customers"    => CreateCustomerManagementVM(),
-                "Suppliers"    => _serviceProvider.GetRequiredService<SupplierManagementViewModel>(),
                 "CustomerLedger" => CreateCustomerLedgerVM(PendingLedgerCustomerId),
 
-                _ => _serviceProvider.GetRequiredService<DashboardViewModel>()
+                _ => ActivateDashboard()
             };
         }
 
@@ -134,11 +149,37 @@ namespace GroceryPOS.ViewModels
             return vm;
         }
 
+        private DashboardViewModel ActivateDashboard()
+        {
+            var vm = _serviceProvider.GetRequiredService<DashboardViewModel>();
+            vm.OnActivated();
+            return vm;
+        }
+
         private ProductsViewModel ActivateProducts()
         {
             var vm = _serviceProvider.GetRequiredService<ProductsViewModel>();
             vm.OnActivated();
             return vm;
+        }
+
+        private BillingViewModel ActivateBilling()
+        {
+            var vm = _serviceProvider.GetRequiredService<BillingViewModel>();
+            // Paint Billing UI first, then refresh data on the next dispatcher pass.
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() => vm.OnActivated()));
+            return vm;
+        }
+
+        /// <summary>Warm billing cache after login so the first open feels instant.</summary>
+        public void PrefetchBilling()
+        {
+            var vm = _serviceProvider.GetRequiredService<BillingViewModel>();
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle,
+                new Action(() => vm.Warmup()));
         }
 
         private CustomerLedgerViewModel CreateCustomerLedgerVM(int customerId)

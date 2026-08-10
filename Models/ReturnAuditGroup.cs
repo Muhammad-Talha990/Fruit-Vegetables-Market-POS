@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 
-namespace GroceryPOS.Models
+namespace FruitVegetableMarketPOS.Models
 {
     /// <summary>
     /// Represents a grouped return transaction for the audit view.
@@ -18,7 +18,7 @@ namespace GroceryPOS.Models
     public class BillReturnItemAudit
     {
         public string ItemDescription { get; set; } = string.Empty;
-        public int Quantity { get; set; }
+        public double Quantity { get; set; }
         public double UnitPrice { get; set; }
         public double TotalPrice => Quantity * UnitPrice;
     }
