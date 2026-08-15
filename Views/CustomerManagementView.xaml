@@ -257,8 +257,9 @@
                 Background="#80000000" IsHitTestVisible="True">
             <Border Background="#1B4332" CornerRadius="16" Padding="28,24"
                     VerticalAlignment="Center" HorizontalAlignment="Center"
-                    MinWidth="440" MaxWidth="520"
+                    MinWidth="440" MaxWidth="520" MaxHeight="640"
                     BorderBrush="#334155" BorderThickness="1">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <TextBlock Text="{Binding DialogTitle}" FontSize="20" FontWeight="Bold" Foreground="White" Margin="0,0,0,18"/>
 
@@ -301,6 +302,28 @@
                              Background="#0F172A" Foreground="White" FontSize="14"
                              Padding="10,8" Margin="0,0,0,14"
                              BorderBrush="#334155" BorderThickness="1" CaretBrush="White"/>
+
+                    <!-- Previous paper dues (Add Customer only) -->
+                    <StackPanel Margin="0,0,0,14"
+                                Visibility="{Binding IsAddMode, Converter={StaticResource WpfBoolToVis}}">
+                        <CheckBox Content="Has previous outstanding dues (paper ledger)"
+                                  IsChecked="{Binding HasPreviousDues}"
+                                  Foreground="#E2E8F0" FontSize="13" Margin="0,0,0,8"/>
+                        <StackPanel Visibility="{Binding ShowOpeningBalanceFields, Converter={StaticResource WpfBoolToVis}}">
+                            <TextBlock Text="Previous Dues Amount (Rs.)" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding EditOpeningBalanceAmount, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="#0F172A" Foreground="White" FontSize="14" FontWeight="SemiBold"
+                                     Padding="10,8" Margin="0,0,0,10"
+                                     BorderBrush="#334155" BorderThickness="1" CaretBrush="White"/>
+                            <TextBlock Text="Note (Optional)" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding EditOpeningBalanceNote, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="#0F172A" Foreground="White" FontSize="13"
+                                     Padding="10,8" Margin="0,0,0,4"
+                                     BorderBrush="#334155" BorderThickness="1" CaretBrush="White"/>
+                            <TextBlock Text="Creates one unpaid 'Previous Bills Credit' entry. Cleared later via Pay Dues."
+                                       Foreground="#64748B" FontSize="11" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </StackPanel>
 
                     <!-- Error -->
                     <TextBlock Text="{Binding EditError}" Foreground="#F87171" FontSize="12"
@@ -355,6 +378,7 @@
                         </Button>
                     </StackPanel>
                 </StackPanel>
+                </ScrollViewer>
             </Border>
         </Border>
 

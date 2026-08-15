@@ -202,12 +202,17 @@ namespace FruitVegetableMarketPOS.ViewModels
             RefreshCommand         = new RelayCommand(_ => GenerateReport());
             CloseDayCommand        = new RelayCommand(_ => ExecuteCloseDay(), _ => _authService.IsAdmin && !(DailyClosingPreview?.IsClosed ?? false));
 
+            AppEvents.DataChanged += OnAppDataChanged;
             GenerateReport();
         }
 
         /// <summary>Reload live figures whenever Reports is opened.</summary>
         public void OnActivated() => GenerateReport();
 
+        private void OnAppDataChanged()
+        {
+            AppEvents.InvokeOnUi(GenerateReport);
+        }
         // ── Main Report Generator ──────────────────────────────────────────────
         public void GenerateReport()
         {

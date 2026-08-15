@@ -93,13 +93,14 @@ namespace FruitVegetableMarketPOS.ViewModels
             };
             _clockTimer.Start();
 
-            SalesEvents.SalesChanged += OnSalesChanged;
+            // Single hub — covers sales, returns, credit payments, catalog-driven totals
+            AppEvents.DataChanged += OnSalesChanged;
             LoadData();
         }
 
         private void OnSalesChanged()
         {
-            System.Windows.Application.Current?.Dispatcher.Invoke(LoadData);
+            AppEvents.InvokeOnUi(LoadData);
         }
 
         /// <summary>Called when Dashboard nav is opened — always refresh live totals.</summary>

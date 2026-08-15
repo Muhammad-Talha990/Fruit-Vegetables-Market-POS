@@ -78,6 +78,10 @@ namespace FruitVegetableMarketPOS.Services
                 if (originalBill == null)
                     throw new BusinessException($"Original bill #{originalBillId} not found.");
 
+                if (originalBill.IsOpeningBalance)
+                    throw new BusinessException(
+                        "Opening balance / previous dues bills cannot be returned. Use Pay Dues to clear the balance.");
+
                 using var conn = DatabaseHelper.GetConnection();
                 using var txn = conn.BeginTransaction();
 

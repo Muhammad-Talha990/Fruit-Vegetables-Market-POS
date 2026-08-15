@@ -242,6 +242,39 @@ namespace FruitVegetableMarketPOS.ViewModels
             ProcessReturnCommand = new RelayCommand(async _ => await ProcessReturn());
             ClearFormCommand = new RelayCommand(_ => ClearForm());
             TogglePreviewCommand = new RelayCommand(_ => IsPreviewVisible = !IsPreviewVisible);
+
+            AppEvents.DataChanged += OnAppDataChanged;
+        }
+
+        /// <summary>Refresh open return bill (if any) when sales/payments change elsewhere.</summary>
+        public void OnActivated()
+        {
+            // Keep form as-is when navigating here; only refresh loaded bill totals
+            if (OriginalBill != null && OriginalBill.BillId > 0)
+                _ = ReloadCurrentBillQuietly();
+        }
+
+        private void OnAppDataChanged()
+        {
+            AppEvents.InvokeOnUi(() =>
+            {
+                if (OriginalBill == null || OriginalBill.BillId <= 0) return;
+                _ = ReloadCurrentBillQuietly();
+            });
+        }
+
+        private async Task ReloadCurrentBillQuietly()
+        {
+            try
+            {
+                var id = OriginalBill?.BillId ?? 0;
+                if (id <= 0) return;
+                await LoadBillById(id);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("ReturnViewModel quiet reload failed", ex);
+            }
         }
 
         private async Task SearchBill()

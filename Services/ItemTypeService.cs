@@ -41,6 +41,12 @@ namespace FruitVegetableMarketPOS.Services
         /// Replaces active types with Type 1…N / قسم 1…N at the given prices (max 10).
         /// </summary>
         public void ReplaceWithNumberedTypes(int itemId, IReadOnlyList<double> prices)
+            => ReplaceWithNumberedTypes(itemId, prices, notes: null);
+
+        /// <summary>
+        /// Replaces active types with Type 1…N at the given prices/notes (max 10).
+        /// </summary>
+        public void ReplaceWithNumberedTypes(int itemId, IReadOnlyList<double> prices, IReadOnlyList<string?>? notes)
         {
             if (prices == null || prices.Count == 0)
                 throw new System.ArgumentException("At least one type price is required.");
@@ -54,11 +60,16 @@ namespace FruitVegetableMarketPOS.Services
                 if (prices[i] < 0)
                     throw new System.ArgumentException($"Type {i + 1} price cannot be negative.");
 
+                string? note = null;
+                if (notes != null && i < notes.Count && !string.IsNullOrWhiteSpace(notes[i]))
+                    note = notes[i]!.Trim();
+
                 _repo.Add(new ItemType
                 {
                     ItemId = itemId,
                     TypeName = FormatTypeName(i + 1),
                     Price = prices[i],
+                    Note = note,
                     SortOrder = i + 1,
                     IsActive = true
                 });

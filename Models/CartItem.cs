@@ -50,13 +50,13 @@ namespace FruitVegetableMarketPOS.Models
         }
 
         private double _quantity = 1;
-        /// <summary>Piece quantity in cart (unit price × qty).</summary>
+        /// <summary>Quantity in cart (supports decimals, e.g. 0.5 / 1.25).</summary>
         public double Quantity
         {
             get => _quantity;
             set
             {
-                var next = value < 1 ? 1 : Math.Round(value, 3);
+                var next = value <= 0 ? 0.001 : Math.Round(value, 3);
                 if (Math.Abs(_quantity - next) < 0.0001) return;
                 _quantity = next;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Quantity)));

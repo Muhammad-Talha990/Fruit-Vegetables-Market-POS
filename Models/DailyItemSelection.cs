@@ -15,6 +15,9 @@ namespace FruitVegetableMarketPOS.Models
         /// <summary>False = deactivated for today (still shown faded on the grid).</summary>
         public bool IsAvailable { get; set; } = true;
 
+        /// <summary>Optional cashier note for today (stored on DailyMenu_* row).</summary>
+        public string? Note { get; set; }
+
         /// <summary>Joined from Items — not stored on DailyItemSelection.</summary>
         public string? ItemDescription { get; set; }
 

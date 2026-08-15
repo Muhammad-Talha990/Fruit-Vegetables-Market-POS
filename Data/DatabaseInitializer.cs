@@ -14,7 +14,7 @@ namespace FruitVegetableMarketPOS.Data
     ///   2.  Categories          – Product categories (lookup, with display order + icon)
     ///   3.  Items               – Product catalog (PK = ItemId, Barcode optional + unique)
     ///   4.  ItemTypes           – Price/type variants per item (Type 1, Type 2, …)
-    ///   5.  DailyItemSelection  – Today's menu (BusinessDate + ItemId); Type/Sale via DailyItemSet view
+    ///   5.  DailyMenu_yyyyMMdd  – Per-day POS menu tables + DailyMenuRegistry
     ///   6.  DailyClosing        – End-of-day sales summary per business date
     ///   7.  Customers           – Registered customers with soft-delete, mandatory 11-digit phone
     ///   8.  Bills               – Sale headers (IMMUTABLE once saved)
@@ -35,7 +35,7 @@ namespace FruitVegetableMarketPOS.Data
     public static class DatabaseInitializer
     {
         // Schema version — increment when adding migrations
-        private const int CurrentSchemaVersion = 30;
+        private const int CurrentSchemaVersion = 34;
         private const int MarketCatalogVersion = 28;
 
         /// <summary>
@@ -88,6 +88,7 @@ namespace FruitVegetableMarketPOS.Data
                     SeedUsers(conn);
                     RepairDefaultUserPasswords(conn);
                     SeedAccounts(conn);
+                    SeedOpeningBalanceItem(conn);
                     // Commented out to prevent test data from shipping to clients
                     // SeedCategories(conn);
                     // SeedItems(conn);
@@ -204,6 +205,7 @@ namespace FruitVegetableMarketPOS.Data
                     BillPaymentMethod   TEXT    NOT NULL DEFAULT 'Cash',
                     OnlinePaymentMethod TEXT,
                     InitialPayment      REAL    DEFAULT 0,
+                    IsOpeningBalance    INTEGER NOT NULL DEFAULT 0,
                     IsPrinted           INTEGER DEFAULT 0,
                     PrintedAt           DATETIME,
                     CreatedAt           DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1171,6 +1173,39 @@ namespace FruitVegetableMarketPOS.Data
                 AppLogger.Info("Migration v30: DailyItemSelection catalog menu only; DailyItemSet view for Type/Sale.");
             }
 
+            // Migration v30 → v31: one DailyMenu_yyyyMMdd table per business date + registry.
+            if (currentVersion < 31)
+            {
+                MigrateDailyMenuToPerDayTables(conn);
+                SetSchemaVersion(conn, 31);
+                AppLogger.Info("Migration v31: Per-day DailyMenu_yyyyMMdd tables + DailyMenuRegistry.");
+            }
+
+            // Migration v31 → v32: opening-balance bills + system catalog item for previous dues.
+            if (currentVersion < 32)
+            {
+                AddColumnIfNotExists(conn, "Bills", "IsOpeningBalance", "INTEGER NOT NULL DEFAULT 0");
+                SeedOpeningBalanceItem(conn);
+                SetSchemaVersion(conn, 32);
+                AppLogger.Info("Migration v32: Added Bills.IsOpeningBalance and seeded Previous Bills Credit item.");
+            }
+
+            // Migration v32 → v33: optional Note on per-day DailyMenu_* tables.
+            if (currentVersion < 33)
+            {
+                DailyMenuTableHelper.EnsureNoteColumnOnAllRegisteredTables(conn);
+                SetSchemaVersion(conn, 33);
+                AppLogger.Info("Migration v33: Added Note column to DailyMenu_* day tables.");
+            }
+
+            // Migration v33 → v34: optional Note per ItemType (type/price variant).
+            if (currentVersion < 34)
+            {
+                AddColumnIfNotExists(conn, "ItemTypes", "Note", "TEXT");
+                SetSchemaVersion(conn, 34);
+                AppLogger.Info("Migration v34: Added Note column to ItemTypes.");
+            }
+
             AppLogger.Info($"Database migrated successfully to v{CurrentSchemaVersion}.");
         }
 
@@ -2073,6 +2108,32 @@ namespace FruitVegetableMarketPOS.Data
             AddColumnIfNotExists(conn, "Bills", "OnlinePaymentMethod", "TEXT");
             AddColumnIfNotExists(conn, "Bills", "InitialPayment", "REAL DEFAULT 0");
             AddColumnIfNotExists(conn, "Bills", "AccountId", "INTEGER");
+            AddColumnIfNotExists(conn, "Bills", "IsOpeningBalance", "INTEGER NOT NULL DEFAULT 0");
+        }
+
+        /// <summary>
+        /// Ensures the inactive system catalog item used for opening-balance / previous-dues bills exists.
+        /// Hidden from POS (IsActive = 0); never added to daily menu.
+        /// </summary>
+        private static void SeedOpeningBalanceItem(SqliteConnection conn)
+        {
+            if (!TableExists(conn, "Items")) return;
+
+            using var check = conn.CreateCommand();
+            check.CommandText = "SELECT COUNT(1) FROM Items WHERE Barcode = @barcode;";
+            check.Parameters.AddWithValue("@barcode", Helpers.OpeningBalanceConstants.ItemBarcode);
+            var exists = Convert.ToInt32(check.ExecuteScalar()) > 0;
+            if (exists) return;
+
+            using var insert = conn.CreateCommand();
+            insert.CommandText = @"
+                INSERT INTO Items (Barcode, Description, NameUrdu, CategoryId, IsActive, UpdatedAt, CreatedAt)
+                VALUES (@barcode, @desc, @urdu, NULL, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);";
+            insert.Parameters.AddWithValue("@barcode", Helpers.OpeningBalanceConstants.ItemBarcode);
+            insert.Parameters.AddWithValue("@desc", Helpers.OpeningBalanceConstants.ItemDescription);
+            insert.Parameters.AddWithValue("@urdu", Helpers.OpeningBalanceConstants.ItemNameUrdu);
+            insert.ExecuteNonQuery();
+            AppLogger.Info("Seeded system item: Previous Bills Credit (SYS-OPENING-BALANCE).");
         }
 
         /// <summary>
@@ -2212,17 +2273,19 @@ namespace FruitVegetableMarketPOS.Data
                     ItemId    INTEGER NOT NULL,
                     TypeName  TEXT    NOT NULL,
                     Price     REAL    NOT NULL CHECK(Price >= 0),
+                    Note      TEXT,
                     SortOrder INTEGER NOT NULL DEFAULT 1,
                     IsActive  INTEGER NOT NULL DEFAULT 1,
                     CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (ItemId) REFERENCES Items(ItemId) ON DELETE CASCADE
                 );
             ");
+            AddColumnIfNotExists(conn, "ItemTypes", "Note", "TEXT");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ItemTypes_ItemId ON ItemTypes(ItemId);");
             Execute(conn, "CREATE INDEX IF NOT EXISTS IX_ItemTypes_ItemActive ON ItemTypes(ItemId, IsActive, SortOrder);");
 
-            // DailyItemSelection — today's menu only (BusinessDate + ItemId + IsAvailable)
-            EnsureDailyItemSelectionV30(conn);
+            // Daily menu — one table per business date (DailyMenu_yyyyMMdd) + registry
+            EnsureDailyMenuPerDaySchema(conn);
 
             // DailyClosing
             Execute(conn, @"
@@ -2250,6 +2313,85 @@ namespace FruitVegetableMarketPOS.Data
 
             BackfillDefaultItemTypes(conn);
             SeedFruitVegCategories(conn);
+        }
+
+        /// <summary>
+        /// Ensures DailyMenuRegistry exists. Day tables are created on Continue/Refresh/Add.
+        /// </summary>
+        private static void EnsureDailyMenuPerDaySchema(SqliteConnection conn)
+        {
+            DailyMenuTableHelper.EnsureRegistry(conn);
+            // Drop obsolete view that pointed at the monolithic DailyItemSelection table
+            Execute(conn, "DROP VIEW IF EXISTS DailyItemSet;");
+        }
+
+        /// <summary>
+        /// Splits legacy DailyItemSelection into DailyMenu_yyyyMMdd tables + registry.
+        /// </summary>
+        private static void MigrateDailyMenuToPerDayTables(SqliteConnection conn)
+        {
+            DailyMenuTableHelper.EnsureRegistry(conn);
+            Execute(conn, "DROP VIEW IF EXISTS DailyItemSet;");
+
+            if (!TableExists(conn, "DailyItemSelection"))
+            {
+                AppLogger.Info("Migration v31: no legacy DailyItemSelection — registry ready.");
+                return;
+            }
+
+            var dates = new List<string>();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = @"
+                    SELECT DISTINCT BusinessDate
+                    FROM DailyItemSelection
+                    WHERE BusinessDate IS NOT NULL AND TRIM(BusinessDate) != ''
+                    ORDER BY BusinessDate;";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                    dates.Add(reader.GetString(0));
+            }
+
+            int migratedDays = 0;
+            int migratedRows = 0;
+
+            foreach (var date in dates)
+            {
+                string table;
+                try
+                {
+                    table = DailyMenuTableHelper.EnsureDayTable(conn, date);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Warning($"Migration v31: skip invalid date '{date}'", ex);
+                    continue;
+                }
+
+                using (var copy = conn.CreateCommand())
+                {
+                    copy.CommandText = $@"
+                        INSERT OR IGNORE INTO [{table}] (ItemId, IsAvailable)
+                        SELECT ItemId, COALESCE(IsAvailable, 1)
+                        FROM DailyItemSelection
+                        WHERE BusinessDate = @date
+                        GROUP BY ItemId;";
+                    copy.Parameters.AddWithValue("@date", date);
+                    migratedRows += copy.ExecuteNonQuery();
+                }
+
+                migratedDays++;
+            }
+
+            // Keep a backup, stop using the fat table
+            if (TableExists(conn, "DailyItemSelection_Legacy"))
+                Execute(conn, "DROP TABLE DailyItemSelection_Legacy;");
+
+            Execute(conn, "ALTER TABLE DailyItemSelection RENAME TO DailyItemSelection_Legacy;");
+
+            AppLogger.Info(
+                $"Migration v31: moved {migratedRows} row(s) across {migratedDays} day table(s); " +
+                "legacy renamed to DailyItemSelection_Legacy.");
         }
 
         /// <summary>
@@ -2347,13 +2489,12 @@ namespace FruitVegetableMarketPOS.Data
             // Free numeric barcodes so new POS codes 1..N can be assigned cleanly.
             Execute(conn, "UPDATE Items SET IsActive = 0, Barcode = NULL;");
 
-            if (TableExists(conn, "DailyItemSelection"))
+            if (DailyMenuTableHelper.DayTableExists(conn, today) ||
+                DailyMenuTableHelper.IsRegistered(conn, today))
             {
+                var todayTable = DailyMenuTableHelper.EnsureDayTable(conn, today);
                 using var hideCmd = conn.CreateCommand();
-                hideCmd.CommandText = @"
-                    DELETE FROM DailyItemSelection
-                    WHERE BusinessDate = @today;";
-                hideCmd.Parameters.AddWithValue("@today", today);
+                hideCmd.CommandText = $"DELETE FROM [{todayTable}];";
                 hideCmd.ExecuteNonQuery();
             }
 
@@ -2491,13 +2632,12 @@ namespace FruitVegetableMarketPOS.Data
                     typeCmd.ExecuteNonQuery();
                 }
 
-                if (TableExists(conn, "DailyItemSelection"))
+                var todayTable = DailyMenuTableHelper.EnsureDayTable(conn, today);
+                using (var selCmd = conn.CreateCommand())
                 {
-                    using var selCmd = conn.CreateCommand();
-                    selCmd.CommandText = @"
-                        INSERT OR IGNORE INTO DailyItemSelection (BusinessDate, ItemId, IsAvailable)
-                        VALUES (@date, @itemId, 1);";
-                    selCmd.Parameters.AddWithValue("@date", today);
+                    selCmd.CommandText = $@"
+                        INSERT OR IGNORE INTO [{todayTable}] (ItemId, IsAvailable)
+                        VALUES (@itemId, 1);";
                     selCmd.Parameters.AddWithValue("@itemId", itemId);
                     selCmd.ExecuteNonQuery();
                 }
@@ -2695,16 +2835,8 @@ namespace FruitVegetableMarketPOS.Data
                         );");
                 }
 
-                if (TableExists(conn, "DailyItemSelection"))
-                {
-                    Execute(conn, @"
-                        DELETE FROM DailyItemSelection
-                        WHERE ItemId IN (
-                            SELECT i.ItemId FROM Items i
-                            WHERE i.IsActive = 0
-                              AND i.ItemId NOT IN (SELECT DISTINCT ItemId FROM BillItems)
-                        );");
-                }
+                // Inactive catalog items are filtered out by JOIN IsActive=1 on day tables.
+                // No need to purge every DailyMenu_* table here.
 
                 using var delCmd = conn.CreateCommand();
                 delCmd.CommandText = @"

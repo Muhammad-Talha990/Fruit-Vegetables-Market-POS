@@ -3,12 +3,12 @@ using System.Runtime.CompilerServices;
 
 namespace FruitVegetableMarketPOS.Models
 {
-    /// <summary>One price row when adding an item to today's list (Type N / قسم N).</summary>
+    /// <summary>One price row when adding an item to today's list (type 1…10).</summary>
     public class DailyTypePriceRow : INotifyPropertyChanged
     {
         public int Index { get; set; }
 
-        public string Label => $"Type {Index} · قسم {Index}";
+        public string Label => Index.ToString();
 
         private string _priceText = string.Empty;
         public string PriceText
@@ -18,6 +18,19 @@ namespace FruitVegetableMarketPOS.Models
             {
                 if (_priceText == value) return;
                 _priceText = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private string _noteText = string.Empty;
+        /// <summary>Optional note for this type (saved on ItemTypes.Note).</summary>
+        public string NoteText
+        {
+            get => _noteText;
+            set
+            {
+                if (_noteText == value) return;
+                _noteText = value;
                 OnPropertyChanged();
             }
         }

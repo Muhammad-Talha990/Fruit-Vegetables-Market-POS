@@ -60,8 +60,26 @@ namespace FruitVegetableMarketPOS.Data
                     Execute(conn, "DELETE FROM CustomerLedger;");
                     if (TableExists(conn, "DailyClosing"))
                         Execute(conn, "DELETE FROM DailyClosing;");
+
+                    // Clear per-day menu tables + registry
+                    if (TableExists(conn, "DailyMenuRegistry"))
+                    {
+                        foreach (var date in DailyMenuTableHelper.GetAllRegisteredDates(conn))
+                        {
+                            try
+                            {
+                                var table = DailyMenuTableHelper.ToTableName(date);
+                                Execute(conn, $"DELETE FROM [{table}];");
+                            }
+                            catch { /* ignore missing */ }
+                        }
+                        Execute(conn, "DELETE FROM DailyMenuRegistry;");
+                    }
+
                     if (TableExists(conn, "DailyItemSelection"))
                         Execute(conn, "DELETE FROM DailyItemSelection;");
+                    if (TableExists(conn, "DailyItemSelection_Legacy"))
+                        Execute(conn, "DELETE FROM DailyItemSelection_Legacy;");
 
                     // Optionally reset AUTOINCREMENT sequences
                     if (resetAutoIncrement)

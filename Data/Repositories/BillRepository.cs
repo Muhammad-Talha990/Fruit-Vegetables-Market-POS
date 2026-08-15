@@ -56,8 +56,8 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             using var billCmd = conn.CreateCommand();
             billCmd.Transaction = txn;
             billCmd.CommandText = @"
-                INSERT INTO Bills (CustomerId, UserId, TaxAmount, DiscountAmount, Status, BillPaymentMethod, OnlinePaymentMethod, AccountId, InitialPayment, CreatedAt)
-                VALUES (@cid, @uid, @tax, @disc, @status, @billPayMethod, @onlinePayMethod, @accountId, @initialPay, @createdAt);
+                INSERT INTO Bills (CustomerId, UserId, TaxAmount, DiscountAmount, Status, BillPaymentMethod, OnlinePaymentMethod, AccountId, InitialPayment, IsOpeningBalance, CreatedAt)
+                VALUES (@cid, @uid, @tax, @disc, @status, @billPayMethod, @onlinePayMethod, @accountId, @initialPay, @isOpening, @createdAt);
                 SELECT last_insert_rowid();
             ";
             billCmd.Parameters.AddWithValue("@cid", bill.CustomerId.HasValue ? (object)bill.CustomerId.Value : DBNull.Value);
@@ -69,6 +69,7 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             billCmd.Parameters.AddWithValue("@onlinePayMethod", string.IsNullOrEmpty(bill.OnlinePaymentMethod) ? (object)DBNull.Value : bill.OnlinePaymentMethod);
             billCmd.Parameters.AddWithValue("@accountId", bill.AccountId.HasValue ? (object)bill.AccountId.Value : DBNull.Value);
             billCmd.Parameters.AddWithValue("@initialPay", bill.InitialPayment);
+            billCmd.Parameters.AddWithValue("@isOpening", bill.IsOpeningBalance ? 1 : 0);
             billCmd.Parameters.AddWithValue("@createdAt", bill.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"));
 
             bill.BillId = Convert.ToInt32(billCmd.ExecuteScalar());
@@ -107,12 +108,18 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             // ── Step 3: Record Customer Ledger Entries ──
             if (bill.CustomerId.HasValue)
             {
+                string saleNote = bill.IsOpeningBalance
+                    ? (string.IsNullOrWhiteSpace(bill.OpeningBalanceNote)
+                        ? "Opening Balance / Previous Bills Credit"
+                        : $"Opening Balance — {bill.OpeningBalanceNote.Trim()}")
+                    : $"Invoice #{bill.InvoiceNumber}";
+
                 // A. Record the SALE (Liability Created)
                 _ledgerRepo.AppendSaleEntry(
                     bill.CustomerId.Value,
                     bill.BillId,
                     bill.GrandTotal,
-                    $"Invoice #{bill.InvoiceNumber}",
+                    saleNote,
                     bill.CreatedAt,
                     conn,
                     txn);
@@ -243,7 +250,8 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                 LEFT JOIN Users u ON b.UserId = u.Id
                 LEFT JOIN Customers c ON b.CustomerId = c.CustomerId
                 LEFT JOIN Accounts a ON b.AccountId = a.Id
-                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to 
+                WHERE b.CreatedAt >= @from AND b.CreatedAt < @to
+                  AND COALESCE(b.IsOpeningBalance, 0) = 0
                 ORDER BY b.CreatedAt DESC;";
             cmd.Parameters.AddWithValue("@from", from.ToString("yyyy-MM-dd HH:mm:ss"));
             cmd.Parameters.AddWithValue("@to", to.ToString("yyyy-MM-dd HH:mm:ss"));
@@ -283,7 +291,8 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                 ), 0)
                 FROM Bills b
                 WHERE date(b.CreatedAt) = @today
-                  AND b.Status != 'Cancelled';";
+                  AND b.Status != 'Cancelled'
+                  AND COALESCE(b.IsOpeningBalance, 0) = 0;";
             cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
@@ -326,7 +335,8 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                     END
                 ), 0)
                 FROM Bills b
-                WHERE date(b.CreatedAt) = @today AND b.Status != 'Cancelled';";
+                WHERE date(b.CreatedAt) = @today AND b.Status != 'Cancelled'
+                  AND COALESCE(b.IsOpeningBalance, 0) = 0;";
             cmd.Parameters.AddWithValue("@today", todayStr);
             return Math.Round(Convert.ToDouble(cmd.ExecuteScalar()), 2);
         }
@@ -342,7 +352,8 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                 FROM Bills
                 WHERE date(CreatedAt) = @today
                   AND Status != 'Cancelled'
-                  AND BillPaymentMethod = 'Cash';";
+                  AND BillPaymentMethod = 'Cash'
+                  AND COALESCE(IsOpeningBalance, 0) = 0;";
             cmd.Parameters.AddWithValue("@today", todayStr);
             return Convert.ToDouble(cmd.ExecuteScalar());
         }
@@ -472,7 +483,8 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                      FROM Bills
                      WHERE date(CreatedAt) = @today
                        AND BillPaymentMethod = 'Cash'
-                       AND Status != 'Cancelled')
+                       AND Status != 'Cancelled'
+                       AND COALESCE(IsOpeningBalance, 0) = 0)
                     +
                     -- Subsequent cash payments collected today (credit recovery etc.)
                     (SELECT COALESCE(SUM(p.Amount), 0)
@@ -503,7 +515,8 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                      FROM Bills 
                      WHERE date(CreatedAt) = @today 
                        AND BillPaymentMethod = 'Online' 
-                       AND Status != 'Cancelled')
+                       AND Status != 'Cancelled'
+                       AND COALESCE(IsOpeningBalance, 0) = 0)
                     +
                     (SELECT COALESCE(SUM(
                         CASE WHEN p.Type = 'payment' THEN p.Amount
@@ -612,7 +625,8 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             cmd.CommandText = @"
                 SELECT COUNT(*) FROM Bills
                 WHERE date(CreatedAt) = @date
-                  AND Status != 'Cancelled';";
+                  AND Status != 'Cancelled'
+                  AND COALESCE(IsOpeningBalance, 0) = 0;";
             cmd.Parameters.AddWithValue("@date", businessDate);
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
@@ -624,18 +638,18 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 SELECT
-                    (SELECT COUNT(*) FROM Bills WHERE date(CreatedAt) = @date AND Status != 'Cancelled') AS TotalBills,
+                    (SELECT COUNT(*) FROM Bills WHERE date(CreatedAt) = @date AND Status != 'Cancelled' AND COALESCE(IsOpeningBalance, 0) = 0) AS TotalBills,
                     (SELECT COALESCE(SUM(
                         COALESCE((SELECT SUM((bi.Quantity * bi.UnitPrice) - COALESCE(bi.DiscountAmount, 0))
                                   FROM BillItems bi WHERE bi.BillId = b.BillId), 0)
                         + COALESCE(b.TaxAmount, 0) - COALESCE(b.DiscountAmount, 0)
-                    ), 0) FROM Bills b WHERE date(b.CreatedAt) = @date AND b.Status != 'Cancelled') AS TotalSales,
+                    ), 0) FROM Bills b WHERE date(b.CreatedAt) = @date AND b.Status != 'Cancelled' AND COALESCE(b.IsOpeningBalance, 0) = 0) AS TotalSales,
                     (SELECT COALESCE(SUM(InitialPayment), 0) FROM Bills
-                     WHERE date(CreatedAt) = @date AND Status != 'Cancelled' AND BillPaymentMethod = 'Cash') AS CashSales,
+                     WHERE date(CreatedAt) = @date AND Status != 'Cancelled' AND BillPaymentMethod = 'Cash' AND COALESCE(IsOpeningBalance, 0) = 0) AS CashSales,
                     (SELECT COALESCE(SUM(InitialPayment), 0) FROM Bills
-                     WHERE date(CreatedAt) = @date AND Status != 'Cancelled' AND BillPaymentMethod = 'Card') AS CardSales,
+                     WHERE date(CreatedAt) = @date AND Status != 'Cancelled' AND BillPaymentMethod = 'Card' AND COALESCE(IsOpeningBalance, 0) = 0) AS CardSales,
                     (SELECT COALESCE(SUM(InitialPayment), 0) FROM Bills
-                     WHERE date(CreatedAt) = @date AND Status != 'Cancelled' AND BillPaymentMethod = 'Online') AS OnlineSales,
+                     WHERE date(CreatedAt) = @date AND Status != 'Cancelled' AND BillPaymentMethod = 'Online' AND COALESCE(IsOpeningBalance, 0) = 0) AS OnlineSales,
                     (SELECT COALESCE(SUM(
                         CASE WHEN (
                             (SELECT COALESCE(SUM(bi.Quantity * bi.UnitPrice), 0) FROM BillItems bi WHERE bi.BillId = b.BillId)
@@ -646,7 +660,7 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                             + COALESCE(b.TaxAmount, 0) - COALESCE(b.DiscountAmount, 0)
                             - COALESCE(b.InitialPayment, 0)
                         ) ELSE 0 END
-                    ), 0) FROM Bills b WHERE date(b.CreatedAt) = @date AND b.Status != 'Cancelled') AS CreditSales,
+                    ), 0) FROM Bills b WHERE date(b.CreatedAt) = @date AND b.Status != 'Cancelled' AND COALESCE(b.IsOpeningBalance, 0) = 0) AS CreditSales,
                     (SELECT COALESCE(SUM(p.Amount), 0) FROM bill_payment p
                      JOIN Bills b ON b.BillId = p.BillId
                      WHERE date(p.CreatedAt) = @date AND p.Type = 'payment'
@@ -1094,7 +1108,10 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                         ? reader.GetString(reader.GetOrdinal("PaymentMethod"))
                         : "Cash",
                 OnlinePaymentMethod = reader.HasColumn("OnlinePaymentMethod") && !reader.IsDBNull(reader.GetOrdinal("OnlinePaymentMethod")) ? reader.GetString(reader.GetOrdinal("OnlinePaymentMethod")) : null,
-                AccountId      = reader.HasColumn("AccountId") && !reader.IsDBNull(reader.GetOrdinal("AccountId")) ? (int?)reader.GetInt32(reader.GetOrdinal("AccountId")) : null
+                AccountId      = reader.HasColumn("AccountId") && !reader.IsDBNull(reader.GetOrdinal("AccountId")) ? (int?)reader.GetInt32(reader.GetOrdinal("AccountId")) : null,
+                IsOpeningBalance = reader.HasColumn("IsOpeningBalance")
+                    && !reader.IsDBNull(reader.GetOrdinal("IsOpeningBalance"))
+                    && reader.GetInt32(reader.GetOrdinal("IsOpeningBalance")) != 0
             };
 
             // Calculated aggregates (if present in query)

@@ -38,29 +38,38 @@ namespace FruitVegetableMarketPOS.Helpers
         [DllImport("winspool.Drv", EntryPoint = "WritePrinter", SetLastError = true)]
         private static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
 
-        public static bool SendBytesToPrinter(string printerName, byte[] bytes)
+        public static bool SendBytesToPrinter(string printerName, byte[] bytes, string? docName = null)
         {
             if (string.IsNullOrWhiteSpace(printerName) || bytes == null || bytes.Length == 0)
                 return false;
 
             if (!OpenPrinter(printerName.Trim(), out IntPtr hPrinter, IntPtr.Zero))
+            {
+                AppLogger.Warning($"RawPrinter OpenPrinter failed for '{printerName}' (Win32={Marshal.GetLastWin32Error()})");
                 return false;
+            }
 
             try
             {
                 var di = new DOCINFOA
                 {
-                    pDocName = "FruitVegetableMarketPOS Receipt",
+                    pDocName = string.IsNullOrWhiteSpace(docName) ? "PMC POS Receipt" : docName,
                     pDataType = "RAW"
                 };
 
                 if (!StartDocPrinter(hPrinter, 1, di))
+                {
+                    AppLogger.Warning($"RawPrinter StartDocPrinter failed for '{printerName}' (Win32={Marshal.GetLastWin32Error()})");
                     return false;
+                }
 
                 try
                 {
                     if (!StartPagePrinter(hPrinter))
+                    {
+                        AppLogger.Warning($"RawPrinter StartPagePrinter failed (Win32={Marshal.GetLastWin32Error()})");
                         return false;
+                    }
 
                     try
                     {
@@ -69,7 +78,10 @@ namespace FruitVegetableMarketPOS.Helpers
                         {
                             Marshal.Copy(bytes, 0, pUnmanaged, bytes.Length);
                             if (!WritePrinter(hPrinter, pUnmanaged, bytes.Length, out int written))
+                            {
+                                AppLogger.Warning($"RawPrinter WritePrinter failed (Win32={Marshal.GetLastWin32Error()})");
                                 return false;
+                            }
                             return written == bytes.Length;
                         }
                         finally
@@ -91,6 +103,22 @@ namespace FruitVegetableMarketPOS.Helpers
             {
                 ClosePrinter(hPrinter);
             }
+        }
+
+        /// <summary>Send with short retries — thermal USB printers often reject a second job that starts too soon.</summary>
+        public static bool SendBytesToPrinterWithRetry(string printerName, byte[] bytes, string docName, int attempts = 3, int delayMs = 450)
+        {
+            for (int i = 1; i <= attempts; i++)
+            {
+                if (i > 1)
+                    System.Threading.Thread.Sleep(delayMs);
+
+                if (SendBytesToPrinter(printerName, bytes, docName))
+                    return true;
+
+                AppLogger.Warning($"RawPrinter attempt {i}/{attempts} failed for '{docName}' on '{printerName}'");
+            }
+            return false;
         }
     }
 }

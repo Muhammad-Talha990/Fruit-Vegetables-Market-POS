@@ -148,13 +148,22 @@ namespace FruitVegetableMarketPOS.ViewModels
         private CustomerManagementViewModel CreateCustomerManagementVM()
         {
             var vm = _serviceProvider.GetRequiredService<CustomerManagementViewModel>();
-            vm.ViewLedgerRequested += customerId =>
+            // Wire once — ViewModels are singletons
+            if (!_customersLedgerWired)
             {
-                PendingLedgerCustomerId = customerId;
-                NavigateTo("CustomerLedger");
-            };
+                vm.ViewLedgerRequested += customerId =>
+                {
+                    PendingLedgerCustomerId = customerId;
+                    NavigateTo("CustomerLedger");
+                };
+                _customersLedgerWired = true;
+            }
+            vm.OnActivated();
             return vm;
         }
+
+        private bool _customersLedgerWired;
+        private bool _ledgerBackWired;
 
         private DashboardViewModel ActivateDashboard()
         {
@@ -192,15 +201,22 @@ namespace FruitVegetableMarketPOS.ViewModels
         private CustomerLedgerViewModel CreateCustomerLedgerVM(int customerId)
         {
             var vm = _serviceProvider.GetRequiredService<CustomerLedgerViewModel>();
-            vm.GoBackRequested += () => NavigateTo("Customers");
-            if (customerId > 0) vm.Load(customerId);
+            if (!_ledgerBackWired)
+            {
+                vm.GoBackRequested += () => NavigateTo("Customers");
+                _ledgerBackWired = true;
+            }
+            if (customerId > 0)
+                vm.Load(customerId);
+            else
+                vm.OnActivated();
             return vm;
         }
 
         private ReturnViewModel RefreshReturnVM()
         {
             var vm = _serviceProvider.GetRequiredService<ReturnViewModel>();
-            vm.ClearForm();
+            vm.OnActivated();
             return vm;
         }
 

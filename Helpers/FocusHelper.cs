@@ -208,18 +208,17 @@ namespace FruitVegetableMarketPOS.Helpers
             // Allow digits
             if (e.Text.All(char.IsDigit)) return;
 
-            // Get current decimal separator
-            string separator = System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
-
-            // Allow a single decimal point
-            if (e.Text == separator)
+            // Allow culture decimal separator and '.' (common on POS keyboards)
+            string cultureSep = System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+            bool isSep = e.Text == cultureSep || e.Text == "." || e.Text == ",";
+            if (isSep)
             {
-                // If there's no dot already, or the current selection includes the dot (meaning it's being replaced)
-                if (!textBox.Text.Contains(separator) || 
-                    textBox.SelectedText.Contains(separator))
-                {
+                bool hasSep = textBox.Text.Contains(cultureSep) || textBox.Text.Contains('.') || textBox.Text.Contains(',');
+                bool selectionHasSep = textBox.SelectedText.Contains(cultureSep)
+                    || textBox.SelectedText.Contains('.')
+                    || textBox.SelectedText.Contains(',');
+                if (!hasSep || selectionHasSep)
                     return;
-                }
             }
 
             e.Handled = true;
@@ -254,8 +253,10 @@ namespace FruitVegetableMarketPOS.Helpers
 
         private static bool IsValidDecimal(string text)
         {
-            if (string.IsNullOrEmpty(text) || text == ".") return true;
-            return double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out _);
+            if (string.IsNullOrEmpty(text) || text == "." || text == ",") return true;
+            var normalized = text.Replace(',', '.');
+            return double.TryParse(normalized, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out _);
         }
 
         // --- LettersOnly Attached Property ---

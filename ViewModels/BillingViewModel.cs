@@ -29,6 +29,7 @@ namespace FruitVegetableMarketPOS.ViewModels
         private readonly AccountService _accountService;
         private readonly System.Windows.Threading.DispatcherTimer _timer;
         private bool _isWarmedUp;
+        private string _trackedBusinessDate = DateTimeHelper.GetBusinessDate();
         private readonly List<PosProductCard> _allTodayProducts = new();
         private Item? _pendingScanItem;
 
@@ -359,8 +360,11 @@ namespace FruitVegetableMarketPOS.ViewModels
         private void RebuildUpdateTypePriceRows(bool preserveTypedPrices)
         {
             var count = Math.Clamp(_selectedUpdateTypeCountOption?.Count ?? 1, 1, 10);
-            var previous = preserveTypedPrices
+            var previousPrices = preserveTypedPrices
                 ? UpdateTypePriceRows.Select(r => r.PriceText ?? string.Empty).ToList()
+                : new List<string>();
+            var previousNotes = preserveTypedPrices
+                ? UpdateTypePriceRows.Select(r => r.NoteText ?? string.Empty).ToList()
                 : new List<string>();
 
             UpdateTypePriceRows.Clear();
@@ -369,7 +373,8 @@ namespace FruitVegetableMarketPOS.ViewModels
                 UpdateTypePriceRows.Add(new DailyTypePriceRow
                 {
                     Index = i,
-                    PriceText = i - 1 < previous.Count ? previous[i - 1] ?? string.Empty : string.Empty
+                    PriceText = i - 1 < previousPrices.Count ? previousPrices[i - 1] ?? string.Empty : string.Empty,
+                    NoteText = i - 1 < previousNotes.Count ? previousNotes[i - 1] ?? string.Empty : string.Empty
                 });
             }
             OnPropertyChanged(nameof(UpdateTypePriceRows));
@@ -821,8 +826,14 @@ namespace FruitVegetableMarketPOS.ViewModels
             _billRepo = billRepo;
             _accountService = accountService;
             Tabs = new ObservableCollection<BillingTab>(); AddNewTab();
+            _trackedBusinessDate = DateTimeHelper.GetBusinessDate();
             _timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _timer.Tick += (s, e) => { OnPropertyChanged(nameof(CurrentTime)); OnPropertyChanged(nameof(CurrentDateTime)); };
+            _timer.Tick += (s, e) =>
+            {
+                OnPropertyChanged(nameof(CurrentTime));
+                OnPropertyChanged(nameof(CurrentDateTime));
+                CheckBusinessDateRollover();
+            };
             _timer.Start();
 
             LoadHistoryActiveAccounts();
@@ -911,6 +922,66 @@ namespace FruitVegetableMarketPOS.ViewModels
 
             // Heavy POS data loads in OnActivated / Warmup — keep ctor fast so Billing opens instantly.
             CatalogEvents.CatalogChanged += OnCatalogChanged;
+            AppEvents.DataChanged += OnAppDataChanged;
+        }
+
+        private void OnAppDataChanged()
+        {
+            AppEvents.InvokeOnUi(() =>
+            {
+                LoadDashboardStats();
+                RefreshSelectedCustomerCredit();
+            });
+        }
+
+        /// <summary>Reload pending credit badge for the customer currently on the active tab.</summary>
+        private void RefreshSelectedCustomerCredit()
+        {
+            try
+            {
+                if (SelectedCustomer == null || IsWalkIn)
+                {
+                    PendingCreditAmount = 0;
+                    return;
+                }
+
+                PendingCreditAmount = _customerService.GetPendingCredit(SelectedCustomer.CustomerId);
+                OnPropertyChanged(nameof(PendingCreditAmount));
+                OnPropertyChanged(nameof(HasPendingCredit));
+                OnPropertyChanged(nameof(PendingCreditDisplay));
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("RefreshSelectedCustomerCredit failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// Detects midnight / system date change while the app stays open —
+        /// shows Continue / Refresh new-day UI without requiring logout.
+        /// </summary>
+        private void CheckBusinessDateRollover()
+        {
+            var today = DateTimeHelper.GetBusinessDate();
+            if (string.Equals(today, _trackedBusinessDate, StringComparison.Ordinal))
+                return;
+
+            AppLogger.Info($"Business date changed: {_trackedBusinessDate} → {today}");
+            _trackedBusinessDate = today;
+            OnBusinessDateChanged();
+        }
+
+        private void OnBusinessDateChanged()
+        {
+            // Drop any mid-flow picker from the previous calendar day
+            IsPreviousDayPickerVisible = false;
+            PreviousDayMenuItems.Clear();
+
+            CheckNewDaySetup();
+            RefreshTodayProducts();
+            LoadDashboardStats();
+            OnPropertyChanged(nameof(BusinessDateDisplay));
+            RefreshInvoiceNumbers();
         }
 
         /// <summary>
@@ -936,11 +1007,15 @@ namespace FruitVegetableMarketPOS.ViewModels
                 return;
             }
 
+            // Catch date change even if timer missed it while on another screen
+            CheckBusinessDateRollover();
+
             // Already warm — only refresh stats + today's menu (cheap compared to full warmup).
             LoadDashboardStats();
             RefreshTodayProducts();
             LoadActiveAccounts();
             CheckNewDaySetup();
+            RefreshSelectedCustomerCredit();
             OnPropertyChanged(nameof(BusinessDateDisplay));
             OnPropertyChanged(nameof(IsAdmin));
         }
@@ -984,18 +1059,28 @@ namespace FruitVegetableMarketPOS.ViewModels
 
         private void CheckNewDaySetup()
         {
-            IsPreviousDayPickerVisible = false;
-            PreviousDayMenuItems.Clear();
-            PreviousMenuDateDisplay = string.Empty;
+            // Keep picker open if cashier is mid-select; otherwise reset prompt state.
+            if (!IsPreviousDayPickerVisible)
+            {
+                PreviousDayMenuItems.Clear();
+                PreviousMenuDateDisplay = string.Empty;
+            }
 
-            // Quietly mark the day done when there is nothing to prompt for
-            // (first day, or today's menu already has items).
+            // Quietly mark the day done only when there is nothing to prompt for
+            // (first ever day with no previous menu, or today's menu already has items).
             if (!_dailySelection.IsDaySetupDone() && !_dailySelection.NeedsNewDaySetup())
                 _dailySelection.MarkDaySetupDone();
 
-            IsNewDayPromptVisible = _dailySelection.NeedsNewDaySetup();
-            if (IsNewDayPromptVisible)
+            var needsSetup = _dailySelection.NeedsNewDaySetup();
+            if (needsSetup && !IsPreviousDayPickerVisible)
+            {
+                IsNewDayPromptVisible = true;
                 PreviousMenuDateDisplay = _dailySelection.GetPreviousMenuDate() ?? string.Empty;
+            }
+            else if (!needsSetup && !IsPreviousDayPickerVisible)
+            {
+                IsNewDayPromptVisible = false;
+            }
         }
 
         private void ShowContinuePrevious()
@@ -1167,6 +1252,9 @@ namespace FruitVegetableMarketPOS.ViewModels
             var previousPrices = preserveTypedPrices
                 ? DailyTypePriceRows.Select(r => r.PriceText).ToList()
                 : new System.Collections.Generic.List<string>();
+            var previousNotes = preserveTypedPrices
+                ? DailyTypePriceRows.Select(r => r.NoteText).ToList()
+                : new System.Collections.Generic.List<string>();
             DailyTypePriceRows.Clear();
 
             if (!int.TryParse((DailyTypeCountText ?? string.Empty).Trim(), out var count) || count < 1)
@@ -1183,7 +1271,8 @@ namespace FruitVegetableMarketPOS.ViewModels
                 DailyTypePriceRows.Add(new DailyTypePriceRow
                 {
                     Index = i,
-                    PriceText = i - 1 < previousPrices.Count ? previousPrices[i - 1] : string.Empty
+                    PriceText = i - 1 < previousPrices.Count ? previousPrices[i - 1] : string.Empty,
+                    NoteText = i - 1 < previousNotes.Count ? previousNotes[i - 1] : string.Empty
                 });
             }
 
@@ -1279,12 +1368,21 @@ namespace FruitVegetableMarketPOS.ViewModels
                 return;
             }
 
+            var itemLabel = string.IsNullOrWhiteSpace(card.NameUrdu)
+                ? card.Name
+                : $"{card.Name} / {card.NameUrdu}";
+
             AvailableTypesForPicker.Clear();
             TypeQtyRows.Clear();
             foreach (var t in types)
             {
                 AvailableTypesForPicker.Add(t);
-                TypeQtyRows.Add(new TypeQtyRow { Type = t, Quantity = 0 });
+                TypeQtyRows.Add(new TypeQtyRow
+                {
+                    Type = t,
+                    ItemDisplayName = itemLabel,
+                    Quantity = 0
+                });
             }
 
             SelectedType = types[0];
@@ -1292,10 +1390,10 @@ namespace FruitVegetableMarketPOS.ViewModels
             IsTypePickerOpen = true;
         }
 
-        private static void AdjustTypeQty(TypeQtyRow? row, int step)
+        private static void AdjustTypeQty(TypeQtyRow? row, double step)
         {
             if (row == null) return;
-            row.Quantity = Math.Max(0, row.Quantity + step);
+            row.Quantity = Math.Max(0, Math.Round(row.Quantity + step, 3));
         }
 
         private void ConfirmTypeQuantitiesAndAdd()
@@ -1317,11 +1415,11 @@ namespace FruitVegetableMarketPOS.ViewModels
                 return;
             }
 
-            // At least one type must have qty ≥ 1; multiple types allowed.
-            var lines = TypeQtyRows.Where(r => r.Quantity >= 1).ToList();
+            // At least one type must have qty > 0 (decimals allowed); multiple types allowed.
+            var lines = TypeQtyRows.Where(r => r.Quantity > 0).ToList();
             if (lines.Count == 0)
             {
-                ShowPopupError("Select at least one type with quantity 1 or more.");
+                ShowPopupError("Enter a quantity greater than 0 on at least one row.");
                 return;
             }
 
@@ -1406,7 +1504,10 @@ namespace FruitVegetableMarketPOS.ViewModels
 
             try
             {
-                _dailySelection.SetAvailable(card.DailySelectionId, makeAvailable);
+                _dailySelection.SetAvailable(
+                    card.Selection.BusinessDate,
+                    card.DailySelectionId,
+                    makeAvailable);
                 card.IsAvailable = makeAvailable;
                 ShowPopupSuccess(makeAvailable
                     ? $"✓ '{card.Name}' activated for today."
@@ -1450,11 +1551,13 @@ namespace FruitVegetableMarketPOS.ViewModels
             UpdateTypePriceRows.Clear();
             for (int i = 1; i <= typeCount; i++)
             {
-                var price = i - 1 < types.Count ? types[i - 1].Price : 0;
+                var existing = i - 1 < types.Count ? types[i - 1] : null;
+                var price = existing?.Price ?? 0;
                 UpdateTypePriceRows.Add(new DailyTypePriceRow
                 {
                     Index = i,
-                    PriceText = price > 0 ? price.ToString("0.##") : string.Empty
+                    PriceText = price > 0 ? price.ToString("0.##") : string.Empty,
+                    NoteText = existing?.Note ?? string.Empty
                 });
             }
 
@@ -1493,6 +1596,7 @@ namespace FruitVegetableMarketPOS.ViewModels
             }
 
             var prices = new List<double>();
+            var notes = new List<string?>();
             for (int i = 0; i < UpdateTypePriceRows.Count; i++)
             {
                 var raw = UpdateTypePriceRows[i].PriceText?.Trim();
@@ -1507,6 +1611,9 @@ namespace FruitVegetableMarketPOS.ViewModels
                     return;
                 }
                 prices.Add(price);
+                notes.Add(string.IsNullOrWhiteSpace(UpdateTypePriceRows[i].NoteText)
+                    ? null
+                    : UpdateTypePriceRows[i].NoteText.Trim());
             }
 
             if (prices.Any(p => p == 0))
@@ -1522,7 +1629,7 @@ namespace FruitVegetableMarketPOS.ViewModels
             try
             {
                 var name = _updateMenuItem.Description;
-                _itemTypeService.ReplaceWithNumberedTypes(_updateMenuItem.Id, prices);
+                _itemTypeService.ReplaceWithNumberedTypes(_updateMenuItem.Id, prices, notes);
                 CloseUpdateMenuItem();
                 RefreshTodayProducts();
                 LoadAllMasterItemsForSetup();
@@ -1595,6 +1702,7 @@ namespace FruitVegetableMarketPOS.ViewModels
             }
 
             var prices = new List<double>();
+            var notes = new List<string?>();
             for (int i = 0; i < DailyTypePriceRows.Count; i++)
             {
                 var raw = DailyTypePriceRows[i].PriceText?.Trim();
@@ -1609,6 +1717,9 @@ namespace FruitVegetableMarketPOS.ViewModels
                     return;
                 }
                 prices.Add(price);
+                notes.Add(string.IsNullOrWhiteSpace(DailyTypePriceRows[i].NoteText)
+                    ? null
+                    : DailyTypePriceRows[i].NoteText.Trim());
             }
 
             if (prices.Any(p => p == 0))
@@ -1623,7 +1734,7 @@ namespace FruitVegetableMarketPOS.ViewModels
 
             try
             {
-                _itemTypeService.ReplaceWithNumberedTypes(item.Id, prices);
+                _itemTypeService.ReplaceWithNumberedTypes(item.Id, prices, notes);
                 _dailySelection.AddItem(item.Id, _authService.CurrentUser?.Id);
 
                 var name = item.Description;
@@ -1929,7 +2040,6 @@ namespace FruitVegetableMarketPOS.ViewModels
             if (IsBillingLocked) return; 
             if (SelectedCartItem != null) 
             { 
-                // Cart +/- steps by 1 KG
                 SelectedCartItem.Quantity = Math.Round(SelectedCartItem.Quantity + 1, 3);
                 RecalculateTotal(); 
                 RefocusBarcode(); 
@@ -1939,9 +2049,8 @@ namespace FruitVegetableMarketPOS.ViewModels
         { 
             if (IsBillingLocked) return;
             if (SelectedCartItem == null) return;
-            // Cart +/- steps by 1 KG
             var next = Math.Round(SelectedCartItem.Quantity - 1, 3);
-            if (next < 1) return;
+            if (next < 0.001) return;
             SelectedCartItem.Quantity = next;
             RecalculateTotal(); 
             RefocusBarcode(); 
@@ -2086,7 +2195,39 @@ namespace FruitVegetableMarketPOS.ViewModels
                 return WalkInPhoneInput.Trim();
             if (IsValidPkPhone(CustomerSearchQuery))
                 return CustomerSearchQuery.Trim();
-            return (WalkInPhoneInput ?? string.Empty).Trim();
+
+            // Prefer whatever the cashier typed in the customer box (even if invalid),
+            // so we can show a clear "must be 11 digits" error instead of "required".
+            var fromSearch = DigitsOnly(CustomerSearchQuery);
+            if (fromSearch.Length > 0)
+                return fromSearch;
+
+            var fromWalkIn = DigitsOnly(WalkInPhoneInput);
+            if (fromWalkIn.Length > 0)
+                return fromWalkIn;
+
+            return string.Empty;
+        }
+
+        private static string DigitsOnly(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            return new string(value.Trim().Where(char.IsDigit).ToArray());
+        }
+
+        private static string FormatPhoneValidationError(string phone)
+        {
+            var digits = DigitsOnly(phone);
+            if (digits.Length == 0)
+                return "Walk-in phone is required.\nPlease enter an 11-digit phone number (e.g. 03001234567).";
+
+            if (digits.Length != 11)
+                return $"Invalid phone number ({digits.Length} digits entered).\nMust be exactly 11 digits starting with 0 (e.g. 03001234567).\nآپ نے {digits.Length} ہندسے لکھے — بالکل 11 ہونے چاہئیں۔";
+
+            if (!digits.StartsWith('0'))
+                return "Invalid phone number.\nMust start with 0 (e.g. 03001234567).";
+
+            return "Invalid phone number.\nPlease enter a valid 11-digit number starting with '0'.";
         }
 
         private async void CompleteSale() 
@@ -2124,15 +2265,15 @@ namespace FruitVegetableMarketPOS.ViewModels
                     {
                         StatusMessage = "✗ Walk-in phone number is required.";
                         OnPropertyChanged(nameof(StatusMessage));
-                        ShowPopupError("Walk-in phone is required.\nPlease enter an 11-digit phone number (e.g. 03001234567) to place this bill.");
+                        ShowPopupError(FormatPhoneValidationError(walkInPhone));
                         return;
                     }
 
                     if (!IsValidPkPhone(walkInPhone))
                     {
-                        StatusMessage = "✗ Invalid phone format.";
+                        StatusMessage = $"✗ Invalid phone ({DigitsOnly(walkInPhone).Length} digits). Need exactly 11.";
                         OnPropertyChanged(nameof(StatusMessage));
-                        ShowPopupError("Invalid phone number.\nPlease enter a valid 11-digit number starting with '0'.");
+                        ShowPopupError(FormatPhoneValidationError(walkInPhone));
                         return;
                     }
 
@@ -2289,19 +2430,28 @@ namespace FruitVegetableMarketPOS.ViewModels
                     AppLogger.Warning($"AttemptPrint: Bill #{full.BillId} has zero items — attaching cart snapshot failed.");
                 }
 
-                // Always attempt print. IsPrinterOnline used to skip printing entirely
-                // after false "offline" / purge failures on BlackCopper.
-                bool printSuccess = _printService.PrintReceipt(full, _authService.CurrentUser?.FullName ?? "Cashier");
+                var cashier = _authService.CurrentUser?.FullName ?? "Cashier";
+
+                // Resolve once — auto-detect BlackCopper / saved config; dialog only if needed
+                var printer = _printService.ResolvePrinter(allowDialog: true);
+                if (string.IsNullOrWhiteSpace(printer))
+                {
+                    _billRepo.UpdatePrintStatus(full.BillId, false, null);
+                    ShowPopupError("Sale saved, but no printer was selected.\nConnect BlackCopper 80mm and try Re-Print.");
+                    return;
+                }
+
+                bool printSuccess = _printService.PrintReceipt(full, cashier, printer);
                 if (printSuccess)
                 {
                     _billRepo.UpdatePrintStatus(full.BillId, true, DateTime.Now);
 
-                    // Also print gate pass (same sale, no Total / no payment footer)
-                    bool gateOk = _printService.PrintGatePass(full, _authService.CurrentUser?.FullName ?? "Cashier");
+                    // Same printer for gate pass (no second dialog)
+                    bool gateOk = _printService.PrintGatePass(full, cashier, printer);
                     if (!gateOk)
                     {
                         AppLogger.Warning($"AttemptPrint: Gate pass failed for Bill #{full.BillId}");
-                        ShowPopupError("Bill printed, but the gate pass could not be printed.\nCheck that the printer is ON and connected.");
+                        ShowPopupError("Bill printed, but the gate pass could not be printed.\nCheck that the printer is ON and connected, then use Re-Print.");
                     }
                     return;
                 }
@@ -2770,39 +2920,46 @@ namespace FruitVegetableMarketPOS.ViewModels
             try
             {
                 HistoryPaymentError = "";
-                if (!double.TryParse(HistoryPaymentAmount, out double amount) || amount <= 0)
+                if (!double.TryParse(HistoryPaymentAmount, out double cash) || cash <= 0)
                 {
                     HistoryPaymentError = "Enter a valid amount.";
                     return;
                 }
 
-                // Validate: Online payment must have account selected
                 if (IsHistoryOnlinePayment && SelectedHistoryAccount == null)
                 {
                     HistoryPaymentError = "⚠ For online payment, please select an account to receive the payment.";
                     return;
                 }
 
-                var updatedBill = _creditService.RecordPayment(SelectedTab.PreviewHistoryBill.BillId, amount, HistoryPaymentNote, SelectedHistoryPaymentMethod);
-                
-                // Attach customer info for receipt printing
-                updatedBill.Customer = SelectedCustomer;
+                var remaining = SelectedTab.PreviewHistoryBill.RemainingAmount;
+                if (IsHistoryOnlinePayment && cash > remaining + 0.001)
+                {
+                    HistoryPaymentError = $"Online amount cannot exceed remaining (Rs. {remaining:N0}).";
+                    return;
+                }
 
-                // Print payment receipt
+                var result = _creditService.RecordPayment(
+                    SelectedTab.PreviewHistoryBill.BillId,
+                    cash,
+                    HistoryPaymentNote,
+                    SelectedHistoryPaymentMethod);
+
+                result.Bill.Customer = SelectedCustomer ?? result.Bill.Customer;
+
                 try
                 {
-                    _printService.PrintPaymentReceipt(updatedBill, amount, _authService.CurrentUser?.FullName ?? "Cashier");
+                    _printService.PrintPaymentReceipt(
+                        result.Bill, result.AppliedAmount, _authService.CurrentUser?.FullName ?? "Cashier");
                 }
                 catch (Exception pex)
                 {
                     AppLogger.Error("Payment receipt print failed", pex);
                 }
 
-                // Update preview bill with new remaining
-                SelectedTab.PreviewHistoryBill = updatedBill;
+                SelectedTab.PreviewHistoryBill = result.Bill;
                 OnPropertyChanged(nameof(PreviewHistoryBill));
 
-                // Refresh customer total due
                 if (SelectedCustomer != null)
                 {
                     PendingCreditAmount = _customerService.GetPendingCredit(SelectedCustomer.CustomerId);
@@ -2810,11 +2967,15 @@ namespace FruitVegetableMarketPOS.ViewModels
                 }
 
                 IsHistoryPaymentOpen = false;
-                StatusMessage = $"✓ Payment of Rs. {amount:N0} recorded for Bill #{updatedBill.InvoiceNumber}";
-                MessageBox.Show(StatusMessage, "Payment Recorded", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusMessage = result.IsFullyPaid
+                    ? $"✓ Bill #{result.Bill.InvoiceNumber} paid. Applied Rs. {result.AppliedAmount:N0}." +
+                      (result.ChangeGiven > 0.01 ? $" Change Rs. {result.ChangeGiven:N0}." : "")
+                    : $"✓ Applied Rs. {result.AppliedAmount:N0}. Remaining Rs. {result.RemainingAfter:N0}." +
+                      (result.ChangeGiven > 0.01 ? $" Change Rs. {result.ChangeGiven:N0}." : "");
                 OnPropertyChanged(nameof(StatusMessage));
-
+                ShowPopupSuccess(StatusMessage);
                 LoadDashboardStats();
+                CustomerEvents.NotifyCreditsChanged();
                 SalesEvents.NotifyChanged();
             }
             catch (Exception ex)

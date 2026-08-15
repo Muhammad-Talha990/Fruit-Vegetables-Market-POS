@@ -17,6 +17,18 @@ namespace FruitVegetableMarketPOS.Models
         /// <summary>Formatted invoice number (e.g., 00001).</summary>
         public string InvoiceNumber => BillId.ToString("D5");
 
+        /// <summary>Invoice label for ledger/UI (marks opening-balance migration bills).</summary>
+        public string InvoiceDisplay => IsOpeningBalance ? $"{InvoiceNumber} (OB)" : InvoiceNumber;
+
+        /// <summary>
+        /// True when this bill records migrated previous dues (not a real POS sale).
+        /// Excluded from sales totals; included in pending credit / Pay Dues.
+        /// </summary>
+        public bool IsOpeningBalance { get; set; }
+
+        /// <summary>Optional note for opening-balance creation (not persisted as its own column).</summary>
+        public string? OpeningBalanceNote { get; set; }
+
         /// <summary>Date/time when the bill was created.</summary>
         public DateTime CreatedAt { get; set; } = DateTime.Now;
 

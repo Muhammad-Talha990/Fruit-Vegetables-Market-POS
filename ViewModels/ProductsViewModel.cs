@@ -113,12 +113,24 @@ namespace FruitVegetableMarketPOS.ViewModels
 
             LoadCategories();
             LoadProducts();
+
+            CatalogEvents.CatalogChanged += OnCatalogChanged;
         }
 
         public void OnActivated()
         {
             LoadCategories();
             LoadProducts();
+        }
+
+        private void OnCatalogChanged()
+        {
+            AppEvents.InvokeOnUi(() =>
+            {
+                if (IsEditing) return;
+                LoadCategories();
+                LoadProducts();
+            });
         }
 
         private void LoadCategories()

@@ -29,6 +29,11 @@ namespace FruitVegetableMarketPOS.Models
         public string? ImagePath { get; set; }
         public string SearchText { get; set; } = string.Empty;
 
+        /// <summary>Optional daily note set when the item was added to today's menu.</summary>
+        public string? Note { get; set; }
+
+        public bool HasNote => !string.IsNullOrWhiteSpace(Note);
+
         private bool _isAvailable = true;
         /// <summary>False = deactivated for today (faded card, green tick to restore).</summary>
         public bool IsAvailable

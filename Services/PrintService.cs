@@ -38,14 +38,35 @@ namespace FruitVegetableMarketPOS.Services
             LoadConfig();
         }
 
+        private static string GetConfigPath()
+        {
+            // Prefer LocalAppData — installed apps under Program Files cannot write beside the EXE.
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "FruitVegetableMarketPOS");
+            Directory.CreateDirectory(dir);
+            return Path.Combine(dir, ConfigFile);
+        }
+
         private void LoadConfig()
         {
             try
             {
-                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ConfigFile);
+                // New location
+                string path = GetConfigPath();
                 if (File.Exists(path))
                 {
                     _preferredPrinter = File.ReadAllText(path).Trim();
+                    return;
+                }
+
+                // Migrate legacy config next to the EXE (dev / old installs)
+                string legacy = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ConfigFile);
+                if (File.Exists(legacy))
+                {
+                    _preferredPrinter = File.ReadAllText(legacy).Trim();
+                    if (!string.IsNullOrWhiteSpace(_preferredPrinter))
+                        SaveConfig(_preferredPrinter);
                 }
             }
             catch (Exception ex)
@@ -58,14 +79,111 @@ namespace FruitVegetableMarketPOS.Services
         {
             try
             {
-                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ConfigFile);
-                File.WriteAllText(path, printerName);
-                _preferredPrinter = printerName;
+                if (string.IsNullOrWhiteSpace(printerName)) return;
+                File.WriteAllText(GetConfigPath(), printerName.Trim());
+                _preferredPrinter = printerName.Trim();
             }
             catch (Exception ex)
             {
                 AppLogger.Error("Failed to save printer config", ex);
+                // Still keep in memory for this session
+                _preferredPrinter = printerName.Trim();
             }
+        }
+
+        /// <summary>
+        /// Resolve the thermal printer without prompting when possible.
+        /// Only shows PrintDialog once if nothing is configured / found.
+        /// </summary>
+        public string? ResolvePrinter(bool allowDialog = true)
+        {
+            // 1) Remembered printer still installed
+            if (!string.IsNullOrWhiteSpace(_preferredPrinter) && IsInstalledPrinter(_preferredPrinter))
+                return _preferredPrinter;
+
+            // 2) Auto-detect BlackCopper / 80mm thermal
+            var auto = FindPreferredThermalPrinter();
+            if (!string.IsNullOrWhiteSpace(auto))
+            {
+                SaveConfig(auto);
+                return auto;
+            }
+
+            if (!allowDialog)
+                return _preferredPrinter;
+
+            // 3) One-time picker, then remember
+            try
+            {
+                using (var dialog = new System.Windows.Forms.PrintDialog())
+                {
+                    dialog.Document = new PrintDocument();
+                    dialog.UseEXDialog = true;
+
+                    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        var name = dialog.PrinterSettings.PrinterName;
+                        SaveConfig(name);
+                        return name;
+                    }
+                }
+            }
+            finally
+            {
+                ActivateMainWindow();
+            }
+
+            return null;
+        }
+
+        private static bool IsInstalledPrinter(string name)
+        {
+            try
+            {
+                return PrinterSettings.InstalledPrinters.Cast<string>()
+                    .Any(p => p.Equals(name, StringComparison.OrdinalIgnoreCase));
+            }
+            catch { return false; }
+        }
+
+        private static string? FindPreferredThermalPrinter()
+        {
+            try
+            {
+                var printers = PrinterSettings.InstalledPrinters.Cast<string>().ToList();
+                string[] hints = { "BlackCopper", "80mm", "POS-80", "POS80", "Thermal", "Receipt", "XP-80", "Xprinter" };
+                foreach (var hint in hints)
+                {
+                    var match = printers.FirstOrDefault(p =>
+                        p.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (match != null) return match;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("FindPreferredThermalPrinter failed", ex);
+            }
+            return null;
+        }
+
+        private static void ActivateMainWindow()
+        {
+            try
+            {
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var w = System.Windows.Application.Current?.MainWindow;
+                    if (w == null) return;
+                    if (!w.IsVisible) w.Show();
+                    if (w.WindowState == System.Windows.WindowState.Minimized)
+                        w.WindowState = System.Windows.WindowState.Normal;
+                    w.Activate();
+                    w.Topmost = true;
+                    w.Topmost = false;
+                    w.Focus();
+                }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
+            catch { /* ignore focus restore failures */ }
         }
 
         public bool IsPrinterOnline()
@@ -123,21 +241,9 @@ namespace FruitVegetableMarketPOS.Services
                 _paymentAmount = paymentAmount;
                 _cashierName = cashierName;
 
-                string? targetPrinter = _preferredPrinter;
+                string? targetPrinter = ResolvePrinter(allowDialog: true);
                 if (string.IsNullOrEmpty(targetPrinter))
-                {
-                    using (var dialog = new System.Windows.Forms.PrintDialog())
-                    {
-                        dialog.Document = new PrintDocument();
-                        dialog.UseEXDialog = true;
-                        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                        {
-                            targetPrinter = dialog.PrinterSettings.PrinterName;
-                            SaveConfig(targetPrinter);
-                        }
-                        else return false;
-                    }
-                }
+                    return false;
 
                 if (!string.IsNullOrEmpty(targetPrinter) &&
                     TryPrintEscPosPaymentSlip(bill, paymentAmount, cashierName, targetPrinter))
@@ -176,21 +282,9 @@ namespace FruitVegetableMarketPOS.Services
                 if (customer == null || result == null || result.AppliedAmount <= 0)
                     return false;
 
-                string? targetPrinter = _preferredPrinter;
+                string? targetPrinter = ResolvePrinter(allowDialog: true);
                 if (string.IsNullOrEmpty(targetPrinter))
-                {
-                    using (var dialog = new System.Windows.Forms.PrintDialog())
-                    {
-                        dialog.Document = new PrintDocument();
-                        dialog.UseEXDialog = true;
-                        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                        {
-                            targetPrinter = dialog.PrinterSettings.PrinterName;
-                            SaveConfig(targetPrinter);
-                        }
-                        else return false;
-                    }
-                }
+                    return false;
 
                 if (string.IsNullOrEmpty(targetPrinter))
                 {
@@ -610,21 +704,9 @@ namespace FruitVegetableMarketPOS.Services
                 _cashierName = cashierName;
 
                 var printDoc = new PrintDocument();
-                string? targetPrinter = _preferredPrinter;
-
+                string? targetPrinter = ResolvePrinter(allowDialog: true);
                 if (string.IsNullOrEmpty(targetPrinter))
-                {
-                    using (var dialog = new System.Windows.Forms.PrintDialog())
-                    {
-                        dialog.Document = printDoc;
-                        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                        {
-                            targetPrinter = printDoc.PrinterSettings.PrinterName;
-                            SaveConfig(targetPrinter);
-                        }
-                        else return false;
-                    }
-                }
+                    return false;
 
                 printDoc.PrinterSettings.PrinterName = targetPrinter;
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("Receipt", 302, 1200);
@@ -779,21 +861,9 @@ namespace FruitVegetableMarketPOS.Services
                 _cashierName = cashierName;
 
                 var printDoc = new PrintDocument();
-                string? targetPrinter = _preferredPrinter;
-
+                string? targetPrinter = ResolvePrinter(allowDialog: true);
                 if (string.IsNullOrEmpty(targetPrinter))
-                {
-                    using (var dialog = new System.Windows.Forms.PrintDialog())
-                    {
-                        dialog.Document = printDoc;
-                        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                        {
-                            targetPrinter = printDoc.PrinterSettings.PrinterName;
-                            SaveConfig(targetPrinter);
-                        }
-                        else return false;
-                    }
-                }
+                    return false;
 
                 printDoc.PrinterSettings.PrinterName = targetPrinter;
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("Receipt", 302, 1500); 
@@ -817,21 +887,9 @@ namespace FruitVegetableMarketPOS.Services
                 _cashierName = cashierName;
 
                 var printDoc = new PrintDocument();
-                string? targetPrinter = _preferredPrinter;
-
+                string? targetPrinter = ResolvePrinter(allowDialog: true);
                 if (string.IsNullOrEmpty(targetPrinter))
-                {
-                    using (var dialog = new System.Windows.Forms.PrintDialog())
-                    {
-                        dialog.Document = printDoc;
-                        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                        {
-                            targetPrinter = printDoc.PrinterSettings.PrinterName;
-                            SaveConfig(targetPrinter);
-                        }
-                        else return;
-                    }
-                }
+                    return;
 
                 printDoc.PrinterSettings.PrinterName = targetPrinter;
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("Receipt", 302, 2000); 
@@ -869,38 +927,29 @@ namespace FruitVegetableMarketPOS.Services
                 _billToPrint = bill;
                 _cashierName = cashierName;
 
-                string? targetPrinter = printerName ?? _preferredPrinter;
+                string? targetPrinter = !string.IsNullOrWhiteSpace(printerName)
+                    ? printerName
+                    : ResolvePrinter(allowDialog: true);
+
                 if (string.IsNullOrEmpty(targetPrinter))
                 {
-                    using (var dialog = new System.Windows.Forms.PrintDialog())
-                    {
-                        dialog.Document = new PrintDocument();
-                        dialog.UseEXDialog = true;
-
-                        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                        {
-                            targetPrinter = dialog.PrinterSettings.PrinterName;
-                            SaveConfig(targetPrinter);
-                        }
-                        else
-                        {
-                            return false; // Cancelled
-                        }
-                    }
+                    AppLogger.Warning($"PrintReceipt: no printer selected for Bill #{bill.BillId}");
+                    ActivateMainWindow();
+                    return false;
                 }
 
                 // Thermal printers (e.g. BlackCopper) often print BLANK with GDI.
                 // Prefer ESC/POS raw bytes so text actually appears on paper.
-                if (!string.IsNullOrEmpty(targetPrinter) && TryPrintEscPosReceipt(bill, cashierName, targetPrinter))
+                if (TryPrintEscPosReceipt(bill, cashierName, targetPrinter))
                 {
                     AppLogger.Info($"ESC/POS receipt printed for Bill #{bill.BillId} on printer: {targetPrinter} ({bill.Items?.Count ?? 0} items)");
+                    ActivateMainWindow();
                     return true;
                 }
 
                 // GDI fallback (PDF / XPS / some desktop printers)
                 var printDoc = new PrintDocument();
-                if (!string.IsNullOrEmpty(targetPrinter))
-                    printDoc.PrinterSettings.PrinterName = targetPrinter;
+                printDoc.PrinterSettings.PrinterName = targetPrinter;
 
                 // PaperSize is in hundredths of an inch (80mm ≈ 315)
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("Receipt80mm", 315, 2000);
@@ -911,11 +960,13 @@ namespace FruitVegetableMarketPOS.Services
                 printDoc.Print();
 
                 AppLogger.Info($"GDI receipt printed for Bill #{bill.BillId} on printer: {targetPrinter}");
+                ActivateMainWindow();
                 return true;
             }
             catch (Exception ex)
             {
                 AppLogger.Error("Receipt printing failed", ex);
+                ActivateMainWindow();
                 return false;
             }
         }
@@ -931,12 +982,16 @@ namespace FruitVegetableMarketPOS.Services
                 if (bill == null) return false;
                 if (bill.IsReturn) return false; // gate pass is for outbound sales only
 
-                string? targetPrinter = printerName ?? _preferredPrinter;
-                if (string.IsNullOrEmpty(targetPrinter))
+                if (bill.Items == null || bill.Items.Count == 0)
                 {
-                    // Prefer whatever was already used for the bill; avoid a second dialog
-                    targetPrinter = _preferredPrinter;
+                    AppLogger.Warning($"PrintGatePass: Bill #{bill.BillId} has no line items");
+                    return false;
                 }
+
+                // Never open a second PrintDialog — use remembered / auto / caller printer only
+                string? targetPrinter = !string.IsNullOrWhiteSpace(printerName)
+                    ? printerName
+                    : ResolvePrinter(allowDialog: false);
 
                 if (string.IsNullOrEmpty(targetPrinter))
                 {
@@ -944,36 +999,57 @@ namespace FruitVegetableMarketPOS.Services
                     return false;
                 }
 
+                // Let the bill job finish spooling before opening a second RAW job
+                System.Threading.Thread.Sleep(500);
+
                 if (TryPrintEscPosGatePass(bill, cashierName, targetPrinter))
                 {
                     AppLogger.Info($"ESC/POS gate pass printed for Bill #{bill.BillId} on printer: {targetPrinter}");
+                    ActivateMainWindow();
                     return true;
                 }
 
-                // GDI fallback
-                var printDoc = new PrintDocument();
-                printDoc.PrinterSettings.PrinterName = targetPrinter;
-                printDoc.DefaultPageSettings.PaperSize = new PaperSize("Receipt80mm", 315, 2000);
-                printDoc.DefaultPageSettings.Margins = new Margins(10, 10, 10, 10);
-                printDoc.PrintController = new StandardPrintController();
-
-                printDoc.PrintPage += (sender, e) =>
+                // GDI fallback with retry
+                for (int attempt = 1; attempt <= 3; attempt++)
                 {
-                    if (e.Graphics == null) return;
-                    // Draw at ~203dpi-equivalent scale into GDI page (approx 80mm width)
-                    float scale = e.MarginBounds.Width / 576f;
-                    e.Graphics.ScaleTransform(scale, scale);
-                    DrawGatePassReceipt(e.Graphics, 576, bill, cashierName);
-                    e.HasMorePages = false;
-                };
-                printDoc.Print();
+                    try
+                    {
+                        if (attempt > 1)
+                            System.Threading.Thread.Sleep(450);
 
-                AppLogger.Info($"GDI gate pass printed for Bill #{bill.BillId} on printer: {targetPrinter}");
-                return true;
+                        var printDoc = new PrintDocument();
+                        printDoc.PrinterSettings.PrinterName = targetPrinter;
+                        printDoc.DefaultPageSettings.PaperSize = new PaperSize("Receipt80mm", 315, 2000);
+                        printDoc.DefaultPageSettings.Margins = new Margins(10, 10, 10, 10);
+                        printDoc.PrintController = new StandardPrintController();
+
+                        printDoc.PrintPage += (sender, e) =>
+                        {
+                            if (e.Graphics == null) return;
+                            float scale = e.MarginBounds.Width / 576f;
+                            e.Graphics.ScaleTransform(scale, scale);
+                            DrawGatePassReceipt(e.Graphics, 576, bill, cashierName);
+                            e.HasMorePages = false;
+                        };
+                        printDoc.Print();
+
+                        AppLogger.Info($"GDI gate pass printed for Bill #{bill.BillId} on printer: {targetPrinter}");
+                        ActivateMainWindow();
+                        return true;
+                    }
+                    catch (Exception gdiEx)
+                    {
+                        AppLogger.Warning($"GDI gate pass attempt {attempt}/3 failed", gdiEx);
+                    }
+                }
+
+                ActivateMainWindow();
+                return false;
             }
             catch (Exception ex)
             {
                 AppLogger.Error("Gate pass printing failed", ex);
+                ActivateMainWindow();
                 return false;
             }
         }
@@ -983,7 +1059,8 @@ namespace FruitVegetableMarketPOS.Services
             try
             {
                 var bytes = BuildGatePassEscPosRaster(bill, cashierName);
-                return RawPrinterHelper.SendBytesToPrinter(printerName, bytes);
+                return RawPrinterHelper.SendBytesToPrinterWithRetry(
+                    printerName, bytes, $"PMC Gate Pass #{bill.BillId}", attempts: 3, delayMs: 500);
             }
             catch (Exception ex)
             {
@@ -1024,7 +1101,8 @@ namespace FruitVegetableMarketPOS.Services
             try
             {
                 var bytes = BuildGroceryFormatEscPosRaster(bill, cashierName);
-                return RawPrinterHelper.SendBytesToPrinter(printerName, bytes);
+                return RawPrinterHelper.SendBytesToPrinterWithRetry(
+                    printerName, bytes, $"PMC Bill #{bill.BillId}", attempts: 2, delayMs: 300);
             }
             catch (Exception ex)
             {
@@ -1144,16 +1222,17 @@ namespace FruitVegetableMarketPOS.Services
 
             DrawFullDash();
             y += 4;
-            g.DrawString("Item", metaBold, Brushes.Black, colItem, y);
-            g.DrawString("Qty", metaBold, Brushes.Black, colQty, y);
-            g.DrawString("Unit Price", metaBold, Brushes.Black, colPrice, y);
-            g.DrawString("Total", metaBold, Brushes.Black, colTotal, y, sfRight);
-            y += 26;
+            // Urdu first (primary), English below — matches on-screen bill preview
             g.DrawString("جنس", colUrduFont, Brushes.Black, colItem, y);
             g.DrawString("تعداد", colUrduFont, Brushes.Black, colQty, y);
             g.DrawString("ریٹ", colUrduFont, Brushes.Black, colPrice, y);
             g.DrawString("کل رقم", colUrduFont, Brushes.Black, colTotal, y, sfRight);
-            y += 26 + 4;
+            y += 24;
+            g.DrawString("Item", smallFont, Brushes.Black, colItem, y);
+            g.DrawString("Qty", smallFont, Brushes.Black, colQty, y);
+            g.DrawString("Unit Price", smallFont, Brushes.Black, colPrice, y);
+            g.DrawString("Total", smallFont, Brushes.Black, colTotal, y, sfRight);
+            y += 22 + 4;
             DrawFullDash();
             y += 6;
 
@@ -1318,14 +1397,14 @@ namespace FruitVegetableMarketPOS.Services
 
             DrawFullDash();
             y += 4;
-            g.DrawString("Item", metaBold, Brushes.Black, colItem, y);
-            g.DrawString("Qty", metaBold, Brushes.Black, colQty, y);
-            g.DrawString("Unit Price", metaBold, Brushes.Black, colPrice, y, sfRight);
-            y += 26;
             g.DrawString("جنس", colUrduFont, Brushes.Black, colItem, y);
             g.DrawString("تعداد", colUrduFont, Brushes.Black, colQty, y);
             g.DrawString("ریٹ", colUrduFont, Brushes.Black, colPrice, y, sfRight);
-            y += 26 + 4;
+            y += 24;
+            g.DrawString("Item", smallFont, Brushes.Black, colItem, y);
+            g.DrawString("Qty", smallFont, Brushes.Black, colQty, y);
+            g.DrawString("Unit Price", smallFont, Brushes.Black, colPrice, y, sfRight);
+            y += 22 + 4;
             DrawFullDash();
             y += 6;
 
@@ -1403,7 +1482,7 @@ namespace FruitVegetableMarketPOS.Services
             GetBilingualPrintLines(item).enLine;
 
         /// <summary>
-        /// Bilingual receipt lines: English = item name only; Urdu = name + type (e.g. "پیاز - قسم 1").
+        /// Bilingual receipt lines: English and Urdu item names only (no type / قسم).
         /// </summary>
         private static (string enLine, string? urLine) GetBilingualPrintLines(BillDescription item)
         {
@@ -1443,36 +1522,7 @@ namespace FruitVegetableMarketPOS.Services
                 }
             }
 
-            string typeUr = string.Empty;
-            var typeRaw = item.TypeName?.Trim();
-            if (!string.IsNullOrWhiteSpace(typeRaw))
-            {
-                var slashType = typeRaw.IndexOf(" / ", StringComparison.Ordinal);
-                if (slashType > 0)
-                {
-                    typeUr = typeRaw.Substring(slashType + 3).Trim();
-                }
-                else
-                {
-                    var digits = new string(typeRaw.Where(char.IsDigit).ToArray());
-                    if (!string.IsNullOrEmpty(digits))
-                        typeUr = $"قسم {digits}";
-                }
-            }
-
-            // English: name only (no type)
-            var enLine = nameEn;
-
-            // Urdu: name + type
-            string? urLine = null;
-            if (!string.IsNullOrWhiteSpace(nameUr))
-            {
-                urLine = !string.IsNullOrEmpty(typeUr)
-                    ? $"{nameUr} - {typeUr}"
-                    : nameUr;
-            }
-
-            return (enLine, urLine);
+            return (nameEn, string.IsNullOrWhiteSpace(nameUr) ? null : nameUr);
         }
 
         /// <summary>Convert a white-background receipt bitmap to ESC/POS GS v 0 raster.</summary>
@@ -1906,21 +1956,9 @@ namespace FruitVegetableMarketPOS.Services
                 }
 
                 var printDoc = new PrintDocument();
-                string? targetPrinter = _preferredPrinter;
-
+                string? targetPrinter = ResolvePrinter(allowDialog: true);
                 if (string.IsNullOrEmpty(targetPrinter))
-                {
-                    using (var dialog = new System.Windows.Forms.PrintDialog())
-                    {
-                        dialog.Document = printDoc;
-                        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                        {
-                            targetPrinter = printDoc.PrinterSettings.PrinterName;
-                            SaveConfig(targetPrinter);
-                        }
-                        else return false;
-                    }
-                }
+                    return false;
 
                 printDoc.PrinterSettings.PrinterName = targetPrinter;
                 printDoc.DefaultPageSettings.PaperSize = new PaperSize("InvoiceLedger", 302, 2200);

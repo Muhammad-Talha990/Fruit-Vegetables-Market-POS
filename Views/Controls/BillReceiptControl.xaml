@@ -66,17 +66,29 @@
             <Rectangle Height="1" Margin="0,8" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
                 <TextBlock Text="ORIGINAL SALE DETAILS" FontSize="10" FontWeight="Bold" Foreground="#1E293B" FontFamily="Consolas"/>
                 
-                <Grid Margin="0,4,0,4">
+                <Grid Margin="0,4,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="40"/>
                         <ColumnDefinition Width="55"/>
                         <ColumnDefinition Width="70"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="Item" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas"/>
-                    <TextBlock Grid.Column="1" Text="Qty" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
-                    <TextBlock Grid.Column="2" Text="Price" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
-                    <TextBlock Grid.Column="3" Text="Total" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Right"/>
+                    <TextBlock Text="جنس" FontSize="10" FontWeight="Bold" Foreground="#334155" FlowDirection="RightToLeft"/>
+                    <TextBlock Grid.Column="1" Text="تعداد" FontSize="10" FontWeight="Bold" Foreground="#334155" HorizontalAlignment="Center" FlowDirection="RightToLeft"/>
+                    <TextBlock Grid.Column="2" Text="ریٹ" FontSize="10" FontWeight="Bold" Foreground="#334155" HorizontalAlignment="Center" FlowDirection="RightToLeft"/>
+                    <TextBlock Grid.Column="3" Text="کل رقم" FontSize="10" FontWeight="Bold" Foreground="#334155" HorizontalAlignment="Right" FlowDirection="RightToLeft"/>
+                </Grid>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="40"/>
+                        <ColumnDefinition Width="55"/>
+                        <ColumnDefinition Width="70"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Item" FontSize="8" Foreground="#64748B" FontFamily="Consolas"/>
+                    <TextBlock Grid.Column="1" Text="Qty" FontSize="8" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="Price" FontSize="8" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="3" Text="Total" FontSize="8" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Right"/>
                 </Grid>
 
                 <ItemsControl ItemsSource="{Binding ParentBill.Items}">
@@ -89,8 +101,14 @@
                                     <ColumnDefinition Width="55"/>
                                     <ColumnDefinition Width="70"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding DisplayName}" FontSize="9" Foreground="#334155" TextWrapping="Wrap" FontFamily="Consolas"/>
-                                <TextBlock Grid.Column="1" Text="{Binding QuantityDisplay}" FontSize="9" Foreground="#334155" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding ReceiptUrduName}" FontSize="11" FontWeight="Bold" Foreground="#1E293B"
+                                               TextWrapping="Wrap" FlowDirection="RightToLeft"
+                                               Visibility="{Binding ReceiptUrduName, Converter={StaticResource StringToVis}}"/>
+                                    <TextBlock Text="{Binding ReceiptEnglishName}" FontSize="8" Foreground="#64748B"
+                                               TextWrapping="Wrap" FontFamily="Consolas"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding ReceiptQuantityDisplay}" FontSize="9" Foreground="#334155" HorizontalAlignment="Center" FontFamily="Consolas"/>
                                 <TextBlock Grid.Column="2" Text="{Binding UnitPrice, StringFormat='{}{0:N0}'}" FontSize="9" Foreground="#64748B" HorizontalAlignment="Center" FontFamily="Consolas"/>
                                 <TextBlock Grid.Column="3" Text="{Binding TotalPrice, StringFormat='{}{0:N0}'}" FontSize="9" Foreground="#334155" HorizontalAlignment="Right" FontFamily="Consolas"/>
                             </Grid>
@@ -123,8 +141,14 @@
                                                     <ColumnDefinition Width="40"/>
                                                     <ColumnDefinition Width="70"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding DisplayName}" FontSize="9" Foreground="#475569" TextWrapping="Wrap" FontFamily="Consolas"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding QuantityDisplay}" FontSize="9" Foreground="#475569" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding ReceiptUrduName}" FontSize="10" FontWeight="SemiBold" Foreground="#334155"
+                                                               TextWrapping="Wrap" FlowDirection="RightToLeft"
+                                                               Visibility="{Binding ReceiptUrduName, Converter={StaticResource StringToVis}}"/>
+                                                    <TextBlock Text="{Binding ReceiptEnglishName}" FontSize="8" Foreground="#64748B"
+                                                               TextWrapping="Wrap" FontFamily="Consolas"/>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding ReceiptQuantityDisplay}" FontSize="9" Foreground="#475569" HorizontalAlignment="Center" FontFamily="Consolas"/>
                                                 <TextBlock Grid.Column="2" Text="{Binding TotalPrice, Converter={StaticResource AbsConv}, StringFormat='{}{0:N0}'}" FontSize="9" Foreground="#475569" HorizontalAlignment="Right" FontFamily="Consolas"/>
                                             </Grid>
                                         </DataTemplate>
@@ -142,7 +166,7 @@
             <TextBlock Text="RETURNED ITEMS (THIS RETURN)" FontSize="10" FontWeight="Bold" Foreground="#1E293B" FontFamily="Consolas"
                        Visibility="{Binding IsReturn, Converter={StaticResource BoolToVis}}"/>
 
-            <!-- ═══ ITEMS TABLE HEADER ═══ -->
+            <!-- ═══ ITEMS TABLE HEADER (Urdu first, English below — matches print) ═══ -->
             <Grid Margin="0,2,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -150,10 +174,13 @@
                     <ColumnDefinition Width="55"/>
                     <ColumnDefinition Width="70"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Item" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas"/>
-                <TextBlock Grid.Column="1" Text="Qty" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
-                <TextBlock Grid.Column="2" Text="Unit Price" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
-                <TextBlock Grid.Column="3" Text="Total" FontSize="9" FontWeight="Bold" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Right"/>
+                <TextBlock Text="جنس" FontSize="11" FontWeight="Bold" Foreground="#334155" FlowDirection="RightToLeft"/>
+                <TextBlock Grid.Column="1" Text="تعداد" FontSize="11" FontWeight="Bold" Foreground="#334155"
+                           HorizontalAlignment="Center" FlowDirection="RightToLeft"/>
+                <TextBlock Grid.Column="2" Text="ریٹ" FontSize="11" FontWeight="Bold" Foreground="#334155"
+                           HorizontalAlignment="Center" FlowDirection="RightToLeft"/>
+                <TextBlock Grid.Column="3" Text="کل رقم" FontSize="11" FontWeight="Bold" Foreground="#334155"
+                           HorizontalAlignment="Right" FlowDirection="RightToLeft"/>
             </Grid>
             <Grid Margin="0,0,0,2">
                 <Grid.ColumnDefinitions>
@@ -162,10 +189,10 @@
                     <ColumnDefinition Width="55"/>
                     <ColumnDefinition Width="70"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="جنس" FontSize="9" Foreground="#64748B" FlowDirection="RightToLeft"/>
-                <TextBlock Grid.Column="1" Text="تعداد" FontSize="9" Foreground="#64748B" HorizontalAlignment="Center" FlowDirection="RightToLeft"/>
-                <TextBlock Grid.Column="2" Text="ریٹ" FontSize="9" Foreground="#64748B" HorizontalAlignment="Center" FlowDirection="RightToLeft"/>
-                <TextBlock Grid.Column="3" Text="کل رقم" FontSize="9" Foreground="#64748B" HorizontalAlignment="Right" FlowDirection="RightToLeft"/>
+                <TextBlock Text="Item" FontSize="8" Foreground="#64748B" FontFamily="Consolas"/>
+                <TextBlock Grid.Column="1" Text="Qty" FontSize="8" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Text="Unit Price" FontSize="8" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Text="Total" FontSize="8" Foreground="#64748B" FontFamily="Consolas" HorizontalAlignment="Right"/>
             </Grid>
 
             <Rectangle Height="1" Margin="0,0,0,2" Stroke="#94A3B8" StrokeThickness="1" StrokeDashArray="3 2"/>
@@ -182,13 +209,14 @@
                                 <ColumnDefinition Width="70"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel>
-                                <TextBlock Text="{Binding ReceiptUrduName}" FontSize="12" FontWeight="SemiBold" Foreground="#1E293B"
+                                <!-- Urdu first (bigger), English below (smaller) — matches printed bill -->
+                                <TextBlock Text="{Binding ReceiptUrduName}" FontSize="13" FontWeight="Bold" Foreground="#1E293B"
                                            TextWrapping="Wrap" FlowDirection="RightToLeft"
                                            Visibility="{Binding ReceiptUrduName, Converter={StaticResource StringToVis}}"/>
                                 <TextBlock Text="{Binding ReceiptEnglishName}" FontSize="9" Foreground="#64748B"
                                            TextWrapping="Wrap" FontFamily="Consolas"/>
                             </StackPanel>
-                            <TextBlock Grid.Column="1" Text="{Binding QuantityDisplay}" FontSize="10" Foreground="#1E293B" 
+                            <TextBlock Grid.Column="1" Text="{Binding ReceiptQuantityDisplay}" FontSize="10" Foreground="#1E293B" 
                                        HorizontalAlignment="Center" VerticalAlignment="Top" FontFamily="Consolas"/>
                             <TextBlock Grid.Column="2" Text="{Binding UnitPrice, StringFormat='{}{0:N0}'}" FontSize="10" 
                                        Foreground="#64748B" HorizontalAlignment="Center" VerticalAlignment="Top" FontFamily="Consolas"/>

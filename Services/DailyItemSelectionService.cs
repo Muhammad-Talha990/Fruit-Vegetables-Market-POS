@@ -29,21 +29,30 @@ namespace FruitVegetableMarketPOS.Services
         public List<DailyItemSetRow> GetDailyItemSetForDate(string businessDate)
             => _repo.GetDailyItemSetForDate(businessDate);
 
-        public int AddItem(int itemId, int? userId)
-            => _repo.AddItem(CurrentBusinessDate, itemId, userId);
+        public int AddItem(int itemId, int? userId, string? note = null)
+        {
+            _repo.EnsureDayTable(CurrentBusinessDate);
+            return _repo.AddItem(CurrentBusinessDate, itemId, userId, note);
+        }
 
-        public int AddItem(string businessDate, int itemId, int? userId)
-            => _repo.AddItem(businessDate, itemId, userId);
+        public int AddItem(string businessDate, int itemId, int? userId, string? note = null)
+        {
+            _repo.EnsureDayTable(businessDate);
+            return _repo.AddItem(businessDate, itemId, userId, note);
+        }
+
+        public void SetNote(int itemId, string? note)
+            => _repo.SetNote(CurrentBusinessDate, itemId, note);
 
         /// <summary>True if this catalog item is already on today's selling list.</summary>
         public bool IsOnTodayMenu(int itemId)
             => _repo.HasActiveRow(CurrentBusinessDate, itemId);
 
-        public void RemoveItem(int dailySelectionId)
-            => _repo.RemoveItem(dailySelectionId);
+        public void RemoveItem(string businessDate, int dailySelectionId)
+            => _repo.RemoveItem(businessDate, dailySelectionId);
 
-        public void SetAvailable(int dailySelectionId, bool isAvailable)
-            => _repo.SetAvailable(dailySelectionId, isAvailable);
+        public void SetAvailable(string businessDate, int dailySelectionId, bool isAvailable)
+            => _repo.SetAvailable(businessDate, dailySelectionId, isAvailable);
 
         public string? GetPreviousMenuDate()
             => _repo.GetPreviousMenuDate(CurrentBusinessDate);
@@ -55,8 +64,8 @@ namespace FruitVegetableMarketPOS.Services
         }
 
         /// <summary>
-        /// True when a previous day's menu exists, today is still empty,
-        /// and cashier has not finished Continue/Refresh for today.
+        /// True when system business date advanced, a previous day's menu exists,
+        /// today is still empty, and cashier has not finished Continue/Refresh for today.
         /// </summary>
         public bool NeedsNewDaySetup()
         {
@@ -68,6 +77,10 @@ namespace FruitVegetableMarketPOS.Services
 
             return !string.IsNullOrWhiteSpace(GetPreviousMenuDate());
         }
+
+        /// <summary>True when LastPosMenuDate is behind the current system business date.</summary>
+        public bool IsBusinessDateStale()
+            => !IsDaySetupDone();
 
         public List<PreviousDayMenuItem> GetPreviousDayMenuItems()
         {
@@ -92,17 +105,31 @@ namespace FruitVegetableMarketPOS.Services
         public void MarkDaySetupDone()
             => _repo.SetAppSetting(LastPosMenuDateKey, CurrentBusinessDate);
 
-        /// <summary>Clear today's menu and mark new-day setup complete.</summary>
+        /// <summary>Create/clear today's day-table and mark new-day setup complete.</summary>
         public void RefreshStartFresh(int? userId)
         {
-            _repo.ClearForDate(CurrentBusinessDate);
+            var today = CurrentBusinessDate;
+            _repo.EnsureDayTable(today);
+            _repo.ClearForDate(today);
             MarkDaySetupDone();
         }
 
-        /// <summary>Replace today's menu with the checked previous-day items.</summary>
+        /// <summary>Create today's day-table and fill with checked previous-day items.</summary>
         public int ContinueWithSelected(IEnumerable<int> itemIds, int? userId)
         {
             var today = CurrentBusinessDate;
+            var prevDate = GetPreviousMenuDate();
+            var prevNotes = new Dictionary<int, string?>();
+            if (!string.IsNullOrWhiteSpace(prevDate))
+            {
+                foreach (var row in _repo.GetVisibleForDate(prevDate))
+                {
+                    if (!prevNotes.ContainsKey(row.ItemId))
+                        prevNotes[row.ItemId] = row.Note;
+                }
+            }
+
+            _repo.EnsureDayTable(today);
             _repo.ClearForDate(today);
 
             int added = 0;
@@ -110,7 +137,8 @@ namespace FruitVegetableMarketPOS.Services
             {
                 try
                 {
-                    _repo.AddItem(today, itemId, userId);
+                    prevNotes.TryGetValue(itemId, out var note);
+                    _repo.AddItem(today, itemId, userId, note);
                     added++;
                 }
                 catch (InvalidOperationException)

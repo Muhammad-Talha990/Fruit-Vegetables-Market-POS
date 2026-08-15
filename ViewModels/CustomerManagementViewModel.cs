@@ -16,6 +16,8 @@ namespace FruitVegetableMarketPOS.ViewModels
     public class CustomerManagementViewModel : BaseViewModel
     {
         private readonly CustomerService _customerService;
+        private readonly CreditService _creditService;
+        private readonly AuthService _authService;
 
         // ── Collections ──
         public ObservableCollection<Customer> AllCustomers { get; } = new();
@@ -130,6 +132,43 @@ namespace FruitVegetableMarketPOS.ViewModels
 
         private int _editingCustomerId;
 
+        /// <summary>True while the Add Customer dialog is open (opening balance fields apply).</summary>
+        public bool IsAddMode => _editingCustomerId == 0;
+
+        private bool _hasPreviousDues;
+        public bool HasPreviousDues
+        {
+            get => _hasPreviousDues;
+            set
+            {
+                if (SetProperty(ref _hasPreviousDues, value))
+                {
+                    OnPropertyChanged(nameof(ShowOpeningBalanceFields));
+                    if (!value)
+                    {
+                        EditOpeningBalanceAmount = string.Empty;
+                        EditOpeningBalanceNote = string.Empty;
+                    }
+                }
+            }
+        }
+
+        public bool ShowOpeningBalanceFields => IsAddMode && HasPreviousDues;
+
+        private string _editOpeningBalanceAmount = string.Empty;
+        public string EditOpeningBalanceAmount
+        {
+            get => _editOpeningBalanceAmount;
+            set => SetProperty(ref _editOpeningBalanceAmount, value);
+        }
+
+        private string _editOpeningBalanceNote = string.Empty;
+        public string EditOpeningBalanceNote
+        {
+            get => _editOpeningBalanceNote;
+            set => SetProperty(ref _editOpeningBalanceNote, value);
+        }
+
         // ── Status / Counts ──
         public int TotalCustomers => AllCustomers.Count;
         public int ActiveCustomers => AllCustomers.Count(c => c.IsActive);
@@ -149,9 +188,11 @@ namespace FruitVegetableMarketPOS.ViewModels
 
         public ICommand ViewLedgerCommand { get; }
 
-        public CustomerManagementViewModel(CustomerService customerService)
+        public CustomerManagementViewModel(CustomerService customerService, CreditService creditService, AuthService authService)
         {
             _customerService = customerService;
+            _creditService = creditService;
+            _authService = authService;
 
             RefreshCommand     = new RelayCommand(_ => LoadCustomers());
             AddCommand         = new RelayCommand(_ => OpenAddDialog());
@@ -165,7 +206,16 @@ namespace FruitVegetableMarketPOS.ViewModels
                 if (obj is Customer c) ViewLedgerRequested?.Invoke(c.CustomerId);
             });
 
+            AppEvents.DataChanged += OnAppDataChanged;
             LoadCustomers();
+        }
+
+        /// <summary>Called whenever Customers screen is opened — always show live pending credits.</summary>
+        public void OnActivated() => LoadCustomers();
+
+        private void OnAppDataChanged()
+        {
+            AppEvents.InvokeOnUi(LoadCustomers);
         }
 
         // ────────────────────────────────────────────
@@ -227,8 +277,13 @@ namespace FruitVegetableMarketPOS.ViewModels
             EditAddress  = string.Empty;
             EditAddress2 = string.Empty;
             EditAddress3 = string.Empty;
+            HasPreviousDues = false;
+            EditOpeningBalanceAmount = string.Empty;
+            EditOpeningBalanceNote = string.Empty;
             EditError    = string.Empty;
             DialogTitle  = "➕ Add New Customer";
+            OnPropertyChanged(nameof(IsAddMode));
+            OnPropertyChanged(nameof(ShowOpeningBalanceFields));
             IsEditDialogOpen = true;
         }
 
@@ -242,8 +297,13 @@ namespace FruitVegetableMarketPOS.ViewModels
             EditAddress  = customer.Address ?? string.Empty;
             EditAddress2 = customer.Address2 ?? string.Empty;
             EditAddress3 = customer.Address3 ?? string.Empty;
+            HasPreviousDues = false;
+            EditOpeningBalanceAmount = string.Empty;
+            EditOpeningBalanceNote = string.Empty;
             EditError    = string.Empty;
             DialogTitle  = "✏ Edit Customer";
+            OnPropertyChanged(nameof(IsAddMode));
+            OnPropertyChanged(nameof(ShowOpeningBalanceFields));
             IsEditDialogOpen = true;
         }
 
@@ -251,6 +311,9 @@ namespace FruitVegetableMarketPOS.ViewModels
         {
             IsEditDialogOpen = false;
             EditError = string.Empty;
+            HasPreviousDues = false;
+            EditOpeningBalanceAmount = string.Empty;
+            EditOpeningBalanceNote = string.Empty;
         }
 
         private void SaveEdit()
@@ -296,6 +359,17 @@ namespace FruitVegetableMarketPOS.ViewModels
 
                 if (_editingCustomerId == 0)
                 {
+                    double openingAmount = 0;
+                    if (HasPreviousDues)
+                    {
+                        if (!double.TryParse(EditOpeningBalanceAmount?.Trim(), out openingAmount) || openingAmount <= 0)
+                        {
+                            EditError = "⚠ Enter a valid previous dues amount greater than zero.";
+                            ShowPopupError("Enter a valid previous dues amount.");
+                            return;
+                        }
+                    }
+
                     var existing = _customerService.GetCustomerByPhone(primaryPhone);
                     if (existing != null && existing.FullName.Equals("Walk-in Customer", StringComparison.OrdinalIgnoreCase))
                     {
@@ -310,7 +384,21 @@ namespace FruitVegetableMarketPOS.ViewModels
                     }
 
                     _customerService.RegisterCustomer(customer);
-                    SetStatus($"✓ Customer '{customer.FullName}' registered successfully.");
+
+                    if (HasPreviousDues && openingAmount > 0)
+                    {
+                        _creditService.CreateOpeningBalance(
+                            customer.CustomerId,
+                            openingAmount,
+                            string.IsNullOrWhiteSpace(EditOpeningBalanceNote) ? null : EditOpeningBalanceNote.Trim(),
+                            _authService.CurrentUser?.Id);
+
+                        SetStatus($"✓ Customer '{customer.FullName}' registered with previous dues Rs. {openingAmount:N0}.");
+                    }
+                    else
+                    {
+                        SetStatus($"✓ Customer '{customer.FullName}' registered successfully.");
+                    }
                 }
                 else
                 {
@@ -320,6 +408,7 @@ namespace FruitVegetableMarketPOS.ViewModels
 
                 CloseEditDialog();
                 LoadCustomers();
+                CustomerEvents.NotifyCreditsChanged();
             }
             catch (Exception ex)
             {
@@ -367,6 +456,7 @@ namespace FruitVegetableMarketPOS.ViewModels
                 if (_customerService.DeactivateCustomer(customer.CustomerId))
                 {
                     LoadCustomers();
+                    CustomerEvents.NotifyCreditsChanged();
                     ShowPopupSuccess($"Customer '{customer.FullName}' deactivated.");
                     SetStatus($"✓ Customer '{customer.FullName}' deactivated.");
                 }
@@ -400,6 +490,7 @@ namespace FruitVegetableMarketPOS.ViewModels
                 if (_customerService.ReactivateCustomer(customer.CustomerId))
                 {
                     LoadCustomers();
+                    CustomerEvents.NotifyCreditsChanged();
                     ShowPopupSuccess($"Customer '{customer.FullName}' reactivated.");
                     SetStatus($"✓ Customer '{customer.FullName}' reactivated.");
                 }

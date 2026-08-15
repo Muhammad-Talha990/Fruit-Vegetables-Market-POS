@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Linq;
 
@@ -97,16 +98,24 @@ namespace FruitVegetableMarketPOS.Models
         /// <summary>Unit of measure frozen at sale time.</summary>
         public string Unit { get; set; } = "KG";
 
-        /// <summary>Display name with type for receipts/UI (uses frozen snapshots).</summary>
+        /// <summary>Display name for receipts/UI — English / Urdu only (no type).</summary>
         public string DisplayName
         {
             get
             {
-                var name = !string.IsNullOrWhiteSpace(ItemName) ? ItemName : ItemDescription;
-                if (!string.IsNullOrWhiteSpace(TypeName) &&
-                    !name.Contains(TypeName, System.StringComparison.OrdinalIgnoreCase))
-                    return $"{name} - {TypeName}";
-                return name;
+                var name = !string.IsNullOrWhiteSpace(ItemName) ? ItemName.Trim() : (ItemDescription ?? string.Empty).Trim();
+
+                // Strip any legacy " - Type N…" suffix from frozen item name
+                var dashType = name.IndexOf(" - Type ", System.StringComparison.OrdinalIgnoreCase);
+                if (dashType > 0)
+                    name = name.Substring(0, dashType).Trim();
+
+                if (name.Contains(" / ", System.StringComparison.Ordinal))
+                    return name;
+
+                return string.IsNullOrWhiteSpace(NameUrdu)
+                    ? name
+                    : $"{name} / {NameUrdu.Trim()}";
             }
         }
 
@@ -124,7 +133,7 @@ namespace FruitVegetableMarketPOS.Models
             }
         }
 
-        /// <summary>Urdu line for bilingual receipts, e.g. "پیاز - قسم 1" (includes type).</summary>
+        /// <summary>Urdu line for bilingual receipts — item name only (no type).</summary>
         public string? ReceiptUrduName
         {
             get
@@ -137,24 +146,14 @@ namespace FruitVegetableMarketPOS.Models
                     if (slash > 0)
                         nameUr = raw!.Substring(slash + 3).Trim();
                 }
-                if (string.IsNullOrWhiteSpace(nameUr)) return null;
-
-                var type = TypeName?.Trim();
-                if (!string.IsNullOrWhiteSpace(type))
-                {
-                    var slashType = type.IndexOf(" / ", System.StringComparison.Ordinal);
-                    if (slashType > 0)
-                        return $"{nameUr} - {type.Substring(slashType + 3).Trim()}";
-
-                    var digits = new string(type.Where(char.IsDigit).ToArray());
-                    if (!string.IsNullOrEmpty(digits))
-                        return $"{nameUr} - قسم {digits}";
-                }
-                return nameUr;
+                return string.IsNullOrWhiteSpace(nameUr) ? null : nameUr;
             }
         }
 
-        /// <summary>Quantity with unit for receipts (e.g. 1.500 KG).</summary>
+        /// <summary>Quantity with unit (legacy / reports where unit is useful).</summary>
         public string QuantityDisplay => $"{Quantity:0.###} {Unit}".Trim();
+
+        /// <summary>Quantity number only — matches printed receipt (no unit suffix).</summary>
+        public string ReceiptQuantityDisplay => Math.Abs(Quantity).ToString("0.###");
     }
 }

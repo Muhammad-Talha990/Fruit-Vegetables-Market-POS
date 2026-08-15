@@ -13,6 +13,8 @@ namespace FruitVegetableMarketPOS.Helpers
         {
             try { CatalogChanged?.Invoke(); }
             catch { /* ignore subscriber errors */ }
+
+            AppEvents.NotifyChanged();
         }
     }
 }

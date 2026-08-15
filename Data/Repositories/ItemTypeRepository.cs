@@ -60,12 +60,14 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             using var conn = DatabaseHelper.GetConnection();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO ItemTypes (ItemId, TypeName, Price, SortOrder, IsActive, CreatedAt)
-                VALUES (@itemId, @name, @price, @sort, @active, @created);
+                INSERT INTO ItemTypes (ItemId, TypeName, Price, Note, SortOrder, IsActive, CreatedAt)
+                VALUES (@itemId, @name, @price, @note, @sort, @active, @created);
                 SELECT last_insert_rowid();";
             cmd.Parameters.AddWithValue("@itemId", type.ItemId);
             cmd.Parameters.AddWithValue("@name", type.TypeName);
             cmd.Parameters.AddWithValue("@price", type.Price);
+            cmd.Parameters.AddWithValue("@note",
+                string.IsNullOrWhiteSpace(type.Note) ? DBNull.Value : type.Note.Trim());
             cmd.Parameters.AddWithValue("@sort", type.SortOrder);
             cmd.Parameters.AddWithValue("@active", type.IsActive ? 1 : 0);
             cmd.Parameters.AddWithValue("@created", (type.CreatedAt ?? DateTimeHelper.CaptureTransactionTime()).ToDbString());
@@ -82,12 +84,15 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                 UPDATE ItemTypes SET
                     TypeName  = @name,
                     Price     = @price,
+                    Note      = @note,
                     SortOrder = @sort,
                     IsActive  = @active
                 WHERE TypeId = @id;";
             cmd.Parameters.AddWithValue("@id", type.TypeId);
             cmd.Parameters.AddWithValue("@name", type.TypeName);
             cmd.Parameters.AddWithValue("@price", type.Price);
+            cmd.Parameters.AddWithValue("@note",
+                string.IsNullOrWhiteSpace(type.Note) ? DBNull.Value : type.Note.Trim());
             cmd.Parameters.AddWithValue("@sort", type.SortOrder);
             cmd.Parameters.AddWithValue("@active", type.IsActive ? 1 : 0);
             cmd.ExecuteNonQuery();
@@ -115,12 +120,16 @@ namespace FruitVegetableMarketPOS.Data.Repositories
         private static ItemType MapItemType(SqliteDataReader reader)
         {
             var createdOrd = reader.GetOrdinal("CreatedAt");
+            var noteOrd = -1;
+            try { noteOrd = reader.GetOrdinal("Note"); } catch { /* older schema */ }
+
             return new ItemType
             {
                 TypeId    = reader.GetInt32(reader.GetOrdinal("TypeId")),
                 ItemId    = reader.GetInt32(reader.GetOrdinal("ItemId")),
                 TypeName  = reader.GetString(reader.GetOrdinal("TypeName")),
                 Price     = reader.GetDouble(reader.GetOrdinal("Price")),
+                Note      = noteOrd >= 0 && !reader.IsDBNull(noteOrd) ? reader.GetString(noteOrd) : null,
                 SortOrder = reader.GetInt32(reader.GetOrdinal("SortOrder")),
                 IsActive  = reader.GetInt32(reader.GetOrdinal("IsActive")) != 0,
                 CreatedAt = reader.IsDBNull(createdOrd) ? null : reader.GetDateTime(createdOrd)

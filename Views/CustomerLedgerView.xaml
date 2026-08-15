@@ -135,7 +135,7 @@
                     </DataGrid.CellStyle>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Date" Binding="{Binding CreatedAt, StringFormat='dd/MM/yy HH:mm'}" Width="160" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Invoice" Binding="{Binding InvoiceNumber}" Width="130" IsReadOnly="True">
+                        <DataGridTextColumn Header="Invoice" Binding="{Binding InvoiceDisplay}" Width="140" IsReadOnly="True">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="FontWeight" Value="Bold"/>
@@ -248,34 +248,111 @@
             </Border>
         </Grid>
 
-        <!-- ═══ STATUS + PAY DUES ═══ -->
+        <!-- ═══ STATUS + ACTIONS ═══ -->
         <Grid Grid.Row="3" Margin="0,12,0,0">
             <TextBlock Text="{Binding StatusMessage}" Foreground="#94A3B8" FontSize="13"
                        VerticalAlignment="Center" HorizontalAlignment="Left" TextWrapping="Wrap"
-                       Margin="0,0,160,0"/>
-            <Button Content="Pay Dues" Command="{Binding OpenPayDuesPanelCommand}"
-                    HorizontalAlignment="Right" VerticalAlignment="Center"
-                    Background="#16A34A" Foreground="White" BorderThickness="0"
-                    FontSize="14" FontWeight="SemiBold" Cursor="Hand" Padding="22,10"
-                    Visibility="{Binding HasPendingDues, Converter={StaticResource WpfBoolToVis}}">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#15803D"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
+                       Margin="0,0,320,0"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Content="+ Previous Dues" Command="{Binding OpenOpeningBalancePanelCommand}"
+                        Background="#334155" Foreground="White" BorderThickness="0"
+                        FontSize="13" FontWeight="SemiBold" Cursor="Hand" Padding="16,10" Margin="0,0,10,0">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#475569"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+                <Button Content="Pay Dues" Command="{Binding OpenPayDuesPanelCommand}"
+                        Background="#16A34A" Foreground="White" BorderThickness="0"
+                        FontSize="14" FontWeight="SemiBold" Cursor="Hand" Padding="22,10"
+                        Visibility="{Binding HasPendingDues, Converter={StaticResource WpfBoolToVis}}">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#15803D"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </StackPanel>
         </Grid>
+
+        <!-- ═══ OPENING BALANCE / PREVIOUS DUES PANEL ═══ -->
+        <Border Grid.RowSpan="5" Panel.ZIndex="2150"
+                Visibility="{Binding IsOpeningBalancePanelOpen, Converter={StaticResource WpfBoolToVis}}"
+                Background="#80000000" IsHitTestVisible="True">
+            <Border Background="#1B4332" CornerRadius="16" Padding="28,24"
+                    VerticalAlignment="Center" HorizontalAlignment="Center"
+                    MinWidth="440" MaxWidth="520"
+                    BorderBrush="#334155" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="Add Previous Dues" FontSize="20" FontWeight="Bold" Foreground="White" Margin="0,0,0,6"/>
+                    <TextBlock Text="Enter outstanding amount from the old paper ledger. This creates one unpaid entry (Previous Bills Credit)."
+                               Foreground="#94A3B8" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+                    <TextBlock Text="Amount (Rs.)" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4"/>
+                    <TextBox Text="{Binding OpeningBalanceAmountText, UpdateSourceTrigger=PropertyChanged}"
+                             Background="#0F172A" Foreground="White" FontSize="16" FontWeight="SemiBold"
+                             Padding="10,8" Margin="0,0,0,12"
+                             BorderBrush="#334155" BorderThickness="1" CaretBrush="White"
+                             helpers:FocusHelper.IsFocused="{Binding IsOpeningBalancePanelOpen}"
+                             helpers:FocusHelper.DecimalOnly="True"/>
+
+                    <TextBlock Text="Note (Optional)" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4"/>
+                    <TextBox Text="{Binding OpeningBalanceNote, UpdateSourceTrigger=PropertyChanged}"
+                             Background="#0F172A" Foreground="White" FontSize="13"
+                             Padding="10,8" Margin="0,0,0,12"
+                             BorderBrush="#334155" BorderThickness="1" CaretBrush="White"/>
+
+                    <TextBlock Text="{Binding OpeningBalanceError}" Foreground="#F87171" FontSize="12"
+                               Margin="0,0,0,10" TextWrapping="Wrap"
+                               Visibility="{Binding OpeningBalanceError, Converter={StaticResource StringToVis}}"/>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Cancel" Command="{Binding CloseOpeningBalancePanelCommand}"
+                                Foreground="#94A3B8" Background="#334155" Padding="16,8" Margin="0,0,10,0"
+                                BorderThickness="0" FontSize="13" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                        <Button Content="Save Previous Dues" Command="{Binding SaveOpeningBalanceCommand}"
+                                Foreground="White" Background="#3B82F6" Padding="16,8"
+                                BorderThickness="0" FontSize="13" FontWeight="SemiBold" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
 
         <!-- ═══ PAY DUES PANEL OVERLAY ═══ -->
         <Border Grid.RowSpan="5" Panel.ZIndex="2100"
@@ -460,15 +537,34 @@
                         </Button>
                     </Grid>
 
+                    <!-- Live preview — same as Pay Dues -->
+                    <Border Background="#0F172A" CornerRadius="8" Padding="12,10" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4">
+                                <Run Text="Will apply · ادا ہوگا: "/>
+                                <Run Text="{Binding PayPreviewApplied, StringFormat='Rs. {0:N0}', Mode=OneWay}" Foreground="#22C55E" FontWeight="SemiBold"/>
+                            </TextBlock>
+                            <TextBlock Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4"
+                                       Visibility="{Binding PayPreviewHasChange, Converter={StaticResource WpfBoolToVis}}">
+                                <Run Text="Change to give · واپسی: "/>
+                                <Run Text="{Binding PayPreviewChange, StringFormat='Rs. {0:N0}', Mode=OneWay}" Foreground="#60A5FA" FontWeight="SemiBold"/>
+                            </TextBlock>
+                            <TextBlock Foreground="#94A3B8" FontSize="12">
+                                <Run Text="Remaining on bill · باقی: "/>
+                                <Run Text="{Binding PayPreviewRemaining, StringFormat='Rs. {0:N0}', Mode=OneWay}" Foreground="#F87171" FontWeight="SemiBold"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Payment Method Selection -->
-                    <TextBlock Text="Payment Method" Foreground="#1E293B" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <TextBlock Text="Payment Method · ادائیگی کا طریقہ" Foreground="#94A3B8" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
                     <ComboBox ItemsSource="{Binding PaymentMethods}" SelectedItem="{Binding SelectedPaymentMethod}"
                               FontSize="13" Padding="10,8" Margin="0,0,0,12" Foreground="#1E293B" Background="#F1F5F9" BorderBrush="#CBD5E1"/>
 
                     <!-- Online Account Selection (visible only when Online is selected) -->
                     <StackPanel Visibility="{Binding IsOnlinePayment, Converter={StaticResource BoolToVis}}" Margin="0,0,0,10">
-                        <TextBlock Text="🏢 Select Payment Account" FontSize="12" FontWeight="SemiBold"
-                                   Foreground="#1E293B" Margin="0,0,0,4"/>
+                        <TextBlock Text="Select Payment Account · اکاؤنٹ منتخب کریں" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="#94A3B8" Margin="0,0,0,4"/>
                         <ComboBox ItemsSource="{Binding ActiveAccounts}"
                                   SelectedItem="{Binding SelectedAccount}"
                                   FontSize="13" Padding="10,8" Margin="0,0,0,8"
@@ -482,9 +578,8 @@
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <TextBlock Text="⚠ Required: Select an account to receive payment"
-                                   FontSize="10" Foreground="#DC2626" FontWeight="SemiBold" Margin="0,3,0,8"
-                                   Visibility="{Binding SelectedAccount, Converter={StaticResource NullToVis}}"/>
+                        <TextBlock Text="Online amount cannot exceed remaining · آن لائن رقم باقی سے زیادہ نہیں ہو سکتی"
+                                   FontSize="10" Foreground="#FBBF24" TextWrapping="Wrap" Margin="0,0,0,4"/>
                     </StackPanel>
 
                     <TextBlock Text="Note (Optional)" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,4"/>

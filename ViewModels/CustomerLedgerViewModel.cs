@@ -149,7 +149,11 @@ namespace FruitVegetableMarketPOS.ViewModels
         public bool IsPaymentPanelOpen
         {
             get => _isPaymentPanelOpen;
-            set => SetProperty(ref _isPaymentPanelOpen, value);
+            set
+            {
+                if (SetProperty(ref _isPaymentPanelOpen, value))
+                    RecalcPaymentPreview();
+            }
         }
 
         private Bill? _selectedBill;
@@ -162,6 +166,7 @@ namespace FruitVegetableMarketPOS.ViewModels
                 {
                     OnPropertyChanged(nameof(HasSelectedBill));
                     OnPropertyChanged(nameof(SelectedBillRemaining));
+                    RecalcPaymentPreview();
                 }
             }
         }
@@ -193,7 +198,11 @@ namespace FruitVegetableMarketPOS.ViewModels
         public string PaymentAmountText
         {
             get => _paymentAmountText;
-            set => SetProperty(ref _paymentAmountText, value);
+            set
+            {
+                if (SetProperty(ref _paymentAmountText, value))
+                    RecalcPaymentPreview();
+            }
         }
 
         private string _paymentNote = string.Empty;
@@ -210,6 +219,29 @@ namespace FruitVegetableMarketPOS.ViewModels
             set => SetProperty(ref _paymentError, value);
         }
 
+        private double _payPreviewApplied;
+        public double PayPreviewApplied
+        {
+            get => _payPreviewApplied;
+            private set => SetProperty(ref _payPreviewApplied, value);
+        }
+
+        private double _payPreviewChange;
+        public double PayPreviewChange
+        {
+            get => _payPreviewChange;
+            private set => SetProperty(ref _payPreviewChange, value);
+        }
+
+        private double _payPreviewRemaining;
+        public double PayPreviewRemaining
+        {
+            get => _payPreviewRemaining;
+            private set => SetProperty(ref _payPreviewRemaining, value);
+        }
+
+        public bool PayPreviewHasChange => PayPreviewChange > 0.01;
+
         // ── Payment Method Selection ──
         public List<string> PaymentMethods { get; } = new() { "Cash", "Online" };
 
@@ -225,6 +257,8 @@ namespace FruitVegetableMarketPOS.ViewModels
                     OnPropertyChanged(nameof(IsOnlinePayment));
                     if (IsPayDuesPanelOpen)
                         RecalcDuesPreview();
+                    if (IsPaymentPanelOpen)
+                        RecalcPaymentPreview();
                 }
             }
         }
@@ -263,6 +297,35 @@ namespace FruitVegetableMarketPOS.ViewModels
             set => SetProperty(ref _statusMessage, value);
         }
 
+        // ── Opening Balance / Previous Dues panel ──
+        private bool _isOpeningBalancePanelOpen;
+        public bool IsOpeningBalancePanelOpen
+        {
+            get => _isOpeningBalancePanelOpen;
+            set => SetProperty(ref _isOpeningBalancePanelOpen, value);
+        }
+
+        private string _openingBalanceAmountText = string.Empty;
+        public string OpeningBalanceAmountText
+        {
+            get => _openingBalanceAmountText;
+            set => SetProperty(ref _openingBalanceAmountText, value);
+        }
+
+        private string _openingBalanceNote = string.Empty;
+        public string OpeningBalanceNote
+        {
+            get => _openingBalanceNote;
+            set => SetProperty(ref _openingBalanceNote, value);
+        }
+
+        private string _openingBalanceError = string.Empty;
+        public string OpeningBalanceError
+        {
+            get => _openingBalanceError;
+            set => SetProperty(ref _openingBalanceError, value);
+        }
+
         // ── Commands ──
         public ICommand RefreshCommand { get; }
         public ICommand OpenPaymentPanelCommand { get; }
@@ -273,6 +336,9 @@ namespace FruitVegetableMarketPOS.ViewModels
         public ICommand ClosePayDuesPanelCommand { get; }
         public ICommand RecordDuesPaymentCommand { get; }
         public ICommand FillDuesFullPendingCommand { get; }
+        public ICommand OpenOpeningBalancePanelCommand { get; }
+        public ICommand CloseOpeningBalancePanelCommand { get; }
+        public ICommand SaveOpeningBalanceCommand { get; }
         public ICommand ViewBillCommand { get; }
         public ICommand PrintBillCommand { get; }
         public ICommand PrintLedgerCommand { get; }
@@ -303,6 +369,9 @@ namespace FruitVegetableMarketPOS.ViewModels
             ClosePayDuesPanelCommand = new RelayCommand(_ => ClosePayDuesPanel());
             RecordDuesPaymentCommand = new RelayCommand(_ => RecordDuesPayment());
             FillDuesFullPendingCommand = new RelayCommand(_ => FillDuesFullPending());
+            OpenOpeningBalancePanelCommand = new RelayCommand(_ => OpenOpeningBalancePanel());
+            CloseOpeningBalancePanelCommand = new RelayCommand(_ => CloseOpeningBalancePanel());
+            SaveOpeningBalanceCommand = new RelayCommand(_ => SaveOpeningBalance());
             ViewBillCommand         = new RelayCommand(obj => ViewBill(obj as Bill));
             PrintBillCommand        = new RelayCommand(obj => PrintBill(obj as Bill));
             PrintLedgerCommand      = new RelayCommand(_ => PrintLedger());
@@ -313,6 +382,25 @@ namespace FruitVegetableMarketPOS.ViewModels
             GoBackCommand           = new RelayCommand(_ => GoBackRequested?.Invoke());
 
             LoadActiveAccounts();
+            AppEvents.DataChanged += OnAppDataChanged;
+        }
+
+        private void OnAppDataChanged()
+        {
+            AppEvents.InvokeOnUi(() =>
+            {
+                if (Customer == null) return;
+                // Don't yank the payment panel out from under the cashier mid-entry
+                if (IsPaymentPanelOpen || IsPayDuesPanelOpen || IsOpeningBalancePanelOpen) return;
+                Refresh();
+            });
+        }
+
+        /// <summary>Reload ledger + pending totals for the open customer.</summary>
+        public void OnActivated()
+        {
+            if (Customer != null)
+                Refresh();
         }
 
         private void LoadActiveAccounts()
@@ -342,6 +430,7 @@ namespace FruitVegetableMarketPOS.ViewModels
                 SelectedBill = null;
                 IsPaymentPanelOpen = false;
                 IsPayDuesPanelOpen = false;
+                IsOpeningBalancePanelOpen = false;
                 IsBillDetailOpen = false;
                 StatusMessage = string.Empty;
                 Customer = _customerService.GetCustomerById(customerId);
@@ -422,8 +511,62 @@ namespace FruitVegetableMarketPOS.ViewModels
         {
             ClosePaymentPanel();
             ClosePayDuesPanel();
+            CloseOpeningBalancePanel();
             LoadLedger();
             StatusMessage = string.Empty;
+        }
+
+        // ────────────────────────────────────────────
+        //  OPENING BALANCE / PREVIOUS DUES
+        // ────────────────────────────────────────────
+
+        private void OpenOpeningBalancePanel()
+        {
+            if (Customer == null) return;
+            ClosePaymentPanel();
+            ClosePayDuesPanel();
+            OpeningBalanceAmountText = string.Empty;
+            OpeningBalanceNote = string.Empty;
+            OpeningBalanceError = string.Empty;
+            IsOpeningBalancePanelOpen = true;
+        }
+
+        private void CloseOpeningBalancePanel()
+        {
+            IsOpeningBalancePanelOpen = false;
+            OpeningBalanceError = string.Empty;
+        }
+
+        private void SaveOpeningBalance()
+        {
+            if (Customer == null) return;
+
+            try
+            {
+                OpeningBalanceError = string.Empty;
+
+                if (!double.TryParse(OpeningBalanceAmountText?.Trim(), out var amount) || amount <= 0)
+                {
+                    OpeningBalanceError = "Enter a valid amount greater than zero.";
+                    return;
+                }
+
+                var bill = _creditService.CreateOpeningBalance(
+                    Customer.CustomerId,
+                    amount,
+                    string.IsNullOrWhiteSpace(OpeningBalanceNote) ? null : OpeningBalanceNote.Trim(),
+                    _authService.CurrentUser?.Id);
+
+                CloseOpeningBalancePanel();
+                LoadLedger();
+                StatusMessage = $"✓ Previous dues Rs. {amount:N0} recorded (Invoice #{bill.InvoiceDisplay}).";
+                CustomerEvents.NotifyCreditsChanged();
+            }
+            catch (Exception ex)
+            {
+                OpeningBalanceError = ex.Message;
+                AppLogger.Error("CustomerLedgerViewModel.SaveOpeningBalance failed", ex);
+            }
         }
 
         // ────────────────────────────────────────────
@@ -434,6 +577,7 @@ namespace FruitVegetableMarketPOS.ViewModels
         {
             if (bill == null || !bill.HasPendingCredit) return;
             ClosePayDuesPanel();
+            CloseOpeningBalancePanel();
             // Re-fetch from DB to get latest PaidAmount/RemainingAmount
             var fresh = _creditService.GetBillById(bill.BillId);
             if (fresh != null)
@@ -465,6 +609,44 @@ namespace FruitVegetableMarketPOS.ViewModels
                 PaymentAmountText = SelectedBill.RemainingAmount.ToString("F2");
         }
 
+        /// <summary>Same live preview rules as Pay Dues (apply / change / remaining).</summary>
+        private void RecalcPaymentPreview()
+        {
+            double remaining = SelectedBillRemaining;
+            double.TryParse(PaymentAmountText, out var cash);
+            cash = Math.Max(0, Math.Round(cash, 2));
+            PayPreviewApplied = Math.Min(cash, remaining);
+
+            if (IsOnlinePayment)
+            {
+                PayPreviewChange = 0;
+                PayPreviewRemaining = Math.Max(0, Math.Round(remaining - Math.Min(cash, remaining), 2));
+                if (cash > remaining + 0.001)
+                {
+                    PaymentError = $"Online amount (Rs. {cash:N0}) cannot exceed remaining (Rs. {remaining:N0}).\nآن لائن رقم باقی واجب الادا سے زیادہ نہیں ہو سکتی۔";
+                }
+                else if (!string.IsNullOrEmpty(PaymentError) &&
+                         PaymentError.Contains("cannot exceed remaining", StringComparison.OrdinalIgnoreCase))
+                {
+                    PaymentError = string.Empty;
+                }
+            }
+            else
+            {
+                PayPreviewChange = Math.Max(0, Math.Round(cash - remaining, 2));
+                PayPreviewRemaining = Math.Max(0, Math.Round(remaining - cash, 2));
+                if (!string.IsNullOrEmpty(PaymentError) &&
+                    (PaymentError.Contains("Overpayment", StringComparison.OrdinalIgnoreCase) ||
+                     PaymentError.Contains("cannot exceed remaining", StringComparison.OrdinalIgnoreCase) ||
+                     PaymentError.Contains("exceeds remaining", StringComparison.OrdinalIgnoreCase)))
+                {
+                    PaymentError = string.Empty;
+                }
+            }
+
+            OnPropertyChanged(nameof(PayPreviewHasChange));
+        }
+
         // ────────────────────────────────────────────
         //  PAY DUES (FIFO multi-bill)
         // ────────────────────────────────────────────
@@ -473,6 +655,7 @@ namespace FruitVegetableMarketPOS.ViewModels
         {
             if (Customer == null || !HasPendingDues) return;
             ClosePaymentPanel();
+            CloseOpeningBalancePanel();
             LoadLedger(); // ensure pending is fresh
             DuesCashText = string.Empty;
             DuesNote = string.Empty;
@@ -599,6 +782,9 @@ namespace FruitVegetableMarketPOS.ViewModels
                       (result.ChangeGiven > 0.01 ? $" Change Rs. {result.ChangeGiven:N2}." : "")
                     : $"✓ Applied Rs. {result.AppliedAmount:N2}. Remaining pending Rs. {result.RemainingPending:N2}.";
 
+                CustomerEvents.NotifyCreditsChanged();
+                SalesEvents.NotifyChanged();
+
                 MessageBox.Show(lines.ToString(), "Pay Dues Complete", MessageBoxButton.OK, MessageBoxImage.Information);
                 OnPropertyChanged(nameof(StatusMessage));
                 ClosePayDuesPanel();
@@ -623,43 +809,71 @@ namespace FruitVegetableMarketPOS.ViewModels
                     return;
                 }
 
-                if (!double.TryParse(PaymentAmountText, out double amount) || amount <= 0)
+                if (!double.TryParse(PaymentAmountText, out double cash) || cash <= 0)
                 {
-                    PaymentError = "Please enter a valid amount greater than zero.";
+                    PaymentError = "Please enter a valid amount greater than zero.\nبراہ کرم درست رقم درج کریں۔";
                     return;
                 }
 
                 if (IsOnlinePayment && SelectedAccount == null)
                 {
-                    PaymentError = "Please select a payment account for online payment.";
+                    PaymentError = "Please select a payment account for online payment.\nآن لائن ادائیگی کے لیے اکاؤنٹ منتخب کریں۔";
                     return;
                 }
 
-                // Capture details before the service call, as it triggers a refresh that nulls SelectedBill
+                double remaining = SelectedBill.RemainingAmount;
+                if (remaining <= 0.01)
+                {
+                    PaymentError = "This bill is already fully paid.";
+                    return;
+                }
+
+                // Online: no change — cannot exceed remaining (same as Pay Dues)
+                if (IsOnlinePayment && cash > remaining + 0.001)
+                {
+                    PaymentError = $"Online amount (Rs. {cash:N0}) cannot exceed remaining (Rs. {remaining:N0}).\nآن لائن رقم باقی واجب الادا سے زیادہ نہیں ہو سکتی۔";
+                    return;
+                }
+
                 string invoiceNumber = SelectedBill.InvoiceNumber;
                 int billId = SelectedBill.BillId;
 
-                var updatedBill = _creditService.RecordPayment(SelectedBill.BillId, amount, PaymentNote, SelectedPaymentMethod);
+                // Shared payment module (cash overpay → change)
+                var result = _creditService.RecordPayment(
+                    SelectedBill.BillId, cash, PaymentNote, SelectedPaymentMethod);
 
-                // Print payment receipt
                 try
                 {
-                    updatedBill.Customer = Customer;
-                    _printService.PrintPaymentReceipt(updatedBill, amount, _authService.CurrentUser?.FullName ?? "Cashier");
+                    result.Bill.Customer = Customer;
+                    _printService.PrintPaymentReceipt(
+                        result.Bill, result.AppliedAmount, _authService.CurrentUser?.FullName ?? "Cashier");
                 }
                 catch (Exception pex)
                 {
                     AppLogger.Error("Payment receipt print failed (Ledger)", pex);
                 }
 
-                string methodDisplay = IsOnlinePayment ? $"{SelectedPaymentMethod} ({SelectedAccount?.DisplayName})" : SelectedPaymentMethod;
-                StatusMessage = $"✓ Payment of Rs. {amount:N2} ({methodDisplay}) recorded successfully for Bill #{invoiceNumber}.";
-                
-                // Real-time UI Sync:
-                // 1. Refresh the grid and total summaries
-                LoadLedger(); 
-                
-                // 2. Re-fetch current bill but KEEP it selected to keep sidebar open
+                string methodDisplay = IsOnlinePayment
+                    ? $"{SelectedPaymentMethod} ({SelectedAccount?.DisplayName})"
+                    : SelectedPaymentMethod;
+
+                var lines = new System.Text.StringBuilder();
+                lines.AppendLine($"Cash received: Rs. {result.CashReceived:N2} ({methodDisplay})");
+                lines.AppendLine($"Applied to Bill #{invoiceNumber}: Rs. {result.AppliedAmount:N2}");
+                if (result.ChangeGiven > 0.01)
+                    lines.AppendLine($"Change given: Rs. {result.ChangeGiven:N2}");
+                if (result.IsFullyPaid)
+                    lines.AppendLine("Bill fully paid.");
+                else
+                    lines.AppendLine($"Remaining on bill: Rs. {result.RemainingAfter:N2}");
+
+                StatusMessage = result.IsFullyPaid
+                    ? $"✓ Bill #{invoiceNumber} paid. Applied Rs. {result.AppliedAmount:N2}." +
+                      (result.ChangeGiven > 0.01 ? $" Change Rs. {result.ChangeGiven:N2}." : "")
+                    : $"✓ Applied Rs. {result.AppliedAmount:N2} to Bill #{invoiceNumber}. Remaining Rs. {result.RemainingAfter:N2}.";
+
+                LoadLedger();
+
                 var refreshedBill = _creditService.GetBillById(billId);
                 if (refreshedBill != null)
                 {
@@ -667,10 +881,11 @@ namespace FruitVegetableMarketPOS.ViewModels
                     SelectedBill = refreshedBill;
                 }
 
-                // Keep user informed with a popup confirmation
-                MessageBox.Show(StatusMessage, "Payment Recorded", MessageBoxButton.OK, MessageBoxImage.Information);
-                OnPropertyChanged(nameof(StatusMessage));
+                CustomerEvents.NotifyCreditsChanged();
+                SalesEvents.NotifyChanged();
 
+                MessageBox.Show(lines.ToString(), "Payment Recorded", MessageBoxButton.OK, MessageBoxImage.Information);
+                OnPropertyChanged(nameof(StatusMessage));
                 ClosePaymentPanel();
             }
             catch (Exception ex)
