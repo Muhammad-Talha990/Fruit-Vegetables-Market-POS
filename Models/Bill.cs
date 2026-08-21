@@ -56,6 +56,19 @@ namespace FruitVegetableMarketPOS.Models
         /// <summary>Compatibility shim for old code.</summary>
         public int? ReferenceBillId => ParentBillId;
 
+        /// <summary>Name for lists/receipts. Walk-in when no registered customer is on the bill.</summary>
+        public string CustomerDisplayName
+        {
+            get
+            {
+                var name = Customer?.FullName?.Trim();
+                if (!string.IsNullOrWhiteSpace(name) &&
+                    !name.Equals("Walk-in Customer", StringComparison.OrdinalIgnoreCase))
+                    return name;
+                return "Walk-in";
+            }
+        }
+
         /// <summary>Helper property for UI.</summary>
         public bool IsReturn => Type == "Return";
 
@@ -116,7 +129,55 @@ namespace FruitVegetableMarketPOS.Models
             _             => "#94A3B8"
         };
 
-        public bool HasPendingCredit => RemainingAmount > 0 && Status != "Cancelled";
+        public bool HasPendingCredit => RemainingAmount > 0.01 && Status != "Cancelled";
+
+        /// <summary>Reports alias for pending credit on this bill.</summary>
+        public double Credit => RemainingAmount;
+
+        /// <summary>Previous dues snapshot is not stored per bill in this POS.</summary>
+        public double PreviousBalance { get; set; }
+
+        /// <summary>کل بنام for this sale row.</summary>
+        public double RowTotalBanam => NetTotal;
+
+        /// <summary>وصولی applied to this bill (capped to net total).</summary>
+        public double AppliedReceived => Math.Round(Math.Min(PaidAmount, Math.Max(NetTotal, 0)), 2);
+
+        public string PaymentDisplayText
+        {
+            get
+            {
+                var method = PaymentMethod ?? "Cash";
+                if (method.Equals("Online", StringComparison.OrdinalIgnoreCase))
+                {
+                    var detail = Account?.DisplayName ?? Account?.AccountTitle ?? OnlinePaymentMethod;
+                    return string.IsNullOrWhiteSpace(detail) ? "Online" : $"Online ({detail})";
+                }
+                return "Cash";
+            }
+        }
+
+        public string? CashierDisplayName { get; set; }
+
+        public void ApplyReceiptMeta(string? cashierName)
+        {
+            if (string.IsNullOrWhiteSpace(BillingAddress) && !string.IsNullOrWhiteSpace(Customer?.Address))
+                BillingAddress = Customer.Address;
+            if (!string.IsNullOrWhiteSpace(cashierName))
+                CashierDisplayName = cashierName.Trim();
+        }
+
+        /// <summary>Display-only status for reports row coloring.</summary>
+        public string ReportBillKind =>
+            IsReturn ? "Return" : (HasPendingCredit ? "Credit" : "Paid");
+
+        public string ReportStatusLabel => ReportBillKind;
+        public string ReportStatusBackground =>
+            IsReturn ? "#FEE2E2" : HasPendingCredit ? "#FFF7ED" : "#ECFDF5";
+        public string ReportStatusBorderBrush =>
+            IsReturn ? "#FECACA" : HasPendingCredit ? "#FDBA74" : "#86EFAC";
+        public string ReportStatusForeground =>
+            IsReturn ? "#B91C1C" : HasPendingCredit ? "#C2410C" : "#166534";
 
         /// <summary>Calculated summary for UI display of returns.</summary>
         public double RemainingDueAfterThisReturn { get; set; }

@@ -35,7 +35,7 @@ namespace FruitVegetableMarketPOS.Services
     /// Report generation service using raw SQL queries against Bill/BillDescription tables.
     /// Supports daily, monthly, and product-wise reports.
     /// </summary>
-    public class ReportService
+    public partial class ReportService
     {
         private readonly BillRepository _billRepo;
 

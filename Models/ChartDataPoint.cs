@@ -19,9 +19,18 @@ namespace FruitVegetableMarketPOS.Models
         /// <summary>Optional bar fill color. Null means use theme default.</summary>
         public System.Windows.Media.Color? BarColor { get; set; }
 
+        /// <summary>When false, bar labels show plain quantity instead of rupees.</summary>
+        public bool FormatAsCurrency { get; set; } = true;
+
         /// <summary>Formatted display value (e.g. "Rs. 2,500")</summary>
-        public string DisplayValue => Value >= 100_000
-            ? $"Rs.{Value / 1000:N0}K"
-            : $"Rs.{Value:N0}";
+        public string DisplayValue
+        {
+            get
+            {
+                if (!FormatAsCurrency)
+                    return Value.ToString("0.###");
+                return $"Rs.{Value:N0}";
+            }
+        }
     }
 }

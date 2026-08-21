@@ -797,6 +797,22 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             return bills;
         }
 
+        /// <summary>True when this customer already has a previous-dues (opening balance) bill.</summary>
+        public bool CustomerHasOpeningBalance(int customerId)
+        {
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT 1
+                FROM Bills
+                WHERE CustomerId = @cid
+                  AND COALESCE(IsOpeningBalance, 0) = 1
+                  AND COALESCE(Status, '') != 'Cancelled'
+                LIMIT 1;";
+            cmd.Parameters.AddWithValue("@cid", customerId);
+            return cmd.ExecuteScalar() != null;
+        }
+
         public Bill? GetLatestBillByCustomerId(int customerId)
         {
             using var conn = DatabaseHelper.GetConnection();
@@ -898,7 +914,7 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                     Barcode         = reader.IsDBNull(barcodeOrd) ? null : reader.GetString(barcodeOrd),
                     ItemName        = itemName,
                     NameUrdu        = reader.IsDBNull(nameUrduOrd) ? null : reader.GetString(nameUrduOrd),
-                    ItemDescription = !string.IsNullOrWhiteSpace(typeName) ? $"{itemName} - {typeName}" : itemName,
+                    ItemDescription = itemName,
                     TypeId          = reader.IsDBNull(typeIdOrd) ? null : reader.GetInt32(typeIdOrd),
                     TypeName        = typeName,
                     Unit            = reader.IsDBNull(unitOrd) ? "piece" : reader.GetString(unitOrd),
@@ -955,10 +971,6 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                         ? reader.GetString(unitOrd)
                         : (reader.IsDBNull(reader.GetOrdinal("ItemUnit")) ? "piece" : reader.GetString(reader.GetOrdinal("ItemUnit")));
 
-                    string displayDesc = !string.IsNullOrWhiteSpace(typeName)
-                        ? $"{itemName} - {typeName}"
-                        : itemName;
-
                     bill.Items.Add(new BillDescription
                     {
                         BillItemId     = reader.GetInt32(reader.GetOrdinal("BillItemId")),
@@ -968,7 +980,7 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                         Barcode        = reader.IsDBNull(barcodeOrd) ? null : reader.GetString(barcodeOrd),
                         ItemName       = itemName,
                         NameUrdu       = nameUrdu,
-                        ItemDescription = displayDesc,
+                        ItemDescription = itemName,
                         TypeId         = reader.IsDBNull(typeIdOrd) ? null : reader.GetInt32(typeIdOrd),
                         TypeName       = typeName,
                         Unit           = unit,
@@ -1062,7 +1074,7 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             {
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
-                    SELECT ri.ReturnItemId, ri.BillItemId, ri.Quantity, ri.UnitPrice, i.Description
+                    SELECT ri.ReturnItemId, ri.BillItemId, ri.Quantity, ri.UnitPrice, i.Description, i.NameUrdu
                     FROM BillReturnItems ri
                     JOIN BillItems bi ON ri.BillItemId = bi.BillItemId
                     JOIN Items i ON bi.ItemId = i.ItemId
@@ -1072,9 +1084,13 @@ namespace FruitVegetableMarketPOS.Data.Repositories
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
+                    var desc = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
+                    var urdu = reader.IsDBNull(5) ? null : reader.GetString(5);
                     ret.Items.Add(new BillReturnItemAudit
                     {
-                        ItemDescription = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                        ItemDescription = desc,
+                        ItemName        = desc,
+                        NameUrdu        = urdu,
                         Quantity        = reader.IsDBNull(2) ? 0 : Convert.ToInt32(Math.Round(reader.GetDouble(2))),
                         UnitPrice       = reader.IsDBNull(3) ? 0 : reader.GetDouble(3)
                     });

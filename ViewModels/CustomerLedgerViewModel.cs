@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.Versioning;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
+using Microsoft.Win32;
 using FruitVegetableMarketPOS.Helpers;
 using FruitVegetableMarketPOS.Models;
 using FruitVegetableMarketPOS.Services;
@@ -39,6 +43,27 @@ namespace FruitVegetableMarketPOS.ViewModels
             public string DisplayAmount => IsReturn ? $"-Rs. {Amount:N0}" : $"Rs. {Amount:N0}";
         }
 
+        /// <summary>
+        /// One statement line: a sale/opening bill or a later recovery.
+        /// Previous / total / pending are reconstructed from Fruit POS bills + bill_payment.
+        /// </summary>
+        public class LedgerRow
+        {
+            public DateTime CreatedAt { get; set; }
+            public string InvoiceDisplay { get; set; } = string.Empty;
+            public string SubtotalDisplay { get; set; } = "—";
+            public double PreviousCredit { get; set; }
+            public double TotalBanam { get; set; }
+            public double ReceivedAmount { get; set; }
+            public double PendingCredit { get; set; }
+            public bool HasPendingCredit => PendingCredit > 0.01;
+            public bool IsPayment { get; set; }
+            public bool IsBill => !IsPayment;
+            public bool ShowPayDue => IsBill && Bill != null && Bill.HasPendingCredit;
+            public Bill? Bill { get; set; }
+            public CreditPayment? Payment { get; set; }
+        }
+
         private readonly CreditService _creditService;
         private readonly CustomerService _customerService;
         private readonly PrintService _printService;
@@ -57,7 +82,21 @@ namespace FruitVegetableMarketPOS.ViewModels
         }
 
         // ── Ledger data ──
-        public ObservableCollection<Bill> LedgerEntries { get; } = new();
+        public ObservableCollection<LedgerRow> LedgerEntries { get; } = new();
+
+        private bool _hasOpeningBalance;
+        public bool HasOpeningBalance
+        {
+            get => _hasOpeningBalance;
+            private set
+            {
+                if (SetProperty(ref _hasOpeningBalance, value))
+                    OnPropertyChanged(nameof(CanAddPreviousDues));
+            }
+        }
+
+        /// <summary>Hide + Previous Dues once an opening-balance bill already exists.</summary>
+        public bool CanAddPreviousDues => !HasOpeningBalance;
 
         // ── Summary footer ──
         private double _totalCredit;
@@ -342,6 +381,7 @@ namespace FruitVegetableMarketPOS.ViewModels
         public ICommand ViewBillCommand { get; }
         public ICommand PrintBillCommand { get; }
         public ICommand PrintLedgerCommand { get; }
+        public ICommand SaveLedgerPdfCommand { get; }
         public ICommand OpenReturnDetailCommand { get; }
         public ICommand CloseReturnDetailCommand { get; }
         public ICommand CloseBillDetailCommand { get; }
@@ -361,7 +401,7 @@ namespace FruitVegetableMarketPOS.ViewModels
             _accountService = accountService;
 
             RefreshCommand          = new RelayCommand(_ => Refresh());
-            OpenPaymentPanelCommand = new RelayCommand(obj => OpenPaymentPanel(obj as Bill));
+            OpenPaymentPanelCommand = new RelayCommand(obj => OpenPaymentPanel(AsBill(obj)));
             ClosePaymentPanelCommand= new RelayCommand(_ => ClosePaymentPanel());
             RecordPaymentCommand    = new RelayCommand(_ => RecordPayment());
             PayFullRemainingCommand = new RelayCommand(_ => PayFullRemaining());
@@ -372,9 +412,10 @@ namespace FruitVegetableMarketPOS.ViewModels
             OpenOpeningBalancePanelCommand = new RelayCommand(_ => OpenOpeningBalancePanel());
             CloseOpeningBalancePanelCommand = new RelayCommand(_ => CloseOpeningBalancePanel());
             SaveOpeningBalanceCommand = new RelayCommand(_ => SaveOpeningBalance());
-            ViewBillCommand         = new RelayCommand(obj => ViewBill(obj as Bill));
-            PrintBillCommand        = new RelayCommand(obj => PrintBill(obj as Bill));
+            ViewBillCommand         = new RelayCommand(obj => ViewLedgerRow(obj));
+            PrintBillCommand        = new RelayCommand(obj => PrintLedgerRow(obj));
             PrintLedgerCommand      = new RelayCommand(_ => PrintLedger());
+            SaveLedgerPdfCommand    = new RelayCommand(_ => SaveLedgerPdf());
             OpenReturnDetailCommand = new RelayCommand(obj => OpenReturnDetail(obj as BillAuditTimelineEntry));
             CloseReturnDetailCommand= new RelayCommand(_ => SelectedReturnDetail = null);
             CloseBillDetailCommand  = new RelayCommand(_ => CloseBillDetail());
@@ -456,17 +497,95 @@ namespace FruitVegetableMarketPOS.ViewModels
 
             try
             {
-                var bills = _billRepo.GetBillsByCustomerId(Customer.CustomerId);
-                LedgerEntries.Clear();
+                var snapshot = _ledgerRepo.GetIntegritySnapshot(Customer.CustomerId);
+                if (Math.Abs(snapshot.Drift) > 0.01)
+                {
+                    StatusMessage = $"⚠ Ledger drift detected: Rs. {snapshot.Drift:N2}. Rebuilding running balances...";
+                    _ledgerRepo.RebuildRunningBalances(Customer.CustomerId);
+                }
+
+                var bills = (_billRepo.GetBillsByCustomerId(Customer.CustomerId) ?? new List<Bill>())
+                    .Where(b => !string.Equals(b.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                    .Where(b => !b.IsReturn)
+                    .ToList();
+                var recoveries = _creditService.GetRecoveriesForCustomer(Customer.CustomerId) ?? new List<CreditPayment>();
+
+                HasOpeningBalance = _billRepo.CustomerHasOpeningBalance(Customer.CustomerId);
+
+                TotalCredit = Math.Round(bills.Sum(b => b.NetTotal), 2);
+                TotalPaid = Math.Round(bills.Sum(b => b.AppliedReceived), 2);
+                TotalPending = Math.Max(0, Math.Round(bills.Sum(b => b.RemainingAmount), 2));
+
+                var events = new List<(DateTime At, int Seq, string Kind, object Data)>();
                 foreach (var bill in bills)
-                    LedgerEntries.Add(bill);
+                    events.Add((bill.CreatedAt, bill.BillId, "Bill", bill));
+                foreach (var pay in recoveries)
+                    events.Add((pay.PaidAt, pay.PaymentId, "Payment", pay));
 
-                // Summary: Purchased = all bill amounts, Paid = all paid, Pending = remaining dues
-                TotalCredit = Math.Round(LedgerEntries.Sum(e => e.GrandTotal), 2);
-                TotalPaid = Math.Round(LedgerEntries.Sum(e => e.PaidAmount), 2);
-                TotalPending = Math.Round(LedgerEntries.Sum(e => e.RemainingAmount), 2);
+                events.Sort((a, b) =>
+                {
+                    int cmp = a.At.CompareTo(b.At);
+                    if (cmp != 0) return cmp;
+                    if (a.Kind != b.Kind)
+                        return string.Equals(a.Kind, "Bill", StringComparison.Ordinal) ? -1 : 1;
+                    return a.Seq.CompareTo(b.Seq);
+                });
 
-                // Refresh the customer's pending credit too
+                double running = 0;
+                var rows = new List<LedgerRow>();
+                foreach (var ev in events)
+                {
+                    if (ev.Kind == "Bill" && ev.Data is Bill bill)
+                    {
+                        bill.Customer = Customer;
+                        double taza = Math.Round(Math.Max(0, bill.NetTotal), 2);
+                        double received = Math.Round(Math.Min(Math.Max(0, bill.InitialPayment), taza), 2);
+                        double prev = running;
+                        double totalBanam = Math.Round(prev + taza, 2);
+                        double pending = Math.Round(Math.Max(0, totalBanam - received), 2);
+                        running = pending;
+                        rows.Add(new LedgerRow
+                        {
+                            CreatedAt = bill.CreatedAt,
+                            InvoiceDisplay = bill.InvoiceDisplay,
+                            SubtotalDisplay = bill.IsOpeningBalance ? "—" : $"Rs. {bill.SubTotal:N0}",
+                            PreviousCredit = prev,
+                            TotalBanam = totalBanam,
+                            ReceivedAmount = received,
+                            PendingCredit = pending,
+                            IsPayment = false,
+                            Bill = bill
+                        });
+                    }
+                    else if (ev.Data is CreditPayment pay)
+                    {
+                        double received = Math.Round(Math.Max(0, pay.AmountPaid), 2);
+                        double prev = running;
+                        double pending = Math.Max(0, Math.Round(prev - received, 2));
+                        running = pending;
+                        rows.Add(new LedgerRow
+                        {
+                            CreatedAt = pay.PaidAt,
+                            InvoiceDisplay = $"P-{pay.PaymentId:D5}",
+                            SubtotalDisplay = "—",
+                            PreviousCredit = prev,
+                            TotalBanam = prev,
+                            ReceivedAmount = received,
+                            PendingCredit = pending,
+                            IsPayment = true,
+                            Payment = pay
+                        });
+                    }
+                }
+
+                LedgerEntries.Clear();
+                foreach (var row in rows
+                    .OrderByDescending(r => r.CreatedAt)
+                    .ThenByDescending(r => r.InvoiceDisplay, StringComparer.OrdinalIgnoreCase))
+                {
+                    LedgerEntries.Add(row);
+                }
+
                 Customer.PendingCredit = TotalPending;
                 OnPropertyChanged(nameof(TotalPending));
                 OnPropertyChanged(nameof(TotalPaid));
@@ -475,29 +594,8 @@ namespace FruitVegetableMarketPOS.ViewModels
                 OnPropertyChanged(nameof(Customer));
                 (OpenPayDuesPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
-                var snapshot = _ledgerRepo.GetIntegritySnapshot(Customer.CustomerId);
                 if (Math.Abs(snapshot.Drift) > 0.01)
-                {
-                    StatusMessage = $"⚠ Ledger drift detected: Rs. {snapshot.Drift:N2}. Rebuilding running balances...";
-                    _ledgerRepo.RebuildRunningBalances(Customer.CustomerId);
-                    var refreshedBills = _billRepo.GetBillsByCustomerId(Customer.CustomerId);
-                    LedgerEntries.Clear();
-                    foreach (var bill in refreshedBills)
-                        LedgerEntries.Add(bill);
-
-                    TotalCredit = Math.Round(LedgerEntries.Sum(e => e.GrandTotal), 2);
-                    TotalPaid = Math.Round(LedgerEntries.Sum(e => e.PaidAmount), 2);
-                    TotalPending = Math.Round(LedgerEntries.Sum(e => e.RemainingAmount), 2);
-                    Customer.PendingCredit = TotalPending;
-
-                    OnPropertyChanged(nameof(TotalPending));
-                    OnPropertyChanged(nameof(TotalPaid));
-                    OnPropertyChanged(nameof(TotalCredit));
-                    OnPropertyChanged(nameof(HasPendingDues));
-                    OnPropertyChanged(nameof(Customer));
-                    (OpenPayDuesPanelCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     StatusMessage = "Ledger audit recalculated successfully.";
-                }
             }
             catch (Exception ex)
             {
@@ -572,6 +670,13 @@ namespace FruitVegetableMarketPOS.ViewModels
         // ────────────────────────────────────────────
         //  PAYMENT RECORDING
         // ────────────────────────────────────────────
+
+        private static Bill? AsBill(object? obj)
+        {
+            if (obj is Bill bill) return bill;
+            if (obj is LedgerRow row) return row.Bill;
+            return null;
+        }
 
         private void OpenPaymentPanel(Bill? bill)
         {
@@ -894,16 +999,28 @@ namespace FruitVegetableMarketPOS.ViewModels
                 AppLogger.Error("CustomerLedgerViewModel.RecordPayment failed", ex);
             }
         }
+        private void ViewLedgerRow(object? obj)
+        {
+            if (obj is LedgerRow { IsPayment: true, Payment: not null } payRow)
+            {
+                ViewBill(_creditService.GetBillById(payRow.Payment.BillId));
+                return;
+            }
+
+            ViewBill(AsBill(obj));
+        }
+
         private void ViewBill(Bill? bill)
         {
             if (bill == null) return;
 
             try 
             {
-                // Deep load Audit Logs (Items, Payments, Returns)
-                _billRepo.LoadAuditLogs(bill);
-                SelectedBill = bill;
-                BuildBillAuditTimeline(bill);
+                var full = _billRepo.GetById(bill.BillId) ?? bill;
+                full.Customer ??= Customer;
+                _billRepo.LoadAuditLogs(full);
+                SelectedBill = full;
+                BuildBillAuditTimeline(full);
                 SelectedReturnDetail = null;
                 IsBillDetailOpen = true;
             }
@@ -914,10 +1031,39 @@ namespace FruitVegetableMarketPOS.ViewModels
             }
         }
 
+        private void PrintLedgerRow(object? obj)
+        {
+            if (obj is LedgerRow { IsPayment: true, Payment: not null } payRow)
+            {
+                try
+                {
+                    var pay = payRow.Payment;
+                    var bill = _creditService.GetBillById(pay.BillId);
+                    if (bill == null)
+                    {
+                        ShowPopupError("Failed to print payment.");
+                        return;
+                    }
+                    bill.Customer = Customer;
+                    _printService.PrintPaymentReceipt(
+                        bill,
+                        pay.AmountPaid,
+                        _authService.CurrentUser?.FullName ?? "System Admin");
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Error("Failed to print payment from ledger", ex);
+                    ShowPopupError("Failed to print payment.");
+                }
+                return;
+            }
+
+            PrintBill(AsBill(obj));
+        }
+
         private void PrintBill(Bill? bill)
         {
             if (bill == null || Customer == null) return;
-            // Deep load audit logs (payments & returns) to ensure invoice-level data is available for printing
             try
             {
                 _billRepo.LoadAuditLogs(bill);
@@ -927,13 +1073,71 @@ namespace FruitVegetableMarketPOS.ViewModels
                 AppLogger.Error("Failed to load bill audit logs before printing", ex);
             }
 
-            // Load the full timeline and filter for this specific bill's events
-            // Use invoice-based ledger printing (new behavior). Do NOT print Dr/Cr running balances.
             var ok = _printService.PrintInvoiceLedgerStatement(bill.BillId);
             if (!ok)
             {
-                // Fallback to standard receipt if invoice-ledger printing fails
                 _printService.PrintReceipt(bill, _authService.CurrentUser?.FullName ?? "System Admin");
+            }
+        }
+
+        private List<LedgerPdfRow> ToPdfRows() =>
+            LedgerEntries.Select(r => new LedgerPdfRow
+            {
+                CreatedAt = r.CreatedAt,
+                InvoiceDisplay = r.InvoiceDisplay,
+                SubtotalDisplay = r.SubtotalDisplay,
+                PreviousCredit = r.PreviousCredit,
+                TotalBanam = r.TotalBanam,
+                ReceivedAmount = r.ReceivedAmount,
+                PendingCredit = r.PendingCredit,
+                IsPayment = r.IsPayment,
+                IsOpening = r.Bill?.IsOpeningBalance == true
+            }).ToList();
+
+        private void SaveLedgerPdf()
+        {
+            if (Customer == null)
+            {
+                ShowPopupError("No customer selected.");
+                return;
+            }
+            if (LedgerEntries.Count == 0)
+            {
+                ShowPopupError("No ledger entries found to save.");
+                return;
+            }
+
+            try
+            {
+                var safeName = string.Concat((Customer.FullName ?? "Customer")
+                    .Where(ch => !Path.GetInvalidFileNameChars().Contains(ch)));
+                if (string.IsNullOrWhiteSpace(safeName))
+                    safeName = "Customer";
+
+                var dlg = new SaveFileDialog
+                {
+                    Filter = "PDF (*.pdf)|*.pdf",
+                    FileName = $"PMC_Ledger_{safeName}_{DateTime.Now:yyyyMMdd}.pdf",
+                    OverwritePrompt = true
+                };
+                if (dlg.ShowDialog() != true)
+                    return;
+
+                LedgerPdfService.Save(dlg.FileName, Customer, ToPdfRows(), TotalCredit, TotalPaid, TotalPending);
+                ShowPopupSuccess("Ledger PDF saved.");
+                try
+                {
+                    Process.Start(new ProcessStartInfo(dlg.FileName) { UseShellExecute = true });
+                }
+                catch
+                {
+                    /* file is saved even if the viewer cannot open */
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Failed to save ledger PDF", ex);
+                ShowPopupError("Failed to save ledger PDF.");
             }
         }
 
@@ -941,12 +1145,26 @@ namespace FruitVegetableMarketPOS.ViewModels
         {
             if (Customer == null)
             {
+                ShowPopupError("No customer selected.");
+                return;
+            }
+            if (LedgerEntries.Count == 0)
+            {
                 ShowPopupError("No ledger entries found to print.");
                 return;
             }
 
-            // Deprecated: transaction-based customer ledger printing has been removed.
-            ShowPopupError("Ledger printing disabled. Use invoice-level printing: open a bill and click Print.");
+            try
+            {
+                var ok = LedgerPdfService.Print(Customer, ToPdfRows(), TotalCredit, TotalPaid, TotalPending);
+                if (!ok)
+                    ShowPopupError("Ledger print cancelled.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Failed to print customer ledger", ex);
+                ShowPopupError("Failed to print customer ledger.");
+            }
         }
 
         private void CloseBillDetail()

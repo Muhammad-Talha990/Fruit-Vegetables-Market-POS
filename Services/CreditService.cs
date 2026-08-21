@@ -215,6 +215,13 @@ namespace FruitVegetableMarketPOS.Services
         public List<CreditPayment> GetPaymentHistory(int billId) =>
             _creditRepo.GetPaymentsForBill(billId);
 
+        /// <summary>Later recoveries (Pay Dues / Pay Due) for the customer statement. Not sale-time InitialPayment.</summary>
+        public List<CreditPayment> GetRecoveriesForCustomer(int customerId) =>
+            _creditRepo.GetRecoveriesForCustomer(customerId);
+
+        public double GetPendingCredit(int customerId) =>
+            Math.Round(_billRepo.GetBillsByCustomerId(customerId).Sum(b => b.RemainingAmount), 2);
+
         // ────────────────────────────────────────────
         //  OPENING BALANCE (previous paper dues)
         // ────────────────────────────────────────────

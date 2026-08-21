@@ -1501,14 +1501,22 @@ namespace FruitVegetableMarketPOS.Services
                     nameUr = rawName.Substring(slashName + 3).Trim();
             }
 
-            // English: item name only — strip any " - Type N" suffix
+            // English: item name only — strip any " - Type N" / " - قسم N" suffix
             var dashType = nameEn.IndexOf(" - Type ", StringComparison.OrdinalIgnoreCase);
             if (dashType > 0)
                 nameEn = nameEn.Substring(0, dashType).Trim();
-            // Also strip if description was "Onion - Type 1 / قسم 1"
             var dashGeneric = nameEn.LastIndexOf(" - ", StringComparison.Ordinal);
-            if (dashGeneric > 0 && nameEn.IndexOf("Type", dashGeneric, StringComparison.OrdinalIgnoreCase) >= 0)
+            if (dashGeneric > 0 && (nameEn.IndexOf("Type", dashGeneric, StringComparison.OrdinalIgnoreCase) >= 0 || nameEn.IndexOf("قسم", dashGeneric, StringComparison.OrdinalIgnoreCase) >= 0))
                 nameEn = nameEn.Substring(0, dashGeneric).Trim();
+
+            if (!string.IsNullOrWhiteSpace(nameUr))
+            {
+                var urDashType = nameUr.IndexOf(" - Type ", StringComparison.OrdinalIgnoreCase);
+                if (urDashType > 0) nameUr = nameUr.Substring(0, urDashType).Trim();
+                var urDashGeneric = nameUr.LastIndexOf(" - ", StringComparison.Ordinal);
+                if (urDashGeneric > 0 && (nameUr.IndexOf("Type", urDashGeneric, StringComparison.OrdinalIgnoreCase) >= 0 || nameUr.IndexOf("قسم", urDashGeneric, StringComparison.OrdinalIgnoreCase) >= 0))
+                    nameUr = nameUr.Substring(0, urDashGeneric).Trim();
+            }
 
             if (string.IsNullOrWhiteSpace(nameUr) && item.ItemInternalId > 0)
             {
@@ -1911,6 +1919,11 @@ namespace FruitVegetableMarketPOS.Services
         /// Loads the invoice header, items, return items, payment history, adjustments and prints
         /// a clean, invoice-based ledger (no Dr/Cr/running balances).
         /// </summary>
+        /// <summary>
+        /// Prints an invoice-centric ledger statement for a specific invoice (bill).
+        /// Loads the invoice header, items, return items, payment history, adjustments and prints
+        /// a clean, invoice-based ledger with Urdu item descriptions and headers just like bill print.
+        /// </summary>
         public bool PrintInvoiceLedgerStatement(int billId, string? pdfPath = null)
         {
             try
@@ -1941,7 +1954,6 @@ namespace FruitVegetableMarketPOS.Services
                         var type = reader.IsDBNull(3) ? "payment" : reader.GetString(3);
                         if (string.Equals(type, "refund", StringComparison.OrdinalIgnoreCase))
                         {
-                            // Treat refunds as negative amounts in summary but list as refunded rows
                             payments.Add((date, method + " (refund)", -amount));
                         }
                         else
@@ -1955,15 +1967,27 @@ namespace FruitVegetableMarketPOS.Services
                     AppLogger.Error("Failed to load detailed payments for invoice ledger", ex);
                 }
 
-                var printDoc = new PrintDocument();
-                string? targetPrinter = ResolvePrinter(allowDialog: true);
-                if (string.IsNullOrEmpty(targetPrinter))
+                _billToPrint = bill;
+                var capturedPayments = payments;
+                string cashier = !string.IsNullOrWhiteSpace(_cashierName) ? _cashierName : "Cashier";
+
+                string? targetPrinter = ResolvePrinter(allowDialog: string.IsNullOrEmpty(pdfPath));
+                if (string.IsNullOrEmpty(targetPrinter) && string.IsNullOrEmpty(pdfPath))
                     return false;
 
-                printDoc.PrinterSettings.PrinterName = targetPrinter;
-                printDoc.DefaultPageSettings.PaperSize = new PaperSize("InvoiceLedger", 302, 2200);
+                // 1) Try ESC/POS thermal printing first if printing to a physical printer
+                if (string.IsNullOrEmpty(pdfPath) && !string.IsNullOrEmpty(targetPrinter))
+                {
+                    if (TryPrintEscPosInvoiceLedger(bill, capturedPayments, cashier, targetPrinter))
+                    {
+                        AppLogger.Info($"ESC/POS invoice ledger printed for Bill #{bill.BillId} on {targetPrinter}");
+                        ActivateMainWindow();
+                        return true;
+                    }
+                }
 
-                // If a pdfPath is provided, force printing to Microsoft Print to PDF without dialogs
+                // 2) GDI Fallback or PDF export
+                var printDoc = new PrintDocument();
                 if (!string.IsNullOrEmpty(pdfPath))
                 {
                     try
@@ -1977,251 +2001,405 @@ namespace FruitVegetableMarketPOS.Services
                         AppLogger.Error("Failed to configure PrintDocument for PDF output", ex);
                     }
                 }
+                else
+                {
+                    printDoc.PrinterSettings.PrinterName = targetPrinter ?? string.Empty;
+                }
 
-                // Capture variables for event handler
-                _billToPrint = bill;
-                var capturedPayments = payments;
+                printDoc.DefaultPageSettings.PaperSize = new PaperSize("InvoiceLedger", 315, 3000);
+                printDoc.DefaultPageSettings.Margins = new Margins(10, 10, 10, 10);
+                printDoc.PrintController = new StandardPrintController();
 
                 printDoc.PrintPage += (s, e) =>
                 {
                     if (e.Graphics == null || _billToPrint == null) return;
-                    var g = e.Graphics;
-                    var headerFont = new Font("Consolas", 11, FontStyle.Bold);
-                    var normalFont = new Font("Consolas", 8);
-                    var boldFont = new Font("Consolas", 8, FontStyle.Bold);
-                    var smallFont = new Font("Consolas", 7);
-
-                    float y = 5;
-                    float margin = 5;
-                    float pageWidth = 265;
-                    var sfCenter = new StringFormat { Alignment = StringAlignment.Center };
-                    var sfRight = new StringFormat { Alignment = StringAlignment.Far };
-
-                    // --- Header ---
-                    g.DrawString(_storeName, headerFont, Brushes.Black, new RectangleF(0, y, 302, 20), sfCenter);
-                    y += 18;
-                    g.DrawString("--- CUSTOMER LEDGER STATEMENT ---", boldFont, Brushes.Black, new RectangleF(0, y, 302, 16), sfCenter);
-                    y += 16;
-                    g.DrawString(_storeAddress, normalFont, Brushes.Black, new RectangleF(0, y, 302, 14), sfCenter);
-                    y += 12;
-                    g.DrawString($"Ph: {_storePhone}", normalFont, Brushes.Black, new RectangleF(0, y, 302, 14), sfCenter);
-                    y += 16;
-
-                    g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-
-                    // Customer & Bill Info
-                    g.DrawString($"Customer: {_billToPrint.Customer?.FullName ?? "Walk-in"}", normalFont, Brushes.Black, margin, y); y += 12;
-                    g.DrawString($"Phone   : {_billToPrint.Customer?.PrimaryPhone ?? "-"}", normalFont, Brushes.Black, margin, y); y += 12;
-                    g.DrawString($"Address : {_billToPrint.BillingAddress ?? _billToPrint.Customer?.Address ?? "-"}", normalFont, Brushes.Black, margin, y); y += 12;
-                    g.DrawString($"Printed : {DateTime.Now:dd/MM/yyyy hh:mm tt}", normalFont, Brushes.Black, margin, y); y += 14;
-
-                    g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-
-                    // ORIGINAL BILL
-                    g.DrawString("ORIGINAL BILL", boldFont, Brushes.Black, margin, y); y += 12;
-                    g.DrawString("Item", boldFont, Brushes.Black, margin, y);
-                    g.DrawString("Qty", boldFont, Brushes.Black, 130, y);
-                    g.DrawString("Price", boldFont, Brushes.Black, 170, y);
-                    g.DrawString("Total", boldFont, Brushes.Black, pageWidth, y, sfRight);
-                    y += 12;
-                    g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-
-                    double origGrand = Math.Round(_billToPrint.GrandTotal, 2);
-                    foreach (var it in _billToPrint.Items)
-                    {
-                        float descWidth = 125;
-                        RectangleF rect = new RectangleF(margin, y, descWidth, 200);
-                        g.DrawString(it.DisplayName, normalFont, Brushes.Black, rect);
-                        SizeF size = g.MeasureString(it.DisplayName, normalFont, (int)descWidth);
-                        float descHeight = Math.Max(13, size.Height);
-
-                        g.DrawString(it.Quantity.ToString(), normalFont, Brushes.Black, 135, y);
-                        g.DrawString(it.UnitPrice.ToString("N0"), normalFont, Brushes.Black, 170, y);
-                        g.DrawString(Math.Abs(it.TotalPrice).ToString("N0"), normalFont, Brushes.Black, pageWidth, y, sfRight);
-                        y += descHeight + 3;
-                    }
-
-                    g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-                    
-                    g.DrawString("Sub Total :", normalFont, Brushes.Black, margin, y);
-                    g.DrawString($"Rs. {_billToPrint.SubTotal:N2}", normalFont, Brushes.Black, pageWidth, y, sfRight);
-                    y += 14;
-
-                    g.DrawString("Discount  :", normalFont, Brushes.Black, margin, y);
-                    g.DrawString($"Rs. {_billToPrint.DiscountAmount:N2}", normalFont, Brushes.Black, pageWidth, y, sfRight);
-                    y += 14;
-
-                    if (_billToPrint.TaxAmount > 0)
-                    {
-                        g.DrawString("Tax       :", normalFont, Brushes.Black, margin, y);
-                        g.DrawString($"Rs. {_billToPrint.TaxAmount:N2}", normalFont, Brushes.Black, pageWidth, y, sfRight);
-                        y += 14;
-                    }
-
-                    g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-                    
-                    g.DrawString("GRAND TOTAL:", boldFont, Brushes.Black, margin, y);
-                    g.DrawString($"Rs. {origGrand:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight);
-                    y += 16;
-
-                    g.DrawString("Payment   :", normalFont, Brushes.Black, margin, y);
-                    g.DrawString(_billToPrint.PaymentMethod, normalFont, Brushes.Black, pageWidth, y, sfRight);
-                    y += 14;
-
-                    g.DrawString("Amount Paid:", normalFont, Brushes.Black, margin, y);
-                    g.DrawString($"Rs. {_billToPrint.InitialPayment:N2}", normalFont, Brushes.Black, pageWidth, y, sfRight);
-                    y += 12;
-                    
-                    g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-
-                    double initialDue = Math.Max(0, origGrand - _billToPrint.InitialPayment);
-                    g.DrawString("DUE AMOUNT:", boldFont, Brushes.Black, margin, y);
-                    g.DrawString($"Rs. {initialDue:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight); y += 16;
-
-                    g.DrawString(new string('=', 44), normalFont, Brushes.Black, margin, y); y += 12;
-
-                    // --- Build chronological timeline (payments + returns) and print in sequence ---
-                    var events = new List<(DateTime Date, string Kind, object Data)>();
-                    if (_billToPrint.PaymentLogs != null)
-                    {
-                        foreach (var p in _billToPrint.PaymentLogs.OrderBy(p => p.PaidAt))
-                        {
-                            if (string.Equals(p.TransactionType, "Sale", StringComparison.OrdinalIgnoreCase)) continue;
-                            if (string.Equals(p.TransactionType, "Refund", StringComparison.OrdinalIgnoreCase)) continue;
-                            events.Add((p.PaidAt, p.TransactionType ?? "Payment", p));
-                        }
-                    }
-                    if (_billToPrint.ReturnLogs != null)
-                    {
-                        foreach (var r in _billToPrint.ReturnLogs.OrderBy(r => r.ReturnedAt))
-                            events.Add((r.ReturnedAt, "Return", r));
-                    }
-
-                    events = events.OrderBy(ev => ev.Date).ThenBy(ev => ev.Kind == "Return" ? 0 : 1).ToList();
-
-                    double runningCashPaid = Math.Round(_billToPrint.InitialPayment, 2);
-                    double runningCreditAdjusted = 0.0;
-
-                    foreach (var ev in events)
-                    {
-                        if (ev.Kind.Equals("Return", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var ret = (ReturnAuditGroup)ev.Data;
-                            
-                            // CRITICAL FIX: Calculate total return value from items, NOT from RefundAmount (which is just cash)
-                            double totalReturnValue = Math.Round(ret.Items.Sum(i => Math.Abs(i.Quantity) * i.UnitPrice), 2);
-
-                            double currentDueBeforeReturn = Math.Max(0, Math.Round(origGrand - runningCashPaid - runningCreditAdjusted, 2));
-                            double creditAdjusted = Math.Min(currentDueBeforeReturn, totalReturnValue);
-                            double cashRefund = Math.Max(0, Math.Round(totalReturnValue - creditAdjusted, 2));
-
-                            runningCreditAdjusted += creditAdjusted;
-                            double dueAfterReturn = Math.Max(0, Math.Round(currentDueBeforeReturn - creditAdjusted, 2));
-
-                            g.DrawString("RETURN", boldFont, Brushes.Black, new RectangleF(0, y, 302, 16), sfCenter); y += 16;
-                            g.DrawString(new string('=', 44), normalFont, Brushes.Black, margin, y); y += 12;
-                            g.DrawString($"Date: {ret.ReturnedAt:dd/MM/yyyy hh:mm tt}", normalFont, Brushes.Black, margin, y); y += 12;
-                            g.DrawString($"Ref: INV# {_billToPrint.InvoiceNumber}", normalFont, Brushes.Black, margin, y); y += 14;
-
-                            g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 10;
-                            
-                            g.DrawString("Item", boldFont, Brushes.Black, margin, y);
-                            g.DrawString("Qty", boldFont, Brushes.Black, 130, y);
-                            g.DrawString("Price", boldFont, Brushes.Black, 170, y);
-                            g.DrawString("Total", boldFont, Brushes.Black, pageWidth, y, sfRight);
-                            y += 12;
-
-                            foreach (var item in ret.Items)
-                            {
-                                float descWidth = 125;
-                                RectangleF rect = new RectangleF(margin, y, descWidth, 200);
-                                g.DrawString(item.ItemDescription, normalFont, Brushes.Black, rect);
-                                SizeF size = g.MeasureString(item.ItemDescription, normalFont, (int)descWidth);
-                                float descHeight = Math.Max(13, size.Height);
-
-                                g.DrawString(Math.Abs(item.Quantity).ToString(), normalFont, Brushes.Black, 135, y);
-                                g.DrawString(item.UnitPrice.ToString("N0"), normalFont, Brushes.Black, 170, y);
-                                g.DrawString(Math.Abs(item.Quantity * item.UnitPrice).ToString("N0"), normalFont, Brushes.Black, pageWidth, y, sfRight);
-                                y += descHeight + 2;
-                            }
-
-                            g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-
-                            if (creditAdjusted > 0)
-                            {
-                                g.DrawString("CREDIT ADJUSTED:", boldFont, Brushes.Black, margin, y);
-                                g.DrawString($"Rs. {creditAdjusted:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight); y += 14;
-                            }
-
-                            if (cashRefund > 0)
-                            {
-                                g.DrawString("Amount Refunded:", boldFont, Brushes.Black, margin, y);
-                                g.DrawString($"Rs. {cashRefund:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight); y += 14;
-                            }
-                            
-                            g.DrawString(new string('=', 44), normalFont, Brushes.Black, margin, y); y += 12;
-                            
-                            g.DrawString("Remaining Balance:", boldFont, Brushes.Black, margin, y);
-                            g.DrawString($"Rs. {dueAfterReturn:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight); y += 14;
-                            
-                            g.DrawString(new string('=', 44), normalFont, Brushes.Black, margin, y); y += 14;
-                        }
-                        else
-                        {
-                            var pay = (CreditPayment)ev.Data;
-                            double amt = Math.Abs(pay.AmountPaid);
-
-                            double dueBeforePay = Math.Max(0, Math.Round(origGrand - runningCashPaid - runningCreditAdjusted, 2));
-                            double totalPaidBeforePay = Math.Round(runningCashPaid + runningCreditAdjusted, 2);
-
-                            runningCashPaid += amt;
-                            double dueAfterPay = Math.Max(0, Math.Round(origGrand - runningCashPaid - runningCreditAdjusted, 2));
-
-                            g.DrawString("PAYMENT", boldFont, Brushes.Black, new RectangleF(0, y, 302, 16), sfCenter); y += 16;
-                            g.DrawString(new string('=', 44), normalFont, Brushes.Black, margin, y); y += 10;
-                            g.DrawString($"Date: {pay.PaidAt:dd/MM/yyyy hh:mm tt}", normalFont, Brushes.Black, margin, y); y += 14;
-                            g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-
-                            g.DrawString("Bill Total :", normalFont, Brushes.Black, margin, y);
-                            g.DrawString($"Rs. {origGrand:N2}", normalFont, Brushes.Black, pageWidth, y, sfRight); y += 12;
-
-                            g.DrawString("Total Paid :", normalFont, Brushes.Black, margin, y);
-                            g.DrawString($"Rs. {totalPaidBeforePay:N2}", normalFont, Brushes.Black, pageWidth, y, sfRight); y += 12;
-
-                            g.DrawString("DUE AMOUNT :", normalFont, Brushes.Black, margin, y);
-                            g.DrawString($"Rs. {dueBeforePay:N2}", normalFont, Brushes.Black, pageWidth, y, sfRight); y += 12;
-                            
-                            g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-
-                            g.DrawString("PAYMENT RECEIVED:", boldFont, Brushes.Black, margin, y);
-                            g.DrawString($"Rs. {amt:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight); y += 14;
-
-                            g.DrawString(new string('-', 44), normalFont, Brushes.Black, margin, y); y += 12;
-                            
-                            g.DrawString("DUE AMOUNT :", boldFont, Brushes.Black, margin, y);
-                            g.DrawString($"Rs. {dueAfterPay:N2}", boldFont, Brushes.Black, pageWidth, y, sfRight); y += 14;
-                            
-                            g.DrawString(new string('=', 44), normalFont, Brushes.Black, margin, y); y += 14;
-                        }
-                    }
-
-                    g.DrawString("End of Customer Ledger", smallFont, Brushes.Black, new RectangleF(0, y, 302, 15), sfCenter);
-
+                    float scale = e.MarginBounds.Width / 576f;
+                    e.Graphics.ScaleTransform(scale, scale);
+                    DrawInvoiceLedgerStatement(e.Graphics, 576, _billToPrint, capturedPayments, cashier);
                     e.HasMorePages = false;
-                    headerFont.Dispose();
-                    normalFont.Dispose();
-                    boldFont.Dispose();
-                    smallFont.Dispose();
                 };
 
                 printDoc.Print();
+                ActivateMainWindow();
                 return true;
             }
             catch (Exception ex)
             {
                 AppLogger.Error("Invoice ledger printing failed", ex);
+                ActivateMainWindow();
                 return false;
             }
+        }
+
+        private bool TryPrintEscPosInvoiceLedger(
+            Bill bill,
+            List<(DateTime Date, string Method, double Amount)> payments,
+            string cashierName,
+            string printerName)
+        {
+            try
+            {
+                var bytes = BuildInvoiceLedgerEscPosRaster(bill, payments, cashierName);
+                return RawPrinterHelper.SendBytesToPrinterWithRetry(
+                    printerName, bytes, $"PMC Ledger #{bill.BillId}", attempts: 2, delayMs: 300);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("ESC/POS ledger raster print failed — will try GDI fallback", ex);
+                return false;
+            }
+        }
+
+        private byte[] BuildInvoiceLedgerEscPosRaster(
+            Bill bill,
+            List<(DateTime Date, string Method, double Amount)> payments,
+            string cashierName)
+        {
+            const int width = 576;
+            const int maxHeight = 10000;
+
+            using var bmp = new Bitmap(width, maxHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            float contentBottom;
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.Clear(Color.White);
+                g.PageUnit = GraphicsUnit.Pixel;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                contentBottom = DrawInvoiceLedgerStatement(g, width, bill, payments, cashierName);
+            }
+
+            int cropH = Math.Max(120, (int)Math.Ceiling(contentBottom) + 40);
+            cropH = Math.Min(cropH, maxHeight);
+            using var cropped = bmp.Clone(new Rectangle(0, 0, width, cropH), System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            return ConvertBitmapToEscPosRaster(cropped);
+        }
+
+        private float DrawInvoiceLedgerStatement(
+            Graphics g,
+            int pageWidthPx,
+            Bill bill,
+            List<(DateTime Date, string Method, double Amount)> payments,
+            string cashierName)
+        {
+            float margin = 16;
+            float contentWidth = pageWidthPx - (margin * 2);
+            float y = 12;
+            var sfCenter = new StringFormat { Alignment = StringAlignment.Center };
+            var sfRight = new StringFormat { Alignment = StringAlignment.Far };
+
+            using var headerFont = new Font("Consolas", 56, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var urduShopFont = CreateUrduFontPixels(26, FontStyle.Bold);
+            using var titleFont = new Font("Consolas", 26, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var titleUrdu = CreateUrduFontPixels(22, FontStyle.Bold);
+            using var sectionHeaderFont = new Font("Consolas", 24, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var sectionHeaderUrdu = CreateUrduFontPixels(22, FontStyle.Bold);
+            using var metaFont = new Font("Consolas", 22, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var metaBold = new Font("Consolas", 22, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var smallFont = new Font("Consolas", 20, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var colUrduFont = CreateUrduFontPixels(18, FontStyle.Regular);
+            using var itemEnFont = new Font("Consolas", 16, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var itemUrduFont = CreateUrduFontPixels(26, FontStyle.Bold);
+            using var totalFont = new Font("Consolas", 28, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var footerFont = new Font("Consolas", 20, FontStyle.Regular, GraphicsUnit.Pixel);
+
+            float gapLine = 10;
+            float gapSection = 14;
+
+            void DrawFullDash()
+            {
+                using var pen = new Pen(Color.Black, 1.8f)
+                {
+                    DashStyle = System.Drawing.Drawing2D.DashStyle.Dash,
+                    DashPattern = new float[] { 4f, 3f }
+                };
+                float lineY = y + 10;
+                g.DrawLine(pen, margin, lineY, margin + contentWidth, lineY);
+                y += 24;
+            }
+
+            // ── Store Header (PMC / Urdu) ──
+            g.DrawString(_storeName, headerFont, Brushes.Black, new RectangleF(0, y, pageWidthPx, 64), sfCenter);
+            y += 64 + 6;
+            g.DrawString(_storeNameUrdu, urduShopFont, Brushes.Black, new RectangleF(margin, y, contentWidth, 36), sfCenter);
+            y += 36 + 6;
+            g.DrawString(_storeAddress, smallFont, Brushes.Black, new RectangleF(0, y, pageWidthPx, 26), sfCenter);
+            y += 26 + 4;
+            g.DrawString($"Ph: {_storePhone}", smallFont, Brushes.Black, new RectangleF(0, y, pageWidthPx, 26), sfCenter);
+            y += 26 + 8;
+
+            g.DrawString("CUSTOMER LEDGER STATEMENT", titleFont, Brushes.Black, new RectangleF(0, y, pageWidthPx, 30), sfCenter);
+            y += 30 + 2;
+            g.DrawString("کسٹمر لیجر سٹیٹمنٹ", titleUrdu, Brushes.Black, new RectangleF(margin, y, contentWidth, 28), sfCenter);
+            y += 28 + gapSection;
+
+            DrawFullDash();
+            y += gapSection - 8;
+
+            // ── Customer & Bill Details ──
+            g.DrawString($"Invoice#: {bill.InvoiceNumber}", metaBold, Brushes.Black, margin, y);
+            y += 26 + gapLine;
+
+            var custName = bill.Customer?.FullName ?? "Walk-in";
+            g.DrawString($"Customer: {custName}", metaFont, Brushes.Black, margin, y);
+            y += 26 + gapLine;
+
+            if (!string.IsNullOrWhiteSpace(bill.Customer?.PrimaryPhone))
+            {
+                g.DrawString($"Phone   : {bill.Customer.PrimaryPhone}", metaFont, Brushes.Black, margin, y);
+                y += 26 + gapLine;
+            }
+
+            string? address = bill.BillingAddress ?? bill.Customer?.Address;
+            if (!string.IsNullOrWhiteSpace(address))
+            {
+                var addrText = $"Address : {address}";
+                var addrSize = g.MeasureString(addrText, metaFont, (int)contentWidth);
+                g.DrawString(addrText, metaFont, Brushes.Black, new RectangleF(margin, y, contentWidth, addrSize.Height + 4));
+                y += Math.Max(26, addrSize.Height) + gapLine;
+            }
+
+            g.DrawString($"Date    : {bill.BillDateTime:dd/MM/yyyy hh:mm tt}", metaFont, Brushes.Black, margin, y);
+            y += 26 + gapLine;
+            g.DrawString($"Cashier : {cashierName}", metaFont, Brushes.Black, margin, y);
+            y += 26 + gapSection;
+
+            // ── Columns Layout: Item/جنس · Qty/تعداد · Unit Price/ریٹ · Total/کل رقم ──
+            float colItem = margin;
+            float colQty = margin + contentWidth * 0.48f;
+            float colPrice = margin + contentWidth * 0.64f;
+            float colTotal = margin + contentWidth;
+            float descWidth = colQty - colItem - 8;
+
+            void DrawTableHeader()
+            {
+                DrawFullDash();
+                y += 4;
+                // Urdu first (primary), English below — matches on-screen bill & bill print
+                g.DrawString("جنس", colUrduFont, Brushes.Black, colItem, y);
+                g.DrawString("تعداد", colUrduFont, Brushes.Black, colQty, y);
+                g.DrawString("ریٹ", colUrduFont, Brushes.Black, colPrice, y);
+                g.DrawString("کل رقم", colUrduFont, Brushes.Black, colTotal, y, sfRight);
+                y += 24;
+                g.DrawString("Item", smallFont, Brushes.Black, colItem, y);
+                g.DrawString("Qty", smallFont, Brushes.Black, colQty, y);
+                g.DrawString("Unit Price", smallFont, Brushes.Black, colPrice, y);
+                g.DrawString("Total", smallFont, Brushes.Black, colTotal, y, sfRight);
+                y += 22 + 4;
+                DrawFullDash();
+                y += 6;
+            }
+
+            // ── Section 1: ORIGINAL BILL ──
+            g.DrawString("ORIGINAL BILL · اصل بل", sectionHeaderFont, Brushes.Black, margin, y);
+            y += 26 + 4;
+
+            DrawTableHeader();
+
+            double origGrand = Math.Round(bill.GrandTotal, 2);
+            foreach (var it in bill.Items ?? Enumerable.Empty<BillDescription>())
+            {
+                var (enLine, urLine) = GetBilingualPrintLines(it);
+
+                // Qty / prices align with the top line (Urdu if present)
+                g.DrawString(Math.Abs(it.Quantity).ToString("0.##"), metaFont, Brushes.Black, colQty, y);
+                g.DrawString(it.UnitPrice.ToString("N0"), metaFont, Brushes.Black, colPrice, y);
+                g.DrawString(Math.Abs(it.TotalPrice).ToString("N0"), metaFont, Brushes.Black, colTotal, y, sfRight);
+
+                // Urdu on top (larger, bold), English below (smaller)
+                if (!string.IsNullOrWhiteSpace(urLine))
+                {
+                    var urSize = g.MeasureString(urLine, itemUrduFont, (int)descWidth);
+                    float urH = Math.Max(28, urSize.Height);
+                    g.DrawString(urLine, itemUrduFont, Brushes.Black, new RectangleF(colItem, y, descWidth, urH + 4));
+                    y += urH + 2;
+                }
+
+                var enSize = g.MeasureString(enLine, itemEnFont, (int)descWidth);
+                float enH = Math.Max(18, enSize.Height);
+                g.DrawString(enLine, itemEnFont, Brushes.Black, new RectangleF(colItem, y, descWidth, enH + 4));
+                y += enH + 8;
+            }
+
+            DrawFullDash();
+            y += gapSection - 8;
+
+            void Row(string label, string value, Font font, float extraGap = 0)
+            {
+                g.DrawString(label, font, Brushes.Black, margin, y);
+                g.DrawString(value, font, Brushes.Black, margin + contentWidth, y, sfRight);
+                y += 28 + gapLine + extraGap;
+            }
+
+            Row("Sub Total :", $"Rs.{bill.SubTotal:N2}", metaFont);
+            if (bill.DiscountAmount > 0)
+                Row("Discount  :", $"-Rs.{bill.DiscountAmount:N2}", metaFont);
+            if (bill.TaxAmount > 0)
+                Row("Tax       :", $"Rs.{bill.TaxAmount:N2}", metaFont);
+
+            Row("GRAND TOTAL:", $"Rs.{origGrand:N2}", totalFont, extraGap: 4);
+
+            string paymentMethodText = bill.PaymentMethod ?? "Cash";
+            if (paymentMethodText.Equals("Online", StringComparison.OrdinalIgnoreCase))
+            {
+                var accountDetails = bill.Account?.AccountTitle ?? bill.OnlinePaymentMethod ?? string.Empty;
+                if (!string.IsNullOrEmpty(accountDetails))
+                    paymentMethodText = $"Online ({accountDetails})";
+            }
+            Row("Payment   :", paymentMethodText, metaFont);
+            Row("Amount Paid:", $"Rs.{bill.InitialPayment:N2}", metaFont);
+
+            double initialDue = Math.Max(0, origGrand - bill.InitialPayment);
+            Row("DUE AMOUNT:", $"Rs.{initialDue:N2}", totalFont);
+
+            // ── Section 2: Timeline of Payments & Returns ──
+            var events = new List<(DateTime Date, string Kind, object Data)>();
+            if (bill.PaymentLogs != null)
+            {
+                foreach (var p in bill.PaymentLogs.OrderBy(p => p.PaidAt))
+                {
+                    if (string.Equals(p.TransactionType, "Sale", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (string.Equals(p.TransactionType, "Refund", StringComparison.OrdinalIgnoreCase)) continue;
+                    events.Add((p.PaidAt, p.TransactionType ?? "Payment", p));
+                }
+            }
+            if (bill.ReturnLogs != null)
+            {
+                foreach (var r in bill.ReturnLogs.OrderBy(r => r.ReturnedAt))
+                    events.Add((r.ReturnedAt, "Return", r));
+            }
+
+            events = events.OrderBy(ev => ev.Date).ThenBy(ev => ev.Kind == "Return" ? 0 : 1).ToList();
+
+            double runningCashPaid = Math.Round(bill.InitialPayment, 2);
+            double runningCreditAdjusted = 0.0;
+
+            foreach (var ev in events)
+            {
+                DrawFullDash();
+                y += gapSection - 8;
+
+                if (ev.Kind.Equals("Return", StringComparison.OrdinalIgnoreCase))
+                {
+                    var ret = (ReturnAuditGroup)ev.Data;
+                    double totalReturnValue = Math.Round(ret.Items.Sum(i => Math.Abs(i.Quantity) * i.UnitPrice), 2);
+                    double currentDueBeforeReturn = Math.Max(0, Math.Round(origGrand - runningCashPaid - runningCreditAdjusted, 2));
+                    double creditAdjusted = Math.Min(currentDueBeforeReturn, totalReturnValue);
+                    double cashRefund = Math.Max(0, Math.Round(totalReturnValue - creditAdjusted, 2));
+
+                    runningCreditAdjusted += creditAdjusted;
+                    double dueAfterReturn = Math.Max(0, Math.Round(currentDueBeforeReturn - creditAdjusted, 2));
+
+                    g.DrawString("RETURN · واپسی", sectionHeaderFont, Brushes.Black, new RectangleF(0, y, pageWidthPx, 28), sfCenter);
+                    y += 28 + 4;
+                    DrawFullDash();
+                    g.DrawString($"Date: {ret.ReturnedAt:dd/MM/yyyy hh:mm tt}", metaFont, Brushes.Black, margin, y);
+                    y += 26 + gapLine;
+                    g.DrawString($"Ref : INV# {bill.InvoiceNumber}", metaFont, Brushes.Black, margin, y);
+                    y += 26 + 4;
+
+                    DrawTableHeader();
+
+                    foreach (var item in ret.Items)
+                    {
+                        var (enLine, urLine) = GetBilingualReturnItemLines(item);
+
+                        g.DrawString(Math.Abs(item.Quantity).ToString("0.##"), metaFont, Brushes.Black, colQty, y);
+                        g.DrawString(item.UnitPrice.ToString("N0"), metaFont, Brushes.Black, colPrice, y);
+                        g.DrawString(Math.Abs(item.Quantity * item.UnitPrice).ToString("N0"), metaFont, Brushes.Black, colTotal, y, sfRight);
+
+                        if (!string.IsNullOrWhiteSpace(urLine))
+                        {
+                            var urSize = g.MeasureString(urLine, itemUrduFont, (int)descWidth);
+                            float urH = Math.Max(28, urSize.Height);
+                            g.DrawString(urLine, itemUrduFont, Brushes.Black, new RectangleF(colItem, y, descWidth, urH + 4));
+                            y += urH + 2;
+                        }
+
+                        var enSize = g.MeasureString(enLine, itemEnFont, (int)descWidth);
+                        float enH = Math.Max(18, enSize.Height);
+                        g.DrawString(enLine, itemEnFont, Brushes.Black, new RectangleF(colItem, y, descWidth, enH + 4));
+                        y += enH + 8;
+                    }
+
+                    DrawFullDash();
+                    y += gapSection - 8;
+
+                    if (creditAdjusted > 0)
+                        Row("CREDIT ADJUSTED:", $"Rs.{creditAdjusted:N2}", totalFont);
+                    if (cashRefund > 0)
+                        Row("Amount Refunded:", $"Rs.{cashRefund:N2}", metaBold);
+
+                    Row("Remaining Balance:", $"Rs.{dueAfterReturn:N2}", totalFont);
+                }
+                else
+                {
+                    var pay = (CreditPayment)ev.Data;
+                    double amt = Math.Abs(pay.AmountPaid);
+
+                    double dueBeforePay = Math.Max(0, Math.Round(origGrand - runningCashPaid - runningCreditAdjusted, 2));
+                    double totalPaidBeforePay = Math.Round(runningCashPaid + runningCreditAdjusted, 2);
+
+                    runningCashPaid += amt;
+                    double dueAfterPay = Math.Max(0, Math.Round(origGrand - runningCashPaid - runningCreditAdjusted, 2));
+
+                    g.DrawString("PAYMENT · ادائیگی", sectionHeaderFont, Brushes.Black, new RectangleF(0, y, pageWidthPx, 28), sfCenter);
+                    y += 28 + 4;
+                    DrawFullDash();
+                    g.DrawString($"Date: {pay.PaidAt:dd/MM/yyyy hh:mm tt}", metaFont, Brushes.Black, margin, y);
+                    y += 26 + gapLine;
+
+                    Row("Bill Total :", $"Rs.{origGrand:N2}", metaFont);
+                    Row("Total Paid :", $"Rs.{totalPaidBeforePay:N2}", metaFont);
+                    Row("Due Before :", $"Rs.{dueBeforePay:N2}", metaFont);
+                    Row("PAYMENT RECEIVED:", $"Rs.{amt:N2}", totalFont);
+                    Row("DUE AMOUNT :", $"Rs.{dueAfterPay:N2}", totalFont);
+                }
+            }
+
+            DrawFullDash();
+            y += gapSection - 8;
+            g.DrawString("End of Customer Ledger · لیجر مکمل", footerFont, Brushes.Black, new RectangleF(0, y, pageWidthPx, 26), sfCenter);
+            y += 36;
+
+            return y;
+        }
+
+        private static (string enLine, string? urLine) GetBilingualReturnItemLines(BillReturnItemAudit item)
+        {
+            var rawName = !string.IsNullOrWhiteSpace(item.ItemName)
+                ? item.ItemName.Trim()
+                : (item.ItemDescription ?? "Item").Trim();
+
+            string nameEn = rawName;
+            string? nameUr = item.NameUrdu?.Trim();
+
+            var slashName = rawName.IndexOf(" / ", StringComparison.Ordinal);
+            if (slashName > 0)
+            {
+                nameEn = rawName.Substring(0, slashName).Trim();
+                if (string.IsNullOrWhiteSpace(nameUr))
+                    nameUr = rawName.Substring(slashName + 3).Trim();
+            }
+
+            var dashType = nameEn.IndexOf(" - Type ", StringComparison.OrdinalIgnoreCase);
+            if (dashType > 0)
+                nameEn = nameEn.Substring(0, dashType).Trim();
+            var dashGeneric = nameEn.LastIndexOf(" - ", StringComparison.Ordinal);
+            if (dashGeneric > 0 && (nameEn.IndexOf("Type", dashGeneric, StringComparison.OrdinalIgnoreCase) >= 0 || nameEn.IndexOf("قسم", dashGeneric, StringComparison.OrdinalIgnoreCase) >= 0))
+                nameEn = nameEn.Substring(0, dashGeneric).Trim();
+
+            if (!string.IsNullOrWhiteSpace(nameUr))
+            {
+                var urDashType = nameUr.IndexOf(" - Type ", StringComparison.OrdinalIgnoreCase);
+                if (urDashType > 0) nameUr = nameUr.Substring(0, urDashType).Trim();
+                var urDashGeneric = nameUr.LastIndexOf(" - ", StringComparison.Ordinal);
+                if (urDashGeneric > 0 && (nameUr.IndexOf("Type", urDashGeneric, StringComparison.OrdinalIgnoreCase) >= 0 || nameUr.IndexOf("قسم", urDashGeneric, StringComparison.OrdinalIgnoreCase) >= 0))
+                    nameUr = nameUr.Substring(0, urDashGeneric).Trim();
+            }
+
+            return (nameEn, string.IsNullOrWhiteSpace(nameUr) ? null : nameUr);
         }
 
         /// <summary>

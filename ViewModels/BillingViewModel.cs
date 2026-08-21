@@ -139,6 +139,21 @@ namespace FruitVegetableMarketPOS.ViewModels
         public string NewCustomerAddress { get; set; } = "";
         public string NewCustomerAddress2 { get; set; } = "";
         public string NewCustomerAddress3 { get; set; } = "";
+        private bool _newCustomerHasPreviousDues;
+        public bool NewCustomerHasPreviousDues
+        {
+            get => _newCustomerHasPreviousDues;
+            set
+            {
+                if (SetProperty(ref _newCustomerHasPreviousDues, value))
+                {
+                    OnPropertyChanged(nameof(ShowNewCustomerOpeningBalanceFields));
+                }
+            }
+        }
+        public bool ShowNewCustomerOpeningBalanceFields => NewCustomerHasPreviousDues;
+        public string NewCustomerOpeningBalanceAmount { get; set; } = "";
+        public string NewCustomerOpeningBalanceNote { get; set; } = "";
         public string RegistrationErrorMessage { get; set; } = "";
 
         public ObservableCollection<Item> ItemList { get; set; } = new();
@@ -151,6 +166,7 @@ namespace FruitVegetableMarketPOS.ViewModels
         public ObservableCollection<ItemType> AvailableTypesForPicker { get; } = new();
         public ObservableCollection<TypeQtyRow> TypeQtyRows { get; } = new();
         public ObservableCollection<Item> AllMasterItems { get; } = new();
+        public ObservableCollection<Item> FilteredMasterItems { get; } = new();
         public ObservableCollection<PreviousDayMenuItem> PreviousDayMenuItems { get; } = new();
 
 
@@ -275,6 +291,38 @@ namespace FruitVegetableMarketPOS.ViewModels
                 if (!SetProperty(ref _dailySetupItemIdText, value)) return;
                 if (_syncingDailySetup) return;
                 SyncDailySetupFromId(value);
+            }
+        }
+
+        private string _masterItemSearchText = string.Empty;
+        /// <summary>Text typed into the Master Item dropdown to search/filter items.</summary>
+        public string MasterItemSearchText
+        {
+            get => _masterItemSearchText;
+            set
+            {
+                if (SetProperty(ref _masterItemSearchText, value ?? string.Empty))
+                {
+                    if (!_syncingDailySetup)
+                    {
+                        FilterMasterItems(_masterItemSearchText);
+                        IsDailySetupDropDownOpen = !string.IsNullOrWhiteSpace(_masterItemSearchText);
+                    }
+                }
+            }
+        }
+
+        private bool _isDailySetupDropDownOpen;
+        public bool IsDailySetupDropDownOpen
+        {
+            get => _isDailySetupDropDownOpen;
+            set
+            {
+                if (_isDailySetupDropDownOpen != value)
+                {
+                    _isDailySetupDropDownOpen = value;
+                    OnPropertyChanged(nameof(IsDailySetupDropDownOpen));
+                }
             }
         }
 
@@ -789,6 +837,9 @@ namespace FruitVegetableMarketPOS.ViewModels
         public ICommand DecrementQuantityCommand { get; }
         public ICommand IncrementTypeQtyCommand { get; }
         public ICommand DecrementTypeQtyCommand { get; }
+        public ICommand SelectMasterItemCommand { get; }
+        public ICommand SelectFirstMatchingMasterItemCommand { get; }
+        public ICommand ToggleDailySetupDropDownCommand { get; }
         public ICommand AddDailyItemCommand { get; }
         public ICommand ClearDailySetupCommand { get; }
         public ICommand RefreshTodayProductsCommand { get; }
@@ -903,6 +954,49 @@ namespace FruitVegetableMarketPOS.ViewModels
             DecrementQuantityCommand = new RelayCommand(_ => AdjustPickerQuantity(-1));
             IncrementTypeQtyCommand = new RelayCommand(obj => AdjustTypeQty(obj as TypeQtyRow, 1));
             DecrementTypeQtyCommand = new RelayCommand(obj => AdjustTypeQty(obj as TypeQtyRow, -1));
+            SelectMasterItemCommand = new RelayCommand(param =>
+            {
+                if (param is Item item)
+                {
+                    _syncingDailySetup = true;
+                    try
+                    {
+                        _dailySetupSelectedItem = item;
+                        _dailySetupItemIdText = item.PosCode;
+                        _masterItemSearchText = item.DisplayLabel;
+                        OnPropertyChanged(nameof(DailySetupSelectedItem));
+                        OnPropertyChanged(nameof(DailySetupItemIdText));
+                        OnPropertyChanged(nameof(MasterItemSearchText));
+                        IsDailySetupDropDownOpen = false;
+                        FilterMasterItems(string.Empty);
+                    }
+                    finally
+                    {
+                        _syncingDailySetup = false;
+                    }
+                    PrefillDailyTypeRowsFromItem(item);
+                }
+            });
+            SelectFirstMatchingMasterItemCommand = new RelayCommand(_ =>
+            {
+                var first = FilteredMasterItems.FirstOrDefault();
+                if (first != null)
+                {
+                    SelectMasterItemCommand.Execute(first);
+                }
+            });
+            ToggleDailySetupDropDownCommand = new RelayCommand(_ =>
+            {
+                if (!IsDailySetupDropDownOpen)
+                {
+                    FilterMasterItems(MasterItemSearchText);
+                    IsDailySetupDropDownOpen = true;
+                }
+                else
+                {
+                    IsDailySetupDropDownOpen = false;
+                }
+            });
             AddDailyItemCommand = new RelayCommand(_ => AddDailyItem());
             ClearDailySetupCommand = new RelayCommand(_ => ClearDailySetup());
             RefreshTodayProductsCommand = new RelayCommand(_ => RefreshTodayProducts());
@@ -1182,13 +1276,46 @@ namespace FruitVegetableMarketPOS.ViewModels
         private void LoadAllMasterItemsForSetup()
         {
             AllMasterItems.Clear();
+            var todayItemIds = new HashSet<int>(
+                _dailySelection.GetVisibleForToday().Select(s => s.ItemId));
+
             foreach (var item in _itemService.GetActiveItems()
+                         .Where(i => !todayItemIds.Contains(i.Id))
                          .OrderBy(i => int.TryParse(i.PosCode, out var n) ? n : int.MaxValue)
                          .ThenBy(i => i.Description))
+            {
                 AllMasterItems.Add(item);
+            }
+
+            FilterMasterItems(MasterItemSearchText);
         }
 
-        /// <summary>When user types item ID (1,2,3…), fill the name dropdown — clear if ID not found.</summary>
+        private void FilterMasterItems(string? query)
+        {
+            FilteredMasterItems.Clear();
+            var q = (query ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(q))
+            {
+                foreach (var item in AllMasterItems)
+                    FilteredMasterItems.Add(item);
+                return;
+            }
+
+            foreach (var item in AllMasterItems)
+            {
+                var desc = (item.Description ?? string.Empty).ToLowerInvariant();
+                var urdu = (item.NameUrdu ?? string.Empty).ToLowerInvariant();
+                var code = (item.PosCode ?? string.Empty).ToLowerInvariant();
+                var label = (item.DisplayLabel ?? string.Empty).ToLowerInvariant();
+
+                if (desc.Contains(q) || urdu.Contains(q) || code.Contains(q) || label.Contains(q))
+                {
+                    FilteredMasterItems.Add(item);
+                }
+            }
+        }
+
+        /// <summary>When user types item ID (1,2,3…), fill the name dropdown — clear if ID not found or already on today's menu.</summary>
         private void SyncDailySetupFromId(string? code)
         {
             Item? matched = null;
@@ -1198,15 +1325,19 @@ namespace FruitVegetableMarketPOS.ViewModels
                 code = (code ?? string.Empty).Trim();
                 if (!string.IsNullOrEmpty(code))
                 {
-                    // Match by POS code (barcode) first — e.g. "5" → Grapes — not raw DB ItemId.
-                    var item = _itemService.GetItemByBarcode(code);
-                    if (item != null && item.IsActive)
-                        matched = AllMasterItems.FirstOrDefault(i => i.Id == item.Id) ?? item;
+                    // Only match items in AllMasterItems (which excludes items already selected for today)
+                    matched = AllMasterItems.FirstOrDefault(i =>
+                        string.Equals(i.PosCode, code, StringComparison.OrdinalIgnoreCase) ||
+                        i.Id.ToString() == code ||
+                        string.Equals(i.Barcode, code, StringComparison.OrdinalIgnoreCase));
                 }
 
-                // Always sync dropdown: show match, or clear when ID is empty/invalid
+                // Always sync dropdown: show match, or clear when ID is empty, invalid, or already on today's menu
                 _dailySetupSelectedItem = matched;
+                _masterItemSearchText = matched?.DisplayLabel ?? string.Empty;
                 OnPropertyChanged(nameof(DailySetupSelectedItem));
+                OnPropertyChanged(nameof(MasterItemSearchText));
+                FilterMasterItems(string.Empty);
             }
             finally
             {
@@ -1223,7 +1354,10 @@ namespace FruitVegetableMarketPOS.ViewModels
             try
             {
                 _dailySetupItemIdText = item == null ? string.Empty : item.PosCode;
+                _masterItemSearchText = item?.DisplayLabel ?? string.Empty;
                 OnPropertyChanged(nameof(DailySetupItemIdText));
+                OnPropertyChanged(nameof(MasterItemSearchText));
+                FilterMasterItems(string.Empty);
             }
             finally
             {
@@ -1767,12 +1901,15 @@ namespace FruitVegetableMarketPOS.ViewModels
             {
                 _dailySetupItemIdText = string.Empty;
                 _dailySetupSelectedItem = null;
+                _masterItemSearchText = string.Empty;
                 _dailyTypeCountText = string.Empty;
                 _selectedDailyTypeCountOption = null;
                 OnPropertyChanged(nameof(DailySetupItemIdText));
                 OnPropertyChanged(nameof(DailySetupSelectedItem));
+                OnPropertyChanged(nameof(MasterItemSearchText));
                 OnPropertyChanged(nameof(DailyTypeCountText));
                 OnPropertyChanged(nameof(SelectedDailyTypeCountOption));
+                FilterMasterItems(string.Empty);
             }
             finally
             {
@@ -2796,11 +2933,22 @@ namespace FruitVegetableMarketPOS.ViewModels
                     return;
                 }
 
-                var existing = _customerService.GetCustomerByPhone(NewCustomerPhone);
+                double openingAmount = 0;
+                if (NewCustomerHasPreviousDues)
+                {
+                    if (!double.TryParse(NewCustomerOpeningBalanceAmount?.Trim(), out openingAmount) || openingAmount <= 0)
+                    {
+                        RegistrationErrorMessage = "Enter a valid previous dues amount greater than zero.";
+                        OnPropertyChanged(nameof(RegistrationErrorMessage));
+                        return;
+                    }
+                }
+
+                var existing = _customerService.GetCustomerByPhone(NewCustomerPhone.Trim());
                 if (existing != null && existing.FullName.Equals("Walk-in Customer", StringComparison.OrdinalIgnoreCase))
                 {
                     var confirmResult = MessageBox.Show(
-                        $"A Walk-in Customer with the phone number '{NewCustomerPhone}' already exists.\n\nDo you want to convert this record to a registered customer? This will preserve all previous bills and purchase history.",
+                        $"A Walk-in Customer with the phone number '{NewCustomerPhone.Trim()}' already exists.\n\nDo you want to convert this record to a registered customer? This will preserve all previous bills and purchase history.",
                         "Convert Walk-in Customer",
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Question);
@@ -2811,16 +2959,25 @@ namespace FruitVegetableMarketPOS.ViewModels
 
                 var customer = new Customer
                 {
-                    Name = NewCustomerName,
-                    FullName = NewCustomerName,
-                    PrimaryPhone = NewCustomerPhone,
-                    SecondaryPhone = NewCustomerSecondaryPhone,
-                    Address = NewCustomerAddress,
-                    Address2 = NewCustomerAddress2,
-                    Address3 = NewCustomerAddress3
+                    Name = NewCustomerName.Trim(),
+                    FullName = NewCustomerName.Trim(),
+                    PrimaryPhone = NewCustomerPhone.Trim(),
+                    SecondaryPhone = string.IsNullOrWhiteSpace(NewCustomerSecondaryPhone) ? null : NewCustomerSecondaryPhone.Trim(),
+                    Address = string.IsNullOrWhiteSpace(NewCustomerAddress) ? null : NewCustomerAddress.Trim(),
+                    Address2 = string.IsNullOrWhiteSpace(NewCustomerAddress2) ? null : NewCustomerAddress2.Trim(),
+                    Address3 = string.IsNullOrWhiteSpace(NewCustomerAddress3) ? null : NewCustomerAddress3.Trim()
                 };
                 _customerService.RegisterCustomer(customer);
-                SelectCustomer(customer);
+
+                if (NewCustomerHasPreviousDues && openingAmount > 0)
+                {
+                    _creditService.CreateOpeningBalance(
+                        customer.CustomerId,
+                        openingAmount,
+                        string.IsNullOrWhiteSpace(NewCustomerOpeningBalanceNote) ? null : NewCustomerOpeningBalanceNote.Trim(),
+                        _authService.CurrentUser?.Id);
+                }
+
                 SelectCustomer(customer);
                 IsRegistrationVisible = false;
                 OnPropertyChanged(nameof(IsRegistrationVisible));
@@ -2840,6 +2997,9 @@ namespace FruitVegetableMarketPOS.ViewModels
             NewCustomerAddress = "";
             NewCustomerAddress2 = "";
             NewCustomerAddress3 = "";
+            NewCustomerHasPreviousDues = false;
+            NewCustomerOpeningBalanceAmount = "";
+            NewCustomerOpeningBalanceNote = "";
             RegistrationErrorMessage = "";
             OnPropertyChanged(nameof(NewCustomerName));
             OnPropertyChanged(nameof(NewCustomerPhone));
@@ -2847,6 +3007,10 @@ namespace FruitVegetableMarketPOS.ViewModels
             OnPropertyChanged(nameof(NewCustomerAddress));
             OnPropertyChanged(nameof(NewCustomerAddress2));
             OnPropertyChanged(nameof(NewCustomerAddress3));
+            OnPropertyChanged(nameof(NewCustomerHasPreviousDues));
+            OnPropertyChanged(nameof(ShowNewCustomerOpeningBalanceFields));
+            OnPropertyChanged(nameof(NewCustomerOpeningBalanceAmount));
+            OnPropertyChanged(nameof(NewCustomerOpeningBalanceNote));
             OnPropertyChanged(nameof(RegistrationErrorMessage));
         }
 

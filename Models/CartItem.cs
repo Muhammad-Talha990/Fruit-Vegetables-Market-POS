@@ -29,11 +29,28 @@ namespace FruitVegetableMarketPOS.Models
         /// <summary>Urdu name for display on the cart line.</summary>
         public string? NameUrdu { get; set; }
 
-        /// <summary>English / Urdu title for the cart item column.</summary>
-        public string DisplayName =>
-            string.IsNullOrWhiteSpace(NameUrdu)
-                ? ItemDescription
-                : $"{ItemDescription} / {NameUrdu}";
+        /// <summary>English / Urdu title for the cart item column (item name only, no type).</summary>
+        public string DisplayName
+        {
+            get
+            {
+                var name = (ItemDescription ?? string.Empty).Trim();
+                var dashType = name.IndexOf(" - Type ", StringComparison.OrdinalIgnoreCase);
+                if (dashType > 0)
+                    name = name.Substring(0, dashType).Trim();
+
+                var dashGeneric = name.LastIndexOf(" - ", StringComparison.Ordinal);
+                if (dashGeneric > 0 && (name.IndexOf("Type", dashGeneric, StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("قسم", dashGeneric, StringComparison.OrdinalIgnoreCase) >= 0))
+                    name = name.Substring(0, dashGeneric).Trim();
+
+                if (name.Contains(" / ", StringComparison.Ordinal))
+                    return name;
+
+                return string.IsNullOrWhiteSpace(NameUrdu)
+                    ? name
+                    : $"{name} / {NameUrdu.Trim()}";
+            }
+        }
 
         private double _unitPrice;
         /// <summary>Unit price from the selected type (Type N price).</summary>

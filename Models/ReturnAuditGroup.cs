@@ -18,6 +18,8 @@ namespace FruitVegetableMarketPOS.Models
     public class BillReturnItemAudit
     {
         public string ItemDescription { get; set; } = string.Empty;
+        public string? ItemName { get; set; }
+        public string? NameUrdu { get; set; }
         public double Quantity { get; set; }
         public double UnitPrice { get; set; }
         public double TotalPrice => Quantity * UnitPrice;

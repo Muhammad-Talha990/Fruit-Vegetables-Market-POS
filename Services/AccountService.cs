@@ -23,6 +23,8 @@ namespace FruitVegetableMarketPOS.Services
             return _accountRepo.GetActiveAccounts();
         }
 
+        public List<Account> GetOnlinePaymentAccounts() => GetActiveAccounts();
+
         public Account? GetAccountById(int id)
         {
             return _accountRepo.GetById(id);

@@ -138,9 +138,20 @@ namespace FruitVegetableMarketPOS.ViewModels
             };
         }
 
+        private bool _reportsLedgerWired;
+
         private ReportsViewModel ActivateReports()
         {
             var vm = _serviceProvider.GetRequiredService<ReportsViewModel>();
+            if (!_reportsLedgerWired)
+            {
+                vm.ViewLedgerRequested += customerId =>
+                {
+                    PendingLedgerCustomerId = customerId;
+                    NavigateTo("CustomerLedger");
+                };
+                _reportsLedgerWired = true;
+            }
             vm.OnActivated();
             return vm;
         }

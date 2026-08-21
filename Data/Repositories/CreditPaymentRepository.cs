@@ -105,16 +105,67 @@ namespace FruitVegetableMarketPOS.Data.Repositories
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
-                list.Add(new CreditPayment
-                {
-                    PaymentId       = reader.GetInt32(0),
-                    BillId          = reader.GetInt32(1),
-                    AmountPaid      = reader.GetDouble(2),
-                    PaidAt          = reader.GetDateTime(3),
-                    TransactionType = reader.GetString(4)
-                });
+                list.Add(MapPayment(reader));
             }
             return list;
+        }
+
+        /// <summary>
+        /// Later recoveries for a customer (bill_payment rows). Sale-time cash is stored
+        /// on Bills.InitialPayment, not here.
+        /// </summary>
+        public List<CreditPayment> GetRecoveriesForCustomer(int customerId)
+        {
+            var list = new List<CreditPayment>();
+            using var conn = DatabaseHelper.GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT p.PaymentId, p.BillId, p.Amount, p.CreatedAt, p.Type, COALESCE(p.PaymentMethod, 'Cash')
+                FROM bill_payment p
+                INNER JOIN Bills b ON b.BillId = p.BillId
+                WHERE b.CustomerId = @cid
+                  AND LOWER(TRIM(COALESCE(p.Type, ''))) = 'payment'
+                  AND COALESCE(b.Status, '') != 'Cancelled'
+                ORDER BY p.CreatedAt ASC, p.PaymentId ASC;";
+            cmd.Parameters.AddWithValue("@cid", customerId);
+
+            try
+            {
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                    list.Add(MapPayment(reader));
+            }
+            catch (SqliteException)
+            {
+                list.Clear();
+                cmd.Parameters.Clear();
+                cmd.CommandText = @"
+                    SELECT p.PaymentId, p.BillId, p.Amount, p.CreatedAt, p.Type
+                    FROM bill_payment p
+                    INNER JOIN Bills b ON b.BillId = p.BillId
+                    WHERE b.CustomerId = @cid
+                      AND LOWER(TRIM(COALESCE(p.Type, ''))) = 'payment'
+                      AND COALESCE(b.Status, '') != 'Cancelled'
+                    ORDER BY p.CreatedAt ASC, p.PaymentId ASC;";
+                cmd.Parameters.AddWithValue("@cid", customerId);
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                    list.Add(MapPayment(reader));
+            }
+            return list;
+        }
+
+        private static CreditPayment MapPayment(SqliteDataReader reader)
+        {
+            return new CreditPayment
+            {
+                PaymentId       = reader.GetInt32(0),
+                BillId          = reader.GetInt32(1),
+                AmountPaid      = reader.GetDouble(2),
+                PaidAt          = reader.GetDateTime(3),
+                TransactionType = reader.IsDBNull(4) ? "payment" : reader.GetString(4),
+                PaymentMethod   = reader.FieldCount > 5 && !reader.IsDBNull(5) ? reader.GetString(5) : "Cash"
+            };
         }
 
         /// <summary>Returns total amount paid across all installments for a bill.</summary>

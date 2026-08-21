@@ -54,8 +54,12 @@ namespace FruitVegetableMarketPOS.Models
         /// </summary>
         public double PendingCredit { get; set; }
 
-        /// <summary>Display helper for status badge.</summary>
-        public string StatusLabel => IsActive ? "Active" : "Inactive";
+        /// <summary>True when this customer currently has outstanding dues.</summary>
+        public bool IsCredit => PendingCredit > 0.01;
+
+        /// <summary>Display helper for status badge: Inactive / Credit / Paid.</summary>
+        public string StatusLabel =>
+            !IsActive ? "Inactive" : (IsCredit ? "Credit" : "Paid");
 
         /// <summary>Display helper — pending credit formatted.</summary>
         public string PendingCreditDisplay =>

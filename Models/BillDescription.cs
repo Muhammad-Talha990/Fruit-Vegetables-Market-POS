@@ -98,17 +98,21 @@ namespace FruitVegetableMarketPOS.Models
         /// <summary>Unit of measure frozen at sale time.</summary>
         public string Unit { get; set; } = "KG";
 
-        /// <summary>Display name for receipts/UI — English / Urdu only (no type).</summary>
+        /// <summary>Display name for receipts/UI — English / Urdu only (no type or qism).</summary>
         public string DisplayName
         {
             get
             {
                 var name = !string.IsNullOrWhiteSpace(ItemName) ? ItemName.Trim() : (ItemDescription ?? string.Empty).Trim();
 
-                // Strip any legacy " - Type N…" suffix from frozen item name
+                // Strip any legacy " - Type N…" or " - قسم N…" suffix
                 var dashType = name.IndexOf(" - Type ", System.StringComparison.OrdinalIgnoreCase);
                 if (dashType > 0)
                     name = name.Substring(0, dashType).Trim();
+
+                var dashGeneric = name.LastIndexOf(" - ", System.StringComparison.Ordinal);
+                if (dashGeneric > 0 && (name.IndexOf("Type", dashGeneric, System.StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("قسم", dashGeneric, System.StringComparison.OrdinalIgnoreCase) >= 0))
+                    name = name.Substring(0, dashGeneric).Trim();
 
                 if (name.Contains(" / ", System.StringComparison.Ordinal))
                     return name;
@@ -119,7 +123,7 @@ namespace FruitVegetableMarketPOS.Models
             }
         }
 
-        /// <summary>English line for bilingual receipts — item name only (no type).</summary>
+        /// <summary>English line for bilingual receipts — item name only (no type or qism).</summary>
         public string ReceiptEnglishName
         {
             get
@@ -129,11 +133,14 @@ namespace FruitVegetableMarketPOS.Models
                 if (slash > 0) name = name.Substring(0, slash).Trim();
                 var dashType = name.IndexOf(" - Type ", System.StringComparison.OrdinalIgnoreCase);
                 if (dashType > 0) name = name.Substring(0, dashType).Trim();
+                var dashGeneric = name.LastIndexOf(" - ", System.StringComparison.Ordinal);
+                if (dashGeneric > 0 && (name.IndexOf("Type", dashGeneric, System.StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("قسم", dashGeneric, System.StringComparison.OrdinalIgnoreCase) >= 0))
+                    name = name.Substring(0, dashGeneric).Trim();
                 return name;
             }
         }
 
-        /// <summary>Urdu line for bilingual receipts — item name only (no type).</summary>
+        /// <summary>Urdu line for bilingual receipts — item name only (no type or qism).</summary>
         public string? ReceiptUrduName
         {
             get
@@ -145,6 +152,14 @@ namespace FruitVegetableMarketPOS.Models
                     var slash = raw?.IndexOf(" / ", System.StringComparison.Ordinal) ?? -1;
                     if (slash > 0)
                         nameUr = raw!.Substring(slash + 3).Trim();
+                }
+                if (!string.IsNullOrWhiteSpace(nameUr))
+                {
+                    var dashType = nameUr.IndexOf(" - Type ", System.StringComparison.OrdinalIgnoreCase);
+                    if (dashType > 0) nameUr = nameUr.Substring(0, dashType).Trim();
+                    var dashGeneric = nameUr.LastIndexOf(" - ", System.StringComparison.Ordinal);
+                    if (dashGeneric > 0 && (nameUr.IndexOf("Type", dashGeneric, System.StringComparison.OrdinalIgnoreCase) >= 0 || nameUr.IndexOf("قسم", dashGeneric, System.StringComparison.OrdinalIgnoreCase) >= 0))
+                        nameUr = nameUr.Substring(0, dashGeneric).Trim();
                 }
                 return string.IsNullOrWhiteSpace(nameUr) ? null : nameUr;
             }

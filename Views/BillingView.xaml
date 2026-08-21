@@ -338,12 +338,56 @@
                                      Margin="0,0,5,0"
                                      helpers:FocusHelper.NumericOnly="True"
                                      helpers:FocusHelper.SelectAllOnFocus="True"/>
-                            <ComboBox Grid.Column="1" ItemsSource="{Binding AllMasterItems}"
-                                      SelectedItem="{Binding DailySetupSelectedItem, Mode=TwoWay}"
-                                      DisplayMemberPath="DisplayLabel" IsEditable="False"
-                                      Style="{StaticResource CompactCombo}"
-                                      ToolTip="Pick item name — or enter a valid Item ID"
-                                      Margin="0,0,5,0"/>
+                            <Grid Grid.Column="1" Margin="0,0,5,0">
+                                <TextBox x:Name="MasterItemSearchBox"
+                                         Text="{Binding MasterItemSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource HintTextBox}"
+                                         helpers:FocusHelper.SelectAllOnFocus="False"
+                                         Tag="Search item name / نام سے تلاش کریں..."
+                                         ToolTip="Type English or Urdu name or ID, or click ▼ to pick available items"
+                                         Padding="6,2,22,2">
+                                    <TextBox.InputBindings>
+                                        <KeyBinding Key="Return" Command="{Binding SelectFirstMatchingMasterItemCommand}"/>
+                                        <KeyBinding Key="Enter" Command="{Binding SelectFirstMatchingMasterItemCommand}"/>
+                                    </TextBox.InputBindings>
+                                </TextBox>
+                                <Button HorizontalAlignment="Right" VerticalAlignment="Center"
+                                        Width="20" Height="22" Margin="0,0,1,0"
+                                        Background="Transparent" BorderThickness="0"
+                                        Command="{Binding ToggleDailySetupDropDownCommand}"
+                                        Content="▼" FontSize="8" Foreground="#6B7280" Cursor="Hand"/>
+                                <Popup IsOpen="{Binding IsDailySetupDropDownOpen, Mode=TwoWay}"
+                                       PlacementTarget="{Binding ElementName=MasterItemSearchBox}"
+                                       Placement="Bottom" StaysOpen="False"
+                                       AllowsTransparency="True" PopupAnimation="Fade">
+                                    <Border Background="White" BorderBrush="#C8D8C8" BorderThickness="1"
+                                            CornerRadius="6" MinWidth="{Binding ActualWidth, ElementName=MasterItemSearchBox}"
+                                            MaxHeight="220" Margin="0,2,0,0">
+                                        <ListBox ItemsSource="{Binding FilteredMasterItems}"
+                                                 BorderThickness="0" Background="Transparent"
+                                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                            <ListBox.ItemContainerStyle>
+                                                <Style TargetType="ListBoxItem">
+                                                    <Setter Property="Padding" Value="0"/>
+                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                    <Setter Property="Cursor" Value="Hand"/>
+                                                </Style>
+                                            </ListBox.ItemContainerStyle>
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Command="{Binding DataContext.SelectMasterItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            Background="Transparent" BorderThickness="0"
+                                                            HorizontalContentAlignment="Stretch"
+                                                            Padding="8,5" Cursor="Hand">
+                                                        <TextBlock Text="{Binding DisplayLabel}" FontSize="11" Foreground="#1B4332"/>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </Border>
+                                </Popup>
+                            </Grid>
                             <ComboBox Grid.Column="2"
                                       ItemsSource="{Binding DailyTypeCountOptions}"
                                       SelectedItem="{Binding SelectedDailyTypeCountOption, Mode=TwoWay}"
@@ -434,10 +478,11 @@
                                           CanContentScroll="False"
                                           HorizontalScrollBarVisibility="Disabled">
                                 <ItemsControl ItemsSource="{Binding TodayProducts}"
-                                              HorizontalContentAlignment="Stretch">
+                                              HorizontalContentAlignment="Stretch"
+                                              VerticalAlignment="Top">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
-                                            <UniformGrid Columns="7"/>
+                                            <UniformGrid Columns="7" VerticalAlignment="Top"/>
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemContainerStyle>
@@ -1018,7 +1063,7 @@
                                                     <ColumnDefinition Width="28"/>
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding TypeName}" FontWeight="SemiBold"
+                                                    <TextBlock Text="{Binding ItemDisplayName}" FontWeight="SemiBold"
                                                                FontSize="11" Foreground="#1B4332" TextWrapping="Wrap"/>
                                                     <!-- Per-type note only (not a whole-item note) -->
                                                     <TextBlock Text="{Binding Note}" FontSize="10" FontStyle="Italic"
@@ -1136,8 +1181,8 @@
                     <TextBlock Text="مقدار درج کریں" FontSize="16" FontWeight="Bold" Foreground="#1B4332" FlowDirection="RightToLeft"/>
                     <TextBlock FontSize="14" Margin="0,8,0,4" Foreground="#374151" TextWrapping="Wrap">
                         <Run Text="{Binding SelectedPosProduct.Name, Mode=OneWay}"/>
-                        <Run Text=" — "/>
-                        <Run Text="{Binding SelectedType.TypeName, Mode=OneWay}"/>
+                        <Run Text="  "/>
+                        <Run Text="{Binding SelectedPosProduct.DisplayUrdu, Mode=OneWay}" Foreground="#2D6A4F"/>
                     </TextBlock>
                     <Grid Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
@@ -1181,8 +1226,9 @@
         <!-- Registration Overlay -->
         <Grid Background="#66000000" Grid.RowSpan="2" Panel.ZIndex="1000"
               Visibility="{Binding IsRegistrationVisible, Converter={StaticResource BoolToVis}}">
-            <Border Width="400" VerticalAlignment="Center" HorizontalAlignment="Center"
+            <Border Width="430" MaxHeight="620" VerticalAlignment="Center" HorizontalAlignment="Center"
                     Background="White" CornerRadius="14" Padding="24">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <TextBlock Text="نیا کسٹمر" FontSize="18" FontWeight="Bold" Foreground="#1B4332" FlowDirection="RightToLeft"/>
                     <TextBlock Text="Register New Customer" FontSize="12" Foreground="#6B7280" Margin="0,0,0,16"/>
@@ -1196,9 +1242,30 @@
                     <TextBlock Text="Address (Optional)" FontSize="12" Margin="0,0,0,4"/>
                     <TextBox Text="{Binding NewCustomerAddress, UpdateSourceTrigger=PropertyChanged}" Padding="10,8" Margin="0,0,0,12"
                              helpers:FocusHelper.SelectAllOnFocus="True"/>
+
+                    <!-- Previous paper dues -->
+                    <StackPanel Margin="0,0,0,14">
+                        <CheckBox Content="Has previous outstanding dues (paper ledger)"
+                                  IsChecked="{Binding NewCustomerHasPreviousDues}"
+                                  Foreground="#2D3748" FontSize="13" Margin="0,0,0,8"/>
+                        <StackPanel Visibility="{Binding ShowNewCustomerOpeningBalanceFields, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Previous Dues Amount (Rs.) *" FontSize="12" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding NewCustomerOpeningBalanceAmount, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="10,8" Margin="0,0,0,10"
+                                     helpers:FocusHelper.NumericOnly="True"
+                                     helpers:FocusHelper.SelectAllOnFocus="True"/>
+                            <TextBlock Text="Note (Optional)" FontSize="12" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding NewCustomerOpeningBalanceNote, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="10,8" Margin="0,0,0,4"
+                                     helpers:FocusHelper.SelectAllOnFocus="True"/>
+                            <TextBlock Text="Creates one unpaid 'Previous Bills Credit' entry. Cleared later via Pay Dues."
+                                       Foreground="#64748B" FontSize="11" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </StackPanel>
+
                     <TextBlock Text="{Binding RegistrationErrorMessage}" Foreground="#C62828" FontSize="12" Margin="0,0,0,10"
                                Visibility="{Binding RegistrationErrorMessage, Converter={StaticResource StringToVis}}"/>
-                    <Grid>
+                    <Grid Margin="0,6,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="10"/>
@@ -1208,6 +1275,7 @@
                         <Button Grid.Column="2" Content="Save" Style="{StaticResource GreenAction}" Command="{Binding SaveNewCustomerCommand}"/>
                     </Grid>
                 </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
 

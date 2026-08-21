@@ -39,9 +39,11 @@
     <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}"/>
     <SolidColorBrush x:Key="HoverBrush" Color="{StaticResource HoverColor}"/>
     <SolidColorBrush x:Key="InputBgBrush" Color="{StaticResource InputBgColor}"/>
+    <SolidColorBrush x:Key="SelectionBrush" Color="#D8F3DC"/>
 
     <!-- Global Font -->
     <FontFamily x:Key="AppFont">Segoe UI, Nirmala UI</FontFamily>
+    <FontFamily x:Key="UrduFont">Segoe UI, Nirmala UI</FontFamily>
 
     <!-- ─────────── Card ─────────── -->
     <Style x:Key="CardBorder" TargetType="Border">

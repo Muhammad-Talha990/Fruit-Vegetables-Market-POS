@@ -134,6 +134,9 @@
                                         <Style TargetType="Border">
                                             <Setter Property="Background" Value="#16A34A"/>
                                             <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCredit}" Value="True">
+                                                    <Setter Property="Background" Value="#EA580C"/>
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsActive}" Value="False">
                                                     <Setter Property="Background" Value="#94A3B8"/>
                                                 </DataTrigger>
